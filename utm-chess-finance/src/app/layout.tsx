@@ -5,9 +5,9 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'ClubSync Finance | Campus Club Budget & Expense Tracker',
+  title: 'ClubSync | Campus Club Operations, Attendance & Finance Portal',
   description:
-    'Real-time student club budget allocations, AI OCR receipt scanning, and reimbursement claim approvals.',
+    'All-in-one student club activities, QR attendance, carpool transport, equipment borrowing, and financial ledger.',
 };
 
 export default function RootLayout({
@@ -17,8 +17,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" async></script>
+      </head>
       <body
-        className={`${inter.className} bg-[#f2fbf6] text-slate-800 antialiased min-h-screen selection:bg-emerald-600 selection:text-white`}
+        className={`${inter.className} bg-[#f4fbf7] text-slate-800 antialiased min-h-screen selection:bg-emerald-600 selection:text-white`}
       >
         {children}
       </body>
