@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
-import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -21,7 +20,7 @@ export default function RootLayout({
         <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" async></script>
       </head>
       <body
-        className={`${inter.className} bg-[#f4fbf7] text-slate-800 antialiased min-h-screen selection:bg-emerald-600 selection:text-white`}
+        className={`${inter.className} m-0 p-0 bg-[#f4fbf7] text-slate-800 antialiased min-h-screen selection:bg-emerald-600 selection:text-white`}
       >
         {children}
       </body>
