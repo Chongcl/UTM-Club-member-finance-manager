@@ -549,7 +549,7 @@ export default function LedgerSection({
                   onChange={(e) =>
                     setAttachmentFile(e.target.files?.[0] || null)
                   }
-                  className="w-full text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-800"
+                  className="w-full text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
                 />
               </div>
               <div>

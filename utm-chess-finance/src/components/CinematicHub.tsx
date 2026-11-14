@@ -257,7 +257,7 @@ export default function CinematicHub({ announcements, polls, pollVotes, profile,
               <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Headline *" className="w-full rounded-xl border px-3 py-2 text-sm font-bold" required />
               <input type="text" value={subtitle} onChange={(e) => setSubtitle(e.target.value)} placeholder="Badge text" className="w-full rounded-xl border px-3 py-2" />
               <textarea rows={3} value={content} onChange={(e) => setContent(e.target.value)} placeholder="Details *" className="w-full rounded-xl border px-3 py-2" required />
-              <input type="file" accept="image/*" onChange={(e) => setPosterFile(e.target.files?.[0] || null)} className="w-full" />
+              <input type="file" accept="image/*" onChange={(e) => setPosterFile(e.target.files?.[0] || null)} className="w-full file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer" />
               <input type="url" value={posterUrl} onChange={(e) => setPosterUrl(e.target.value)} placeholder="Or Paste Image URL" className="w-full rounded-xl border px-3 py-2" />
               <div className="grid grid-cols-2 gap-2">
                 <input type="url" value={externalLink} onChange={(e) => setExternalLink(e.target.value)} placeholder="External Link" className="rounded-xl border px-3 py-2" />

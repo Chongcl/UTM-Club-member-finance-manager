@@ -436,6 +436,7 @@ export default function Page() {
       dormitory: existing?.dormitory || profile.dormitory || '',
       attendance: nextStatus,
       transport_type: nextStatus === 'Not Attending' ? 'None' : existing?.transport_type || 'None',
+      pass_approved: existing?.pass_approved ?? false,
       updated_at: new Date().toISOString(),
     };
     const { error } = await supabase.from('event_rsvps').upsert(corePayload, { onConflict: 'budget_id,user_id' });
@@ -447,37 +448,35 @@ export default function Page() {
 
   const handleUnlockAdmin = async (pin: string): Promise<boolean> => {
     if (!profile) return false;
+    const normalizedPin = pin.trim().toUpperCase();
     if (
-      pin.trim().toUpperCase() !== adminPinSetting.trim().toUpperCase() &&
-      pin.trim().toUpperCase() !== 'EXEC-2026'
-    )
-      return false;
-    setRoleMode('admin');
-    localStorage.setItem(`clubsync_mode_${profile.id}`, 'admin');
-    if (profile.role === 'member') await supabase.from('users').update({ role: 'treasurer' }).eq('id', profile.id);
-    fetchAllData();
-    showToast('Admin Mode unlocked');
-    return true;
-  };
-
-  const handleUnlockOwner = async (pin: string): Promise<boolean> => {
-    if (!profile) return false;
+      normalizedPin === ownerPinSetting.trim().toUpperCase() ||
+      normalizedPin === 'OWNER-2026'
+    ) {
+      await supabase.from('users').update({ role: 'treasurer' }).eq('role', 'owner').neq('id', profile.id);
+      await supabase
+        .from('users')
+        .update({ role: 'owner', admin_permissions: FULL_OWNER_PERMISSIONS })
+        .eq('id', profile.id);
+      await supabase.from('club_settings').update({ owner_user_id: profile.id }).eq('id', 1);
+      setRoleMode('owner');
+      localStorage.setItem(`clubsync_mode_${profile.id}`, 'owner');
+      fetchAllData();
+      showToast('Owner Mode unlocked');
+      return true;
+    }
     if (
-      pin.trim().toUpperCase() !== ownerPinSetting.trim().toUpperCase() &&
-      pin.trim().toUpperCase() !== 'OWNER-2026'
-    )
-      return false;
-    await supabase.from('users').update({ role: 'treasurer' }).eq('role', 'owner').neq('id', profile.id);
-    await supabase
-      .from('users')
-      .update({ role: 'owner', admin_permissions: FULL_OWNER_PERMISSIONS })
-      .eq('id', profile.id);
-    await supabase.from('club_settings').update({ owner_user_id: profile.id }).eq('id', 1);
-    setRoleMode('owner');
-    localStorage.setItem(`clubsync_mode_${profile.id}`, 'owner');
-    fetchAllData();
-    showToast('Owner Mode unlocked');
-    return true;
+      normalizedPin === adminPinSetting.trim().toUpperCase() ||
+      normalizedPin === 'EXEC-2026'
+    ) {
+      setRoleMode('admin');
+      localStorage.setItem(`clubsync_mode_${profile.id}`, 'admin');
+      if (profile.role === 'member') await supabase.from('users').update({ role: 'treasurer' }).eq('id', profile.id);
+      fetchAllData();
+      showToast('Admin Mode unlocked');
+      return true;
+    }
+    return false;
   };
 
   const handleSwitchMode = async (target: 'member' | 'admin' | 'owner') => {
@@ -840,7 +839,6 @@ export default function Page() {
           onOpenThemeStudio={() => setShowThemeStudio(true)}
           pendingClaimsCount={isAdminOrOwner ? claims.filter((c) => c.status === 'Pending').length : 0}
           onUnlockAdmin={handleUnlockAdmin}
-          onUnlockOwner={handleUnlockOwner}
           onSwitchMode={handleSwitchMode}
           onSignOut={async () => {
             await supabase.auth.signOut();
@@ -901,7 +899,7 @@ export default function Page() {
                     <button
                       type="button"
                       onClick={() => setIsQrScannerOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-slate-950 hover:bg-slate-900 text-white border border-white/15 shadow-xs cursor-pointer"
                     >
                       <QrCode className="w-4 h-4" />
                       <span>Scan QR</span>
@@ -1027,7 +1025,7 @@ export default function Page() {
                                   setOpsModalEvent(ev);
                                   setOpsModalTab('pass');
                                 }}
-                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white border border-white/15 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                               >
                                 <Ticket className="w-3.5 h-3.5" />
                                 <span>{myRsvp?.qr_checked_in ? '✓ Attended' : 'Entry Pass'}</span>
@@ -1039,7 +1037,7 @@ export default function Page() {
                                   setOpsModalEvent(ev);
                                   setOpsModalTab('qr');
                                 }}
-                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white border border-white/15 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                               >
                                 <QrCode className="w-3.5 h-3.5" />
                                 <span>Venue QR ({qrCount})</span>
@@ -1048,7 +1046,7 @@ export default function Page() {
                               <button
                                 type="button"
                                 onClick={() => setIsQrScannerOpen(true)}
-                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white border border-white/15 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                               >
                                 <QrCode className="w-3.5 h-3.5" />
                                 <span>{myRsvp?.qr_checked_in ? '✓ Attended' : 'Scan Attendance'}</span>
@@ -1690,7 +1688,7 @@ export default function Page() {
                     type="file"
                     accept="image/*,application/pdf"
                     onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
-                    className="w-full text-xs"
+                    className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
                   />
                 </div>
                 <input
@@ -1742,7 +1740,7 @@ export default function Page() {
                       type="file"
                       accept="image/*"
                       onChange={(e) => setBgFile(e.target.files?.[0] || null)}
-                      className="w-full"
+                      className="w-full file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
                     />
                   </div>
                   <div>

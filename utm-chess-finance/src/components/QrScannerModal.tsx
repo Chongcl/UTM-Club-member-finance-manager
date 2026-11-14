@@ -77,7 +77,8 @@ export default function QrScannerModal({
 
       const reqFee = Number(targetEvent.registration_fee || 0);
       const paidRecord = feePayments.find((f) => f.budget_id === targetEvent.id && f.user_id === userId && f.status === 'Verified');
-      const eligible = Boolean(memberRsvp.pass_approved) || (reqFee > 0 && Boolean(paidRecord));
+      const isManualOnly = targetEvent.ticket_qr_mode === 'manual_only';
+      const eligible = isManualOnly ? Boolean(memberRsvp.pass_approved) : Boolean(memberRsvp.pass_approved) || (reqFee > 0 && Boolean(paidRecord));
 
       if (!eligible) {
         setGatePass({
@@ -129,6 +130,7 @@ export default function QrScannerModal({
       transport_type: existing?.transport_type || 'None', is_driver: existing?.is_driver || false,
       car_details: existing?.car_details || '', seats_available: existing?.seats_available ?? 4,
       trips_count: existing?.trips_count ?? 1, assigned_driver_name: existing?.assigned_driver_name || '',
+      pass_approved: existing?.pass_approved ?? false,
       qr_checked_in: true, qr_checked_in_at: nowIso, updated_at: nowIso,
     }, { onConflict: 'budget_id,user_id' });
 
@@ -228,7 +230,7 @@ export default function QrScannerModal({
                 <p><strong>Status:</strong> <span className="font-bold">{gatePass.feeStatus}</span></p>
               </div>
               <p className="text-xs font-bold">{gatePass.reason}</p>
-              <button type="button" onClick={() => setGatePass(null)} className="w-full py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold cursor-pointer">Scan Next</button>
+              <button type="button" onClick={() => setGatePass(null)} className="w-full py-2.5 rounded-xl bg-slate-950 hover:bg-slate-900 text-white text-xs font-bold cursor-pointer">Scan Next</button>
             </div>
           ) : (
             <>
@@ -237,7 +239,7 @@ export default function QrScannerModal({
                 <canvas ref={canvasRef} className="hidden" />
                 {!cameraActive && <div className="p-6 text-slate-300 text-xs"><Camera className="w-8 h-8 text-emerald-400 mx-auto mb-2" />Point camera at QR Code</div>}
               </div>
-              <label className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-200 text-xs font-bold cursor-pointer">
+              <label className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer">
                 <Upload className="w-4 h-4" /><span>Upload / Capture QR Image</span>
                 <input type="file" accept="image/*" capture="environment" onChange={handleImageFileScan} className="hidden" />
               </label>

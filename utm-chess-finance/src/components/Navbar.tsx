@@ -10,7 +10,7 @@ interface NavbarProps {
   profile: UserProfile; clubName: string; logoUrl?: string; activeTab: NavTab; onSelectTab: (tab: NavTab) => void;
   currentBatch?: string; roleMode: 'member' | 'admin' | 'owner'; pendingClaimsCount?: number;
   darkMode?: boolean; onToggleDarkMode?: () => void; canCustomizeTheme?: boolean; onOpenThemeStudio?: () => void;
-  onUnlockAdmin: (pin: string) => Promise<boolean>; onUnlockOwner: (pin: string) => Promise<boolean>;
+  onUnlockAdmin: (pin: string) => Promise<boolean>;
   onSwitchMode: (target: 'member' | 'admin' | 'owner') => Promise<void>;
   onSignOut: () => Promise<void>; onOpenNewClaim: () => void; onOpenQrScanner: () => void;
   onOpenNewActivity?: () => void; onOpenNewFinance?: () => void; switchingRole?: boolean;
@@ -19,13 +19,13 @@ interface NavbarProps {
 export default function Navbar({
   profile, clubName, logoUrl = '', activeTab, onSelectTab, currentBatch = '2026/2027', roleMode, pendingClaimsCount = 0,
   darkMode = false, onToggleDarkMode, canCustomizeTheme = false, onOpenThemeStudio,
-  onUnlockAdmin, onUnlockOwner, onSwitchMode, onSignOut, onOpenNewClaim, onOpenQrScanner,
+  onUnlockAdmin, onSwitchMode, onSignOut, onOpenNewClaim, onOpenQrScanner,
   onOpenNewActivity, onOpenNewFinance, switchingRole = false,
 }: NavbarProps) {
   const isAdminOrOwner = roleMode === 'admin' || roleMode === 'owner';
   const isOwner = roleMode === 'owner';
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [pinModalType, setPinModalType] = useState<'admin' | 'owner' | null>(null);
+  const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
 
@@ -34,8 +34,8 @@ export default function Navbar({
   const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPinError(null);
-    const ok = pinModalType === 'admin' ? await onUnlockAdmin(pinInput) : await onUnlockOwner(pinInput);
-    if (ok) { setPinInput(''); setPinModalType(null); setDrawerOpen(false); }
+    const ok = await onUnlockAdmin(pinInput);
+    if (ok) { setPinInput(''); setPinModalOpen(false); setDrawerOpen(false); }
     else setPinError('Invalid Passcode.');
   };
 
@@ -80,8 +80,8 @@ export default function Navbar({
             {onToggleDarkMode && (
               <button type="button" onClick={onToggleDarkMode} className={`p-2 rounded-xl border transition cursor-pointer ${darkMode ? 'bg-white/10 border-white/15 text-amber-300' : 'bg-slate-100 border-slate-200 text-slate-700'}`} title="Toggle Dark / Light Mode">{darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}</button>
             )}
-            <button type="button" onClick={onOpenQrScanner} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm cursor-pointer"><QrCode className="w-4 h-4" /><span>Scan QR</span></button>
-            <button type="button" onClick={onOpenNewClaim} className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border cursor-pointer ${darkMode ? 'bg-white/10 border-white/15 text-white hover:bg-white/15' : 'bg-slate-900 text-white border-slate-800 hover:bg-slate-800'}`}><PlusCircle className="w-4 h-4 text-emerald-400" /><span className="hidden sm:inline">Submit Claim</span></button>
+            <button type="button" onClick={onOpenQrScanner} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-950 hover:bg-slate-900 text-white border border-white/15 shadow-sm cursor-pointer"><QrCode className="w-4 h-4" /><span>Scan QR</span></button>
+            <button type="button" onClick={onOpenNewClaim} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 cursor-pointer"><PlusCircle className="w-4 h-4 text-white" /><span className="hidden sm:inline">Submit Claim</span></button>
           </div>
         </div>
       </header>
@@ -101,7 +101,7 @@ export default function Navbar({
               </div>
               <nav className="space-y-1 text-xs font-bold">
                 <button type="button" onClick={() => handleNav('activities')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'activities' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Calendar className="w-4 h-4" /><span>Home &amp; Activities</span></button>
-                <button type="button" onClick={() => { setDrawerOpen(false); onOpenQrScanner(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-emerald-500/10 cursor-pointer"><QrCode className="w-4 h-4 text-emerald-500" /><span>Scan QR Attendance</span></button>
+                <button type="button" onClick={() => { setDrawerOpen(false); onOpenQrScanner(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-950 text-white hover:bg-slate-900 border border-white/10 cursor-pointer"><QrCode className="w-4 h-4 text-white" /><span>Scan QR Attendance</span></button>
                 <button type="button" onClick={() => handleNav('equipment')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'equipment' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Package className="w-4 h-4" /><span>Equipment Borrowing</span></button>
                 <button type="button" onClick={() => handleNav('claims')} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'claims' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><span className="flex items-center gap-3"><Receipt className="w-4 h-4" /><span>Reimbursement Claims</span></span>{pendingClaimsCount > 0 && <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">{pendingClaimsCount}</span>}</button>
                 <button type="button" onClick={() => handleNav('profile')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'profile' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><UserCheck className="w-4 h-4" /><span>My Profile</span></button>
@@ -119,11 +119,13 @@ export default function Navbar({
 
             <div className="pt-4 border-t border-slate-200/20 space-y-2 text-xs font-bold">
               {roleMode === 'member' && (
-                <button type="button" onClick={() => { setDrawerOpen(false); setPinError(null); setPinModalType('admin'); }} className="w-full py-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 cursor-pointer"><Lock className="w-3.5 h-3.5 inline mr-1" />Unlock Admin Mode</button>
+                <button type="button" onClick={() => { setDrawerOpen(false); setPinError(null); setPinModalOpen(true); }} className="w-full py-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 cursor-pointer"><Lock className="w-3.5 h-3.5 inline mr-1" />Unlock Admin Mode</button>
               )}
               {roleMode === 'admin' && (
                 <>
-                  <button type="button" onClick={() => { setDrawerOpen(false); setPinError(null); setPinModalType('owner'); }} className="w-full py-2.5 rounded-xl bg-amber-400 text-slate-950 cursor-pointer"><Crown className="w-3.5 h-3.5 inline mr-1" />Unlock Owner Mode</button>
+                  {profile.role === 'owner' && (
+                    <button type="button" onClick={() => { setDrawerOpen(false); onSwitchMode('owner'); }} className="w-full py-2 rounded-xl bg-amber-400 text-slate-950 cursor-pointer"><Crown className="w-3.5 h-3.5 inline mr-1" />Owner Mode</button>
+                  )}
                   <button type="button" onClick={() => { setDrawerOpen(false); onSwitchMode('member'); }} className="w-full py-2 rounded-xl bg-slate-500/20 cursor-pointer"><Unlock className="w-3.5 h-3.5 inline mr-1" />Exit to Member Mode</button>
                 </>
               )}
@@ -139,17 +141,17 @@ export default function Navbar({
         </div>
       )}
 
-      {pinModalType && (
+      {pinModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
           <div className="bg-white text-slate-900 rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl">
-            <div className={`${pinModalType === 'owner' ? 'bg-amber-400 text-slate-950' : 'bg-emerald-800 text-white'} px-5 py-4 flex justify-between items-center`}>
-              <span className="text-sm font-extrabold"><KeyRound className="w-4 h-4 inline mr-1" />{pinModalType === 'owner' ? 'Unlock Owner Mode' : 'Unlock Admin Mode'}</span>
-              <button type="button" onClick={() => setPinModalType(null)}><X className="w-5 h-5" /></button>
+            <div className="bg-emerald-800 text-white px-5 py-4 flex justify-between items-center">
+              <span className="text-sm font-extrabold"><KeyRound className="w-4 h-4 inline mr-1" />Unlock Admin Mode</span>
+              <button type="button" onClick={() => setPinModalOpen(false)}><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handlePinSubmit} className="p-5 space-y-3 text-xs">
-              <input type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder={pinModalType === 'owner' ? 'Owner Code (OWNER-2026)' : 'Admin Code (EXEC-2026)'} className="w-full rounded-xl border px-3 py-2 text-sm font-mono" required />
+              <input type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="Enter Admin or Owner Code" className="w-full rounded-xl border px-3 py-2 text-sm font-mono" required />
               {pinError && <div className="text-rose-600">{pinError}</div>}
-              <div className="flex justify-end gap-2"><button type="button" onClick={() => setPinModalType(null)} className="px-3 py-2">Cancel</button><button type="submit" disabled={switchingRole} className="px-4 py-2 rounded-xl bg-emerald-700 text-white font-bold">{switchingRole && <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1" />}Unlock</button></div>
+              <div className="flex justify-end gap-2"><button type="button" onClick={() => setPinModalOpen(false)} className="px-3 py-2">Cancel</button><button type="submit" disabled={switchingRole} className="px-4 py-2 rounded-xl bg-emerald-700 text-white font-bold">{switchingRole && <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1" />}Unlock</button></div>
             </form>
           </div>
         </div>

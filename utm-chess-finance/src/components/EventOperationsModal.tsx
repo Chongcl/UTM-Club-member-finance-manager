@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES } from '@/lib/supabase';
-import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode } from 'lucide-react';
+import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle } from 'lucide-react';
 
 interface EventOperationsModalProps {
   event: Budget | null; initialTab: 'fee' | 'transport' | 'qr' | 'pass'; profile: UserProfile;
@@ -18,6 +18,7 @@ export default function EventOperationsModal({
   const [tab, setTab] = useState<'fee' | 'transport' | 'qr' | 'pass'>(initialTab);
   const [amountPaid, setAmountPaid] = useState('0');
   const [feeFile, setFeeFile] = useState<File | null>(null);
+  const [feeError, setFeeError] = useState<string | null>(null);
   const [submittingFee, setSubmittingFee] = useState(false);
   const [surveyChoice, setSurveyChoice] = useState<TransportSurveyChoice>('OWN');
   const [dormitoryInput, setDormitoryInput] = useState('');
@@ -40,6 +41,7 @@ export default function EventOperationsModal({
     lastEventIdRef.current = event.id;
 
     setLocalPassOverrides({});
+    setFeeError(null);
     const feeVal = Number(event.registration_fee || 0);
     setAmountPaid(String(feeVal));
     setQrToken(event.qr_code_token || event.id.slice(0, 6).toUpperCase());
@@ -84,11 +86,12 @@ export default function EventOperationsModal({
   const isMemberEligibleForPass = (rsvp?: EventRsvp) => {
     if (!rsvp || rsvp.attendance !== 'Attending') return false;
     if (localPassOverrides[rsvp.id] !== undefined) return localPassOverrides[rsvp.id];
-    if (rsvp.pass_approved === true) return true;
-    if (passRule === 'auto_after_payment' && requiresFee) {
-      return eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Verified');
+    if (passRule === 'manual_only') return rsvp.pass_approved === true;
+    if (requiresFee) {
+      const hasPaid = eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Verified');
+      return hasPaid || rsvp.pass_approved === true;
     }
-    return false;
+    return rsvp.pass_approved === true;
   };
 
   const myPassEligible = isMemberEligibleForPass(myRsvp);
@@ -106,8 +109,20 @@ export default function EventOperationsModal({
 
   const handlePayFeeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFeeError(null);
     const numAmt = parseFloat(amountPaid) || 0;
-    if (numAmt <= 0 || !feeFile || feeFile.size > MAX_FILE_SIZE_BYTES) return;
+    if (numAmt <= 0) {
+      setFeeError('Please enter a valid payment amount.');
+      return;
+    }
+    if (!feeFile) {
+      setFeeError('Please upload your payment receipt first.');
+      return;
+    }
+    if (feeFile.size > MAX_FILE_SIZE_BYTES) {
+      setFeeError('File size must be under 50 MB.');
+      return;
+    }
     setSubmittingFee(true);
     try {
       const path = `fees/${event.id}/${profile.id}-${Date.now()}.${feeFile.name.split('.').pop() || 'jpg'}`;
@@ -119,6 +134,7 @@ export default function EventOperationsModal({
           matric_no: profile.matric_no, phone_number: profile.phone_number,
           member_type: profile.member_type || 'Member', dormitory: profile.dormitory || '',
           attendance: 'Attending', transport_type: myRsvp?.transport_type || 'None',
+          pass_approved: myRsvp?.pass_approved ?? false,
         }, { onConflict: 'budget_id,user_id' });
 
         await supabase.from('activity_fee_payments').insert({
@@ -147,6 +163,7 @@ export default function EventOperationsModal({
       seats_available: isDriving ? Math.max(1, parseInt(seatsAvailable) || 4) : 0,
       trips_count: isDriving ? Math.max(1, parseInt(tripsCount) || 1) : 0,
       assigned_driver_name: nextTransport === 'None' ? '' : myRsvp?.assigned_driver_name || '',
+      pass_approved: myRsvp?.pass_approved ?? false,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'budget_id,user_id' });
     onRefresh('Carpool choice saved!');
@@ -203,7 +220,7 @@ export default function EventOperationsModal({
                       <>
                         <p className="text-[11px] text-emerald-100">Pay the RM {reqFee.toFixed(2)} activity fee to unlock your Entry Pass QR automatically:</p>
                         <button type="button" onClick={() => setTab('fee')} className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold cursor-pointer">
-                          Pay RM {reqFee.toFixed(2)} Fee $\rightarrow$
+                          Pay RM {reqFee.toFixed(2)} Fee →
                         </button>
                       </>
                     ) : (
@@ -221,7 +238,7 @@ export default function EventOperationsModal({
                 {isAdmin && onOpenScanner && (
                   <div className="p-4 rounded-2xl bg-slate-900 text-white flex items-center justify-between gap-3">
                     <div><h4 className="font-extrabold text-emerald-400"><Camera className="w-4 h-4 inline mr-1" />Scan Entry Pass QR</h4><p className="text-[11px] text-slate-300">Automatically verifies eligibility and records attendance.</p></div>
-                    <button type="button" onClick={() => { onClose(); onOpenScanner(); }} className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-extrabold cursor-pointer">Scan Pass</button>
+                    <button type="button" onClick={() => { onClose(); onOpenScanner(); }} className="px-4 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-white/20 text-white font-extrabold cursor-pointer">Scan Pass</button>
                   </div>
                 )}
                 <div className="border rounded-2xl overflow-hidden">
@@ -273,7 +290,20 @@ export default function EventOperationsModal({
                 <h3 className="text-sm font-extrabold">Fee Payment (RM {reqFee.toFixed(2)})</h3>
                 {hasEntryPass && passRule === 'auto_after_payment' && <p className="text-[11px] text-emerald-700 font-semibold">Your Entry Pass QR unlocks automatically after payment submission.</p>}
                 <input type="number" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
-                <input type="file" accept="image/*,application/pdf" onChange={(e) => setFeeFile(e.target.files?.[0] || null)} className="w-full" required />
+                <label className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 hover:bg-emerald-50 cursor-pointer text-center transition">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                    {feeFile ? <FileText className="w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
+                  </div>
+                  <div className="text-xs font-bold text-emerald-950 break-all">
+                    {feeFile ? feeFile.name : 'Upload Payment Receipt (JPG, PNG, PDF)'}
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px]">
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>{feeFile ? 'Change File' : 'Upload Receipt'}</span>
+                  </span>
+                  <input type="file" accept="image/*,application/pdf" onChange={(e) => { setFeeFile(e.target.files?.[0] || null); setFeeError(null); }} className="hidden" />
+                </label>
+                {feeError && <div className="flex items-center gap-1.5 text-xs bg-rose-50 text-rose-700 px-3 py-2 rounded-xl font-semibold"><AlertCircle className="w-4 h-4 shrink-0" /><span>{feeError}</span></div>}
                 <button type="submit" disabled={submittingFee} className="w-full py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"><CheckCircle2 className="w-4 h-4 inline mr-1" />{submittingFee ? 'Uploading...' : 'Submit Payment'}</button>
               </form>
               <div className="lg:col-span-3 space-y-3">
