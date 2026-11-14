@@ -372,6 +372,7 @@ export default function Page() {
       bank_name: String(raw.bank_name || ''),
       bank_account_no: String(raw.bank_account_no || ''),
       bank_account_holder: String(raw.bank_account_holder || ''),
+      bank_qr_url: String(raw.bank_qr_url || ''),
       created_at: String(raw.created_at || ''),
     };
   };
@@ -1107,7 +1108,7 @@ export default function Page() {
                 pollVotes={pollVotes}
                 profile={profile}
                 isAdmin={effectivePermissions.can_manage_posters_polls}
-                onRefresh={(m) => {
+                onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
                 }}
@@ -1160,7 +1161,6 @@ export default function Page() {
                   </div>
                 </div>
 
-                {/* Cohesive Emerald + Neutral Slate Glass Activity Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   {visibleBudgets.map((ev) => {
                     const myRsvp = rsvps.find((r) => r.budget_id === ev.id && r.user_id === profile.id);
@@ -1398,7 +1398,7 @@ export default function Page() {
                 loans={equipmentLoans}
                 profile={profile}
                 isAdmin={effectivePermissions.can_manage_equipment}
-                onRefresh={(m) => {
+                onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
                 }}
@@ -1505,7 +1505,7 @@ export default function Page() {
                 budgets={budgets}
                 myRsvps={rsvps.filter((r) => r.user_id === profile.id)}
                 myFeePayments={feePayments.filter((f) => f.user_id === profile.id)}
-                onUpdated={(u, m) => {
+                onUpdated={(u: Partial<UserProfile>, m: string) => {
                   setProfile((p) => (p ? { ...p, ...u } : null));
                   fetchAllData();
                   showToast(m);
@@ -1527,8 +1527,8 @@ export default function Page() {
                 canEdit={effectivePermissions.can_manage_finance}
                 externalOpenModal={quickAdjustFinanceOpen}
                 onCloseExternalModal={() => setQuickAdjustFinanceOpen(false)}
-                onSelectClaim={(c) => setSelectedClaim(c)}
-                onRefresh={(m) => {
+                onSelectClaim={(c: Claim) => setSelectedClaim(c)}
+                onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
                 }}
@@ -2144,7 +2144,7 @@ export default function Page() {
         feePayments={feePayments}
         profile={profile}
         isAdmin={isAdminOrOwner}
-        onSuccess={(m) => {
+        onSuccess={(m: string) => {
           showToast(m);
           fetchAllData();
         }}
@@ -2162,7 +2162,7 @@ export default function Page() {
         paymentBankInfo={paymentBankInfo}
         onClose={() => setOpsModalEvent(null)}
         onOpenScanner={() => setIsQrScannerOpen(true)}
-        onRefresh={(m) => {
+        onRefresh={(m: string) => {
           showToast(m);
           fetchAllData();
         }}
@@ -2173,7 +2173,7 @@ export default function Page() {
         budgets={budgets}
         departments={departments}
         profile={profile}
-        onSuccess={(m) => {
+        onSuccess={(m: string) => {
           showToast(m);
           fetchAllData();
         }}
@@ -2183,7 +2183,7 @@ export default function Page() {
         budget={budgets.find((b) => b.id === selectedClaim?.budget_id)}
         profile={{ ...profile, role: effectivePermissions.can_manage_claims_fees ? 'treasurer' : 'member' }}
         onClose={() => setSelectedClaim(null)}
-        onUpdated={(m) => {
+        onUpdated={(m: string) => {
           showToast(m);
           fetchAllData();
         }}
@@ -2198,7 +2198,7 @@ export default function Page() {
         departments={departments}
         rsvps={rsvps}
         feePayments={feePayments}
-        onSuccess={(m) => {
+        onSuccess={(m: string) => {
           showToast(m);
           fetchAllData();
         }}
@@ -3404,7 +3404,7 @@ import {
   MAX_FILE_SIZE_BYTES,
 } from '@/lib/supabase';
 import ReceiptDropzone, { ScannedReceiptData } from './ReceiptDropzone';
-import { X, CheckCircle2, AlertCircle, Loader2, Sparkles, Landmark } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Loader2, Sparkles, Landmark, Eye, EyeOff } from 'lucide-react';
 
 interface ClaimFormModalProps {
   isOpen: boolean;
@@ -3435,9 +3435,12 @@ export default function ClaimFormModal({
   );
   const [merchantName, setMerchantName] = useState('');
   const [description, setDescription] = useState('');
+  const [includePaymentDetails, setIncludePaymentDetails] = useState(true);
   const [bankName, setBankName] = useState('');
   const [bankAccountNo, setBankAccountNo] = useState('');
   const [bankAccountHolder, setBankAccountHolder] = useState('');
+  const [claimantQrUrl, setClaimantQrUrl] = useState('');
+  const [claimantQrFile, setClaimantQrFile] = useState<File | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [scannedData, setScannedData] = useState<ScannedReceiptData | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -3449,6 +3452,7 @@ export default function ClaimFormModal({
       bank_name: profile.bank_name || '',
       bank_account_no: profile.bank_account_no || '',
       bank_account_holder: profile.bank_account_holder || profile.full_name || '',
+      bank_qr_url: profile.bank_qr_url || '',
     };
     if (typeof window !== 'undefined') {
       const raw = localStorage.getItem(`clubsync_bank_${profile.id}`);
@@ -3460,6 +3464,7 @@ export default function ClaimFormModal({
             bank_account_no: profile.bank_account_no || parsed.bank_account_no || '',
             bank_account_holder:
               profile.bank_account_holder || parsed.bank_account_holder || profile.full_name || '',
+            bank_qr_url: profile.bank_qr_url || parsed.bank_qr_url || '',
           };
         } catch {
           /* ignore */
@@ -3469,6 +3474,8 @@ export default function ClaimFormModal({
     setBankName(savedBank.bank_name);
     setBankAccountNo(savedBank.bank_account_no);
     setBankAccountHolder(savedBank.bank_account_holder);
+    setClaimantQrUrl(savedBank.bank_qr_url);
+    setClaimantQrFile(null);
   }, [isOpen, profile]);
 
   if (!isOpen) return null;
@@ -3502,17 +3509,29 @@ export default function ClaimFormModal({
 
     setSubmitting(true);
     try {
-      const paymentSummary = bankAccountNo.trim()
-        ? `${bankName.trim() || 'Bank/DuitNow'} • ${bankAccountNo.trim()} (${bankAccountHolder.trim() || profile.full_name})`
-        : '';
+      let finalClaimantQr = includePaymentDetails ? claimantQrUrl.trim() : '';
+      if (includePaymentDetails && claimantQrFile && claimantQrFile.size <= MAX_FILE_SIZE_BYTES) {
+        const qrExt = claimantQrFile.name.split('.').pop() || 'png';
+        const qrPath = `member-qr/${profile.id}-${Date.now()}.${qrExt}`;
+        const { error: qrErr } = await supabase.storage.from('receipts').upload(qrPath, claimantQrFile);
+        if (!qrErr) {
+          finalClaimantQr = supabase.storage.from('receipts').getPublicUrl(qrPath).data.publicUrl;
+        }
+      }
 
-      if (typeof window !== 'undefined' && bankAccountNo.trim()) {
+      const paymentSummary =
+        includePaymentDetails && bankAccountNo.trim()
+          ? `${bankName.trim() || 'Bank/DuitNow'} • ${bankAccountNo.trim()} (${bankAccountHolder.trim() || profile.full_name})`
+          : '';
+
+      if (typeof window !== 'undefined' && includePaymentDetails) {
         localStorage.setItem(
           `clubsync_bank_${profile.id}`,
           JSON.stringify({
             bank_name: bankName.trim(),
             bank_account_no: bankAccountNo.trim(),
             bank_account_holder: bankAccountHolder.trim() || profile.full_name,
+            bank_qr_url: finalClaimantQr,
           })
         );
       }
@@ -3560,13 +3579,28 @@ export default function ClaimFormModal({
         status: 'Pending',
       };
 
-      const { error: insertErr } = await supabase.from('claims').insert({
-        ...corePayload,
-        payment_info: paymentSummary,
-      });
+      const { data: inserted, error: insertErr } = await supabase
+        .from('claims')
+        .insert({
+          ...corePayload,
+          payment_info: paymentSummary,
+          claimant_qr_url: finalClaimantQr,
+        })
+        .select('id')
+        .maybeSingle();
+
       if (insertErr) {
-        const { error: fallbackErr } = await supabase.from('claims').insert(corePayload);
+        const { data: fbInserted, error: fallbackErr } = await supabase
+          .from('claims')
+          .insert(corePayload)
+          .select('id')
+          .maybeSingle();
         if (fallbackErr) throw fallbackErr;
+        if (fbInserted?.id && finalClaimantQr && typeof window !== 'undefined') {
+          localStorage.setItem(`clubsync_claimant_qr_${fbInserted.id}`, finalClaimantQr);
+        }
+      } else if (inserted?.id && finalClaimantQr && typeof window !== 'undefined') {
+        localStorage.setItem(`clubsync_claimant_qr_${inserted.id}`, finalClaimantQr);
       }
 
       onSuccess('Claim submitted!');
@@ -3602,6 +3636,7 @@ export default function ClaimFormModal({
           className="p-6 space-y-4 max-h-[82vh] overflow-y-auto"
         >
           <ReceiptDropzone
+            selectedFile={file}
             onFileSelect={(f) => {
               setFile(f);
               if (!f) setScannedData(null);
@@ -3728,36 +3763,65 @@ export default function ClaimFormModal({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
                   <Landmark className="w-4 h-4 text-emerald-700" />
-                  <span>Reimbursement Bank / DuitNow / TNG Details (Auto-Filled)</span>
+                  <span>My Reimbursement Bank / DuitNow QR (Displayed to Admin)</span>
                 </span>
-                <span className="text-[10px] font-bold text-emerald-700">Saved to Profile</span>
+                <button
+                  type="button"
+                  onClick={() => setIncludePaymentDetails(!includePaymentDetails)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer ${
+                    includePaymentDetails ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {includePaymentDetails ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                  <span>{includePaymentDetails ? 'Shown to Admin' : 'Hidden / Skip'}</span>
+                </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                <input
-                  type="text"
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                  placeholder="Bank / eWallet (e.g., Maybank, TNG) *"
-                  className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
-                  required
-                />
-                <input
-                  type="text"
-                  value={bankAccountNo}
-                  onChange={(e) => setBankAccountNo(e.target.value)}
-                  placeholder="Account No / DuitNow Phone *"
-                  className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-mono font-bold"
-                  required
-                />
-                <input
-                  type="text"
-                  value={bankAccountHolder}
-                  onChange={(e) => setBankAccountHolder(e.target.value)}
-                  placeholder="Account Holder Name *"
-                  className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
-                  required
-                />
-              </div>
+              {includePaymentDetails && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                    <input
+                      type="text"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      placeholder="Bank / eWallet (e.g., Maybank, TNG)"
+                      className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
+                    />
+                    <input
+                      type="text"
+                      value={bankAccountNo}
+                      onChange={(e) => setBankAccountNo(e.target.value)}
+                      placeholder="Account No / DuitNow Phone"
+                      className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-mono font-bold"
+                    />
+                    <input
+                      type="text"
+                      value={bankAccountHolder}
+                      onChange={(e) => setBankAccountHolder(e.target.value)}
+                      placeholder="Account Holder Name"
+                      className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
+                    />
+                  </div>
+                  <div className="pt-1 text-xs space-y-1.5">
+                    <label className="block font-bold text-emerald-900">
+                      Or Upload My Personal DuitNow / TNG QR (JPG, PNG, PDF — Optional)
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) => setClaimantQrFile(e.target.files?.[0] || null)}
+                      className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+                    />
+                    {claimantQrUrl && !claimantQrFile && (
+                      <div className="flex items-center justify-between bg-white px-3 py-1.5 rounded-xl border text-[11px]">
+                        <span className="text-emerald-800 font-bold">✓ Personal Payment QR attached from Profile</span>
+                        <button type="button" onClick={() => setClaimantQrUrl('')} className="text-rose-600 font-bold cursor-pointer">
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="sm:col-span-2">
@@ -4264,8 +4328,8 @@ export default function EquipmentSection({ items, loans, profile, isAdmin, onRef
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, Claim, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES, exportMultiSheetExcel } from '@/lib/supabase';
-import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle, Loader2, Car, UserCheck, FileSpreadsheet } from 'lucide-react';
+import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, Claim, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES, exportMultiSheetExcel, downloadFileFromUrl } from '@/lib/supabase';
+import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle, Loader2, Car, UserCheck, FileSpreadsheet, Eye, EyeOff, Settings } from 'lucide-react';
 
 interface EventOperationsModalProps {
   event: Budget | null; initialTab: 'fee' | 'transport' | 'qr' | 'pass'; profile: UserProfile;
@@ -4284,6 +4348,15 @@ export default function EventOperationsModal({
   const [feeFile, setFeeFile] = useState<File | null>(null);
   const [feeError, setFeeError] = useState<string | null>(null);
   const [submittingFee, setSubmittingFee] = useState(false);
+
+  // Admin customizable Club Payment QR / Bank Info & Visibility toggle per activity or club-wide
+  const [activePayQrUrl, setActivePayQrUrl] = useState(paymentQrUrl);
+  const [activePayBankInfo, setActivePayBankInfo] = useState(paymentBankInfo);
+  const [showQrToMembers, setShowQrToMembers] = useState(true);
+  const [adminQrSetupOpen, setAdminQrSetupOpen] = useState(false);
+  const [adminQrFile, setAdminQrFile] = useState<File | null>(null);
+  const [savingAdminQr, setSavingAdminQr] = useState(false);
+
   const [surveyChoice, setSurveyChoice] = useState<TransportSurveyChoice>('OWN');
   const [dormitoryInput, setDormitoryInput] = useState('');
   const [carDetails, setCarDetails] = useState('');
@@ -4296,7 +4369,6 @@ export default function EventOperationsModal({
   const [passRule, setPassRule] = useState<PassApprovalRule>('auto_after_payment');
   const [localPassOverrides, setLocalPassOverrides] = useState<Record<string, boolean>>({});
 
-  // Only initialize when opening a new event ID so granting a pass NEVER resets or jumps out of the tab
   const lastEventIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!event) {
@@ -4309,9 +4381,18 @@ export default function EventOperationsModal({
     setLocalPassOverrides({});
     setFeeError(null);
     setTransportSavedSuccess(false);
+    setAdminQrSetupOpen(false);
     const feeVal = Number(event.registration_fee || 0);
     setAmountPaid(String(feeVal));
     setQrToken(event.qr_code_token || event.id.slice(0, 6).toUpperCase());
+
+    const evQr = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_payqr_${event.id}`) : null;
+    const evBank = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_paybank_${event.id}`) : null;
+    const evShow = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_showqr_${event.id}`) : null;
+
+    setActivePayQrUrl(evQr !== null ? evQr : paymentQrUrl);
+    setActivePayBankInfo(evBank !== null ? evBank : paymentBankInfo);
+    setShowQrToMembers(evShow !== null ? evShow !== 'false' : true);
 
     const savedMode =
       (typeof window !== 'undefined' ? localStorage.getItem(`clubsync_qrmode_${event.id}`) : null) ||
@@ -4335,7 +4416,7 @@ export default function EventOperationsModal({
     setSeatsAvailable(String(cur?.seats_available ?? 4));
     setTripsCount(String(cur?.trips_count ?? 1));
     setDormitoryInput(cur?.dormitory || profile.dormitory || '');
-  }, [event, initialTab, isAdmin, rsvps, profile.id, profile.dormitory]);
+  }, [event, initialTab, isAdmin, rsvps, profile.id, profile.dormitory, paymentQrUrl, paymentBankInfo]);
 
   if (!event) return null;
 
@@ -4375,6 +4456,39 @@ export default function EventOperationsModal({
     setLocalPassOverrides((prev) => ({ ...prev, [rsvp.id]: nextVal }));
     await supabase.from('event_rsvps').update({ pass_approved: nextVal }).eq('id', rsvp.id);
     onRefresh(`${nextVal ? 'Granted' : 'Locked'} pass for ${rsvp.student_name}.`);
+  };
+
+  const handleSaveAdminPaymentQrSettings = async () => {
+    setSavingAdminQr(true);
+    try {
+      let finalUrl = activePayQrUrl.trim();
+      if (adminQrFile && adminQrFile.size <= MAX_FILE_SIZE_BYTES) {
+        const ext = adminQrFile.name.split('.').pop() || 'png';
+        const path = `payment-qr/event-${event.id}-${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from('receipts').upload(path, adminQrFile);
+        if (!error) {
+          finalUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
+        }
+      }
+      setActivePayQrUrl(finalUrl);
+      setAdminQrFile(null);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`clubsync_ev_payqr_${event.id}`, finalUrl);
+        localStorage.setItem(`clubsync_ev_paybank_${event.id}`, activePayBankInfo.trim());
+        localStorage.setItem(`clubsync_ev_showqr_${event.id}`, String(showQrToMembers));
+        localStorage.setItem('clubsync_payment_qr', finalUrl);
+        localStorage.setItem('clubsync_payment_bank', activePayBankInfo.trim());
+      }
+      await supabase.from('club_settings').upsert({
+        id: 1,
+        payment_qr_url: finalUrl,
+        payment_bank_info: activePayBankInfo.trim(),
+      });
+      setAdminQrSetupOpen(false);
+      onRefresh(showQrToMembers ? 'Payment QR & Bank details displayed to members!' : 'Payment QR hidden from members.');
+    } finally {
+      setSavingAdminQr(false);
+    }
   };
 
   const handleExportActivityMultiSheetExcel = async () => {
@@ -4563,6 +4677,8 @@ export default function EventOperationsModal({
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); a.download = filename; a.click();
   };
 
+  const isQrPdf = activePayQrUrl.toLowerCase().split('?')[0].endsWith('.pdf');
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto">
       <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border max-w-4xl w-full overflow-hidden my-8">
@@ -4688,66 +4804,181 @@ export default function EventOperationsModal({
 
           {tab === 'fee' && (requiresFee || isAdmin) && (
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-              <form onSubmit={handlePayFeeSubmit} className="lg:col-span-2 bg-slate-50 border rounded-2xl p-5 space-y-3 self-start">
-                <h3 className="text-sm font-extrabold">Fee Payment (RM {reqFee.toFixed(2)})</h3>
-                {hasEntryPass && passRule === 'auto_after_payment' && <p className="text-[11px] text-emerald-700 font-semibold">Your Entry Pass QR unlocks automatically after payment submission.</p>}
-
-                {(paymentQrUrl || paymentBankInfo) && (
-                  <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 space-y-2 text-center shadow-2xs">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-pink-600 text-white">
-                      Scan Club DuitNow / TNG / Payment QR
-                    </span>
-                    {paymentQrUrl && (
-                      paymentQrUrl.toLowerCase().endsWith('.pdf') ? (
-                        <div className="py-2">
-                          <a
-                            href={paymentQrUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+              <div className="lg:col-span-2 space-y-3 self-start">
+                {isAdmin && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-emerald-950 flex items-center gap-1.5">
+                        <Settings className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Admin: Payment QR &amp; Bank Display</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setAdminQrSetupOpen(!adminQrSetupOpen)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                      >
+                        {adminQrSetupOpen ? 'Close' : 'Upload / Edit QR'}
+                      </button>
+                    </div>
+                    {adminQrSetupOpen && (
+                      <div className="space-y-2 pt-2 border-t border-emerald-200">
+                        <label className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white border cursor-pointer font-bold text-slate-800">
+                          <span className="flex items-center gap-1.5">
+                            {showQrToMembers ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-slate-400" />}
+                            <span>Display Payment QR / Bank Info to Members</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={showQrToMembers}
+                            onChange={(e) => setShowQrToMembers(e.target.checked)}
+                          />
+                        </label>
+                        <div>
+                          <label className="block font-bold text-emerald-900 mb-1">Upload QR File (JPG, PNG, WEBP, PDF)</label>
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={(e) => setAdminQrFile(e.target.files?.[0] || null)}
+                            className="w-full text-[11px] file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+                          />
+                        </div>
+                        <input
+                          type="url"
+                          value={activePayQrUrl}
+                          onChange={(e) => setActivePayQrUrl(e.target.value)}
+                          placeholder="Or paste QR Image / PDF URL (Leave empty for none)"
+                          className="w-full rounded-xl border bg-white px-2.5 py-1.5"
+                        />
+                        <input
+                          type="text"
+                          value={activePayBankInfo}
+                          onChange={(e) => setActivePayBankInfo(e.target.value)}
+                          placeholder="Bank Name, Account No & Holder Name"
+                          className="w-full rounded-xl border bg-white px-2.5 py-1.5 font-mono font-bold"
+                        />
+                        <div className="flex justify-between gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActivePayQrUrl('');
+                              setActivePayBankInfo('');
+                              setAdminQrFile(null);
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 font-bold cursor-pointer"
                           >
-                            <FileText className="w-4 h-4" />
-                            <span>Open Official Payment QR (PDF)</span>
-                          </a>
+                            Clear QR
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingAdminQr}
+                            onClick={handleSaveAdminPaymentQrSettings}
+                            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                          >
+                            {savingAdminQr ? 'Saving...' : 'Save QR Settings'}
+                          </button>
                         </div>
-                      ) : (
-                        <div className="p-2 bg-white rounded-2xl border mx-auto max-w-[200px]">
-                          <img src={paymentQrUrl} alt="Club Payment QR" className="w-full h-auto object-contain rounded-xl" />
-                        </div>
-                      )
-                    )}
-                    {paymentBankInfo && (
-                      <div className="text-[11px] bg-emerald-50/80 border border-emerald-200 rounded-xl p-2 flex items-center justify-between gap-2 text-left">
-                        <span className="font-mono font-bold text-slate-800 break-all">{paymentBankInfo}</span>
-                        <button
-                          type="button"
-                          onClick={() => navigator.clipboard.writeText(paymentBankInfo)}
-                          className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] shrink-0 cursor-pointer"
-                        >
-                          Copy
-                        </button>
                       </div>
                     )}
                   </div>
                 )}
 
-                <input type="number" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
-                <label className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 hover:bg-emerald-50 cursor-pointer text-center transition">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                    {feeFile ? <FileText className="w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
-                  </div>
-                  <div className="text-xs font-bold text-emerald-950 break-all">
-                    {feeFile ? feeFile.name : 'Upload Payment Receipt (JPG, PNG, PDF)'}
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px]">
-                    <UploadCloud className="w-3.5 h-3.5" />
-                    <span>{feeFile ? 'Change File' : 'Upload Receipt'}</span>
-                  </span>
-                  <input type="file" accept="image/*,application/pdf" onChange={(e) => { setFeeFile(e.target.files?.[0] || null); setFeeError(null); }} className="hidden" />
-                </label>
-                {feeError && <div className="flex items-center gap-1.5 text-xs bg-rose-50 text-rose-700 px-3 py-2 rounded-xl font-semibold"><AlertCircle className="w-4 h-4 shrink-0" /><span>{feeError}</span></div>}
-                <button type="submit" disabled={submittingFee} className="w-full py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"><CheckCircle2 className="w-4 h-4 inline mr-1" />{submittingFee ? 'Uploading...' : 'Submit Payment'}</button>
-              </form>
+                <form onSubmit={handlePayFeeSubmit} className="bg-slate-50 border rounded-2xl p-5 space-y-3">
+                  <h3 className="text-sm font-extrabold">Fee Payment (RM {reqFee.toFixed(2)})</h3>
+                  {hasEntryPass && passRule === 'auto_after_payment' && <p className="text-[11px] text-emerald-700 font-semibold">Your Entry Pass QR unlocks automatically after payment submission.</p>}
+
+                  {showQrToMembers && (activePayQrUrl || activePayBankInfo) && (
+                    <div className="p-4 rounded-2xl bg-white border-2 border-emerald-200 space-y-2.5 text-center shadow-xs">
+                      <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-600 text-white">
+                        Scan Directly or Download Payment QR
+                      </span>
+                      {activePayQrUrl && (
+                        isQrPdf ? (
+                          <div className="space-y-2">
+                            <iframe src={activePayQrUrl} title="Payment QR PDF" className="w-full h-48 rounded-xl border" />
+                            <div className="flex justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => downloadFileFromUrl(activePayQrUrl, `${event.event_name}_Payment_QR.pdf`)}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Download QR PDF</span>
+                              </button>
+                              <a
+                                href={activePayQrUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px]"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span>Open Full PDF</span>
+                              </a>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="p-2 bg-white rounded-2xl border mx-auto max-w-[220px] shadow-2xs">
+                              <img src={activePayQrUrl} alt="Club Payment QR" className="w-full h-auto object-contain rounded-xl" />
+                            </div>
+                            <div className="flex justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => downloadFileFromUrl(activePayQrUrl, `${event.event_name}_Payment_QR.png`)}
+                                className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Download QR</span>
+                              </button>
+                              <a
+                                href={activePayQrUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px]"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span>Full Size</span>
+                              </a>
+                            </div>
+                          </div>
+                        )
+                      )}
+                      {activePayBankInfo && (
+                        <div className="text-[11px] bg-emerald-50/80 border border-emerald-200 rounded-xl p-2.5 flex items-center justify-between gap-2 text-left">
+                          <div>
+                            <span className="text-[10px] font-bold text-emerald-800 block uppercase">Bank Transfer Details:</span>
+                            <span className="font-mono font-extrabold text-slate-900 break-all">{activePayBankInfo}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(activePayBankInfo)}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] shrink-0 cursor-pointer"
+                          >
+                            <Copy className="w-3 h-3 inline mr-0.5" />
+                            Copy
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <input type="number" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
+                  <label className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 hover:bg-emerald-50 cursor-pointer text-center transition">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                      {feeFile ? <FileText className="w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
+                    </div>
+                    <div className="text-xs font-bold text-emerald-950 break-all">
+                      {feeFile ? feeFile.name : 'Upload Payment Receipt (JPG, PNG, PDF)'}
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px]">
+                      <UploadCloud className="w-3.5 h-3.5" />
+                      <span>{feeFile ? 'Change File' : 'Upload Receipt'}</span>
+                    </span>
+                    <input type="file" accept="image/*,application/pdf" onChange={(e) => { setFeeFile(e.target.files?.[0] || null); setFeeError(null); }} className="hidden" />
+                  </label>
+                  {feeError && <div className="flex items-center gap-1.5 text-xs bg-rose-50 text-rose-700 px-3 py-2 rounded-xl font-semibold"><AlertCircle className="w-4 h-4 shrink-0" /><span>{feeError}</span></div>}
+                  <button type="submit" disabled={submittingFee} className="w-full py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"><CheckCircle2 className="w-4 h-4 inline mr-1" />{submittingFee ? 'Uploading...' : 'Submit Payment'}</button>
+                </form>
+              </div>
               <div className="lg:col-span-3 space-y-3">
                 <h3 className="text-sm font-extrabold">{isAdmin ? `All Fee Submissions (${visibleFeePayments.length})` : `My Fee Receipt (${visibleFeePayments.length})`}</h3>
                 <div className="border rounded-2xl overflow-hidden">
@@ -6193,6 +6424,8 @@ import {
   EventRsvp,
   ActivityFeePayment,
   DEFAULT_DEPARTMENTS,
+  MAX_FILE_SIZE_BYTES,
+  downloadFileFromUrl,
 } from '@/lib/supabase';
 import {
   UserCheck,
@@ -6203,6 +6436,8 @@ import {
   Car,
   ExternalLink,
   Landmark,
+  Download,
+  Trash2,
 } from 'lucide-react';
 
 interface ProfileSectionProps {
@@ -6236,6 +6471,8 @@ export default function ProfileSection({
   const [bankName, setBankName] = useState(profile.bank_name || '');
   const [bankAccountNo, setBankAccountNo] = useState(profile.bank_account_no || '');
   const [bankAccountHolder, setBankAccountHolder] = useState(profile.bank_account_holder || profile.full_name || '');
+  const [bankQrUrl, setBankQrUrl] = useState(profile.bank_qr_url || '');
+  const [bankQrFile, setBankQrFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -6261,6 +6498,7 @@ export default function ProfileSection({
         setBankAccountHolder(
           profile.bank_account_holder || parsed.bank_account_holder || profile.full_name || ''
         );
+        setBankQrUrl(profile.bank_qr_url || parsed.bank_qr_url || '');
         return;
       } catch {
         /* ignore */
@@ -6269,16 +6507,30 @@ export default function ProfileSection({
     setBankName(profile.bank_name || '');
     setBankAccountNo(profile.bank_account_no || '');
     setBankAccountHolder(profile.bank_account_holder || profile.full_name || '');
+    setBankQrUrl(profile.bank_qr_url || '');
   }, [profile, departments]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
+      let finalQrUrl = bankQrUrl.trim();
+      if (bankQrFile && bankQrFile.size <= MAX_FILE_SIZE_BYTES) {
+        const ext = bankQrFile.name.split('.').pop() || 'png';
+        const path = `member-qr/${profile.id}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from('receipts').upload(path, bankQrFile);
+        if (!upErr) {
+          finalQrUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
+        }
+      }
+      setBankQrUrl(finalQrUrl);
+      setBankQrFile(null);
+
       const bankData = {
         bank_name: bankName.trim(),
         bank_account_no: bankAccountNo.trim(),
         bank_account_holder: bankAccountHolder.trim() || fullName.trim(),
+        bank_qr_url: finalQrUrl,
       };
       if (typeof window !== 'undefined') {
         localStorage.setItem(`clubsync_bank_${profile.id}`, JSON.stringify(bankData));
@@ -6301,7 +6553,7 @@ export default function ProfileSection({
       if (error) {
         await supabase.from('users').update(coreUpdates).eq('id', profile.id);
       }
-      onUpdated(fullUpdates, 'Profile & Bank reimbursement details saved!');
+      onUpdated(fullUpdates, 'Profile, Bank & Reimbursement QR saved!');
     } finally {
       setSaving(false);
     }
@@ -6316,7 +6568,7 @@ export default function ProfileSection({
             <div>
               <h2 className="text-base font-bold">My Member Profile</h2>
               <p className="text-xs text-emerald-200">
-                Auto-fills your name, matric, dorm &amp; bank info across events and claims
+                Auto-fills your name, matric, dorm &amp; bank/QR info across events and claims
               </p>
             </div>
           </div>
@@ -6437,10 +6689,10 @@ export default function ProfileSection({
               <Landmark className="w-4 h-4 text-emerald-700" />
               <div>
                 <h3 className="text-xs font-extrabold text-emerald-950">
-                  Bank Account / DuitNow / TNG eWallet (Auto-Fills Reimbursement Claims)
+                  My Bank / DuitNow / TNG QR (Optional — For Receiving Reimbursements)
                 </h3>
                 <p className="text-[11px] text-slate-600">
-                  Saved here so the Treasurer can reimburse your approved claims in 1 click.
+                  Save your bank details or upload your personal QR (JPG, PNG, PDF) so the Admin can scan directly or download it to reimburse your claims.
                 </p>
               </div>
             </div>
@@ -6481,6 +6733,46 @@ export default function ProfileSection({
                   className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
                 />
               </div>
+            </div>
+
+            <div className="pt-2 border-t border-emerald-200/70 space-y-2 text-xs">
+              <label className="block font-bold text-emerald-900">
+                Upload My Personal DuitNow / TNG QR (Optional — JPG, PNG, PDF)
+              </label>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setBankQrFile(e.target.files?.[0] || null)}
+                className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+              />
+              {bankQrUrl && (
+                <div className="p-3 rounded-xl bg-white border border-emerald-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    {!bankQrUrl.toLowerCase().split('?')[0].endsWith('.pdf') && (
+                      <img src={bankQrUrl} alt="My QR" className="w-14 h-14 object-contain rounded-lg border" />
+                    )}
+                    <span className="font-bold text-emerald-900">Saved Personal Payment QR</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => downloadFileFromUrl(bankQrUrl, `${matricNo}_Payment_QR`)}
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-bold cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5 inline mr-1" />
+                      Download
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBankQrUrl('')}
+                      className="p-1.5 rounded-lg bg-rose-50 text-rose-700 cursor-pointer"
+                      title="Remove QR"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -7063,10 +7355,10 @@ export interface UserProfile {
   bank_name?: string;
   bank_account_no?: string;
   bank_account_holder?: string;
+  bank_qr_url?: string;
   created_at: string;
 }
 
-// Simplified to 2 primary modes: 'scan_attendance' vs 'entry_pass' (with backward compatibility for older values)
 export type TicketQrMode = 'scan_attendance' | 'entry_pass' | 'all_registered' | 'paid_only' | 'manual_only';
 export type PassApprovalRule = 'auto_after_payment' | 'manual_only';
 
@@ -7144,8 +7436,10 @@ export interface Claim {
   merchant_name: string;
   description: string;
   payment_info?: string;
+  claimant_qr_url?: string;
   payout_proof_url?: string;
   payout_proof_name?: string;
+  show_payout_proof?: boolean;
   paid_at?: string;
   receipt_url: string;
   receipt_file_name: string;
@@ -7228,6 +7522,26 @@ export const TRANSPORT_OPTIONS: ('None' | 'One-Way' | 'Return Trip' | 'Round Tri
   'Round Trip',
 ];
 
+export async function downloadFileFromUrl(url: string, fallbackName: string) {
+  if (!url) return;
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const ext = url.split('?')[0].split('.').pop() || 'png';
+    const finalName = fallbackName.includes('.') ? fallbackName : `${fallbackName}.${ext}`;
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = finalName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
+
 export interface ExcelSheetInput {
   name: string;
   headers: string[];
@@ -7287,7 +7601,6 @@ export async function exportMultiSheetExcel(filenameBase: string, sheets: ExcelS
     return;
   }
 
-  // Fallback multi-worksheet Excel XML (.xls)
   const worksheetsXml = sheets
     .map((sheet, idx) => {
       const cleanName = escapeXml((sheet.name || `Sheet${idx + 1}`).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31));
