@@ -4,9 +4,12 @@ import React, { useState, useEffect } from 'react';
 import {
   supabase,
   UserProfile,
+  Budget,
+  EventRsvp,
   Claim,
   ActivityFeePayment,
   MAX_FILE_SIZE_BYTES,
+  exportMultiSheetExcel,
 } from '@/lib/supabase';
 import {
   Wallet,
@@ -21,6 +24,7 @@ import {
   Edit3,
   Trash2,
   RefreshCw,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 export interface LedgerEntryItem {
@@ -41,12 +45,15 @@ export interface LedgerEntryItem {
 interface LedgerSectionProps {
   entries: LedgerEntryItem[];
   events?: { id: string; event_name: string }[];
+  budgets?: Budget[];
+  rsvps?: EventRsvp[];
   claims: Claim[];
   feePayments?: ActivityFeePayment[];
   profile: UserProfile;
   canEdit?: boolean;
   externalOpenModal?: boolean;
   onCloseExternalModal?: () => void;
+  onSelectClaim?: (claim: Claim) => void;
   onRefresh: (msg: string) => void;
 }
 
@@ -72,12 +79,15 @@ const OUT_CATEGORIES = [
 export default function LedgerSection({
   entries,
   events = [],
+  budgets = [],
+  rsvps = [],
   claims,
   feePayments = [],
   profile,
   canEdit = true,
   externalOpenModal = false,
   onCloseExternalModal,
+  onSelectClaim,
   onRefresh,
 }: LedgerSectionProps) {
   const [showModal, setShowModal] = useState(false);
@@ -96,6 +106,7 @@ export default function LedgerSection({
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [trackerEventId, setTrackerEventId] = useState<string>('ALL');
 
   const manualIn = entries
     .filter((e) => e.entry_type === 'IN')
@@ -313,61 +324,127 @@ export default function LedgerSection({
     onRefresh(`Deleted "${entry.title}".`);
   };
 
-  const exportFullLedgerCsv = () => {
-    const headers = [
-      'Date',
-      'Type',
-      'Event',
-      'Title',
-      'Category',
-      'Amount (RM)',
-      'Recorded By',
-      'Proof URL',
-    ];
-    const manualRows = entries.map((e) => [
-      e.entry_date,
-      e.entry_type === 'IN' ? 'MONEY IN' : 'MONEY OUT',
-      e.event_name || 'General',
-      e.title,
-      e.category,
-      Number(e.amount).toFixed(2),
-      e.person_in_charge,
-      e.attachment_url || '-',
-    ]);
-    const feeRows = feePayments
+  const selectedBudget = budgets.find((b) => b.id === trackerEventId);
+  const filteredFeePayments =
+    trackerEventId === 'ALL'
+      ? feePayments
+      : feePayments.filter((f) => f.budget_id === trackerEventId);
+  const filteredClaims =
+    trackerEventId === 'ALL'
+      ? claims
+      : claims.filter((c) => c.budget_id === trackerEventId);
+  const filteredRsvps =
+    trackerEventId === 'ALL'
+      ? rsvps
+      : rsvps.filter((r) => r.budget_id === trackerEventId);
+  const filteredLedger =
+    trackerEventId === 'ALL'
+      ? entries
+      : entries.filter((e) => e.event_name === selectedBudget?.event_name);
+
+  const handleGenerateMultiSheetWorkbook = async () => {
+    const scopeTitle = selectedBudget ? selectedBudget.event_name : 'All_Club_Activities';
+    const feesTotal = filteredFeePayments
       .filter((f) => f.status !== 'Rejected')
-      .map((f) => [
-        f.created_at.split('T')[0],
-        'FEE IN',
-        'Activity Fee',
-        `Fee - ${f.student_name}`,
-        'Registration Fee',
-        Number(f.amount_paid).toFixed(2),
-        f.student_name,
-        f.receipt_url,
-      ]);
-    const claimRows = claims
-      .filter((c) => c.status === 'Approved')
-      .map((c) => [
-        c.expense_date,
-        'CLAIM OUT',
-        c.custom_event_name || 'Event Claim',
-        c.title,
-        c.category,
-        Number(c.amount).toFixed(2),
-        c.claimant_name,
-        c.receipt_url,
-      ]);
-    const allRows = [...manualRows, ...feeRows, ...claimRows].map((r) =>
-      r.map((v) => `"${String(v || '').replace(/"/g, '""')}"`).join(',')
-    );
-    const blob = new Blob([[headers.join(','), ...allRows].join('\n')], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `Club_Finance_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+      .reduce((s, f) => s + Number(f.amount_paid), 0);
+    const approvedClaimsList = filteredClaims.filter((c) => c.status === 'Approved');
+    const reimbursedTotal = approvedClaimsList.reduce((s, c) => s + Number(c.amount), 0);
+
+    await exportMultiSheetExcel(`${scopeTitle}_Finance_Report`, [
+      {
+        name: '1_Summary',
+        headers: ['Metric', 'Value'],
+        rows: [
+          ['Report Scope', selectedBudget ? selectedBudget.event_name : 'All Club Activities (Carry-Forward)'],
+          ['Event Date & Location', selectedBudget ? `${selectedBudget.event_date} @ ${selectedBudget.location}` : 'All Batches'],
+          ['Total Fee Payments Received (RM)', feesTotal.toFixed(2)],
+          ['Total Reimbursements Paid (RM)', reimbursedTotal.toFixed(2)],
+          ['Pending Claims Count', filteredClaims.filter((c) => c.status === 'Pending').length],
+          ['Current Club Savings Balance (RM)', currentSavingsBalance.toFixed(2)],
+          ['Total Attending RSVPs', filteredRsvps.filter((r) => r.attendance === 'Attending').length],
+        ],
+      },
+      {
+        name: '2_Fee_Received',
+        headers: ['Date', 'Activity', 'Student Name', 'Matric No', 'Phone', 'Amount Paid (RM)', 'Status', 'Receipt URL'],
+        rows: filteredFeePayments.map((f) => [
+          f.created_at?.split('T')[0] || '',
+          budgets.find((b) => b.id === f.budget_id)?.event_name || 'Activity',
+          f.student_name,
+          f.matric_no,
+          f.phone_number,
+          Number(f.amount_paid).toFixed(2),
+          f.status,
+          f.receipt_url,
+        ]),
+      },
+      {
+        name: '3_Reimbursements_Paid',
+        headers: ['Expense Date', 'Activity', 'Claimant', 'Matric No', 'Phone', 'Title', 'Amount (RM)', 'Bank / DuitNow Details', 'Reviewed By', 'Claim Receipt URL', 'Proof of Paid URL'],
+        rows: approvedClaimsList.map((c) => [
+          c.expense_date,
+          budgets.find((b) => b.id === c.budget_id)?.event_name || 'General Club Expense',
+          c.claimant_name,
+          c.matric_no,
+          c.phone_number,
+          c.title,
+          Number(c.amount).toFixed(2),
+          c.payment_info || (c.description?.includes('Reimburse To:') ? c.description.split('Reimburse To:')[1]?.trim() : '-'),
+          c.reviewed_by || '-',
+          c.receipt_url,
+          c.payout_proof_url || '-',
+        ]),
+      },
+      {
+        name: '4_All_Claims',
+        headers: ['Expense Date', 'Activity', 'Claimant', 'Matric No', 'Title', 'Category', 'Merchant', 'Amount (RM)', 'Status', 'Bank / DuitNow Info', 'Claim Receipt URL', 'Proof of Paid URL'],
+        rows: filteredClaims.map((c) => [
+          c.expense_date,
+          budgets.find((b) => b.id === c.budget_id)?.event_name || 'General Club Expense',
+          c.claimant_name,
+          c.matric_no,
+          c.title,
+          c.category,
+          c.merchant_name,
+          Number(c.amount).toFixed(2),
+          c.status,
+          c.payment_info || '-',
+          c.receipt_url,
+          c.payout_proof_url || '-',
+        ]),
+      },
+      {
+        name: '5_Ledger_Records',
+        headers: ['Date', 'Type', 'Scope / Event', 'Title', 'Category', 'Amount (RM)', 'Recorded By', 'Notes', 'Proof URL'],
+        rows: filteredLedger.map((e) => [
+          e.entry_date,
+          e.entry_type === 'IN' ? 'MONEY IN' : 'EXPENSE OUT',
+          e.event_name || 'General',
+          e.title,
+          e.category,
+          Number(e.amount).toFixed(2),
+          e.person_in_charge,
+          e.notes || '-',
+          e.attachment_url || '-',
+        ]),
+      },
+      {
+        name: '6_Attendance_Carpool',
+        headers: ['Activity', 'Student Name', 'Matric No', 'Phone', 'RSVP', 'QR Checked-In', 'Transport', 'Dorm', 'Assigned Driver'],
+        rows: filteredRsvps.map((r) => [
+          budgets.find((b) => b.id === r.budget_id)?.event_name || 'Activity',
+          r.student_name,
+          r.matric_no,
+          r.phone_number,
+          r.attendance,
+          r.qr_checked_in ? 'Yes' : 'No',
+          r.is_driver ? `Driver (${r.car_details})` : r.transport_type,
+          r.dormitory || '-',
+          r.assigned_driver_name || '-',
+        ]),
+      },
+    ]);
+    onRefresh(`Generated Multi-Sheet Excel Report for ${selectedBudget ? selectedBudget.event_name : 'All Activities'}!`);
   };
 
   const activeCategoryList = entryType === 'IN' ? IN_CATEGORIES : OUT_CATEGORIES;
@@ -457,6 +534,179 @@ export default function LedgerSection({
         </div>
       </div>
 
+      {/* Activity Reimbursement & Fee Payment Tracker + Multi-Sheet Excel Export */}
+      <div className="bg-white rounded-3xl border border-emerald-200 shadow-xs overflow-hidden">
+        <div className="p-5 border-b border-emerald-100 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-extrabold text-emerald-950">
+              Activity Reimbursement &amp; Fee Payment Tracker (Multi-Sheet Excel)
+            </h2>
+            <p className="text-xs text-slate-500">
+              Select a specific activity (or All Activities) to track every fee received, reimbursement paid, and export a 6-sheet Excel workbook.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <select
+              value={trackerEventId}
+              onChange={(e) => setTrackerEventId(e.target.value)}
+              className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-bold text-slate-900"
+            >
+              <option value="ALL">All Club Activities ({budgets.length})</option>
+              {budgets.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.event_name} ({b.event_date})
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleGenerateMultiSheetWorkbook}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs cursor-pointer"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Generate Multi-Sheet Excel (.xlsx)</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-5 text-xs">
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <h3 className="font-extrabold text-emerald-950">
+                Fee Payments Received ({filteredFeePayments.length})
+              </h3>
+              <span className="font-extrabold text-emerald-700">
+                Total: RM{' '}
+                {filteredFeePayments
+                  .filter((f) => f.status !== 'Rejected')
+                  .reduce((s, f) => s + Number(f.amount_paid), 0)
+                  .toFixed(2)}
+              </span>
+            </div>
+            <div className="border rounded-2xl overflow-hidden max-h-[240px] overflow-y-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b">
+                    <th className="py-2 px-3">Student</th>
+                    <th className="py-2 px-3">Amount</th>
+                    <th className="py-2 px-3">Status</th>
+                    <th className="py-2 px-3 text-right">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredFeePayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-slate-400">
+                        No fee payments recorded for this selection.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredFeePayments.map((f) => (
+                      <tr key={f.id}>
+                        <td className="py-2 px-3">
+                          <div className="font-bold">{f.student_name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{f.matric_no}</div>
+                        </td>
+                        <td className="py-2 px-3 font-extrabold text-emerald-700">
+                          RM {Number(f.amount_paid).toFixed(2)}
+                        </td>
+                        <td className="py-2 px-3">{f.status}</td>
+                        <td className="py-2 px-3 text-right">
+                          <a
+                            href={f.receipt_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-emerald-700 font-bold"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5 inline" />
+                          </a>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <h3 className="font-extrabold text-emerald-950">
+                Reimbursement Claims &amp; Proof of Paid ({filteredClaims.length})
+              </h3>
+              <span className="font-extrabold text-rose-600">
+                Approved: RM{' '}
+                {filteredClaims
+                  .filter((c) => c.status === 'Approved')
+                  .reduce((s, c) => s + Number(c.amount), 0)
+                  .toFixed(2)}
+              </span>
+            </div>
+            <div className="border rounded-2xl overflow-hidden max-h-[240px] overflow-y-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b">
+                    <th className="py-2 px-3">Claim &amp; Claimant</th>
+                    <th className="py-2 px-3">Amount</th>
+                    <th className="py-2 px-3">Proof of Paid</th>
+                    <th className="py-2 px-3 text-right">Manage</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {filteredClaims.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-slate-400">
+                        No reimbursement claims for this selection.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredClaims.map((c) => (
+                      <tr key={c.id}>
+                        <td className="py-2 px-3">
+                          <div className="font-bold">{c.title}</div>
+                          <div className="text-[10px] text-slate-500">
+                            {c.claimant_name} ({c.status})
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 font-extrabold">
+                          RM {Number(c.amount).toFixed(2)}
+                        </td>
+                        <td className="py-2 px-3">
+                          {c.payout_proof_url ? (
+                            <a
+                              href={c.payout_proof_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]"
+                            >
+                              <span>✓ Paid Proof</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">Not uploaded</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          {onSelectClaim && (
+                            <button
+                              type="button"
+                              onClick={() => onSelectClaim(c)}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer"
+                            >
+                              {c.payout_proof_url ? 'View / Edit' : 'Upload Proof'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-white rounded-3xl border border-emerald-200 shadow-xs overflow-hidden">
         <div className="p-5 border-b border-emerald-100 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -492,11 +742,11 @@ export default function LedgerSection({
             )}
             <button
               type="button"
-              onClick={exportFullLedgerCsv}
+              onClick={handleGenerateMultiSheetWorkbook}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-900 border border-emerald-200 cursor-pointer"
             >
               <Download className="w-4 h-4" />
-              <span>Export CSV</span>
+              <span>Export Excel</span>
             </button>
           </div>
         </div>

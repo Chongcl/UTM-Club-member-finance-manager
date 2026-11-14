@@ -22,6 +22,7 @@ import {
   TRANSPORT_OPTIONS,
   MAX_FILE_SIZE_BYTES,
   isEntryPassMode,
+  exportMultiSheetExcel,
 } from '@/lib/supabase';
 import Navbar, { NavTab } from '@/components/Navbar';
 import CinematicHub from '@/components/CinematicHub';
@@ -56,6 +57,8 @@ import {
   Palette,
   AlertTriangle,
   FileText,
+  FileSpreadsheet,
+  ExternalLink,
 } from 'lucide-react';
 
 interface ConfirmDialogState {
@@ -146,6 +149,10 @@ export default function Page() {
   const [bgStyle, setBgStyle] = useState('emerald-aurora');
   const [bgImageUrl, setBgImageUrl] = useState('');
 
+  const [paymentQrUrl, setPaymentQrUrl] = useState('');
+  const [paymentBankInfo, setPaymentBankInfo] = useState('');
+  const [paymentQrFile, setPaymentQrFile] = useState<File | null>(null);
+
   const [clubNameInput, setClubNameInput] = useState('ClubSync');
   const [newBatchInput, setNewBatchInput] = useState('2026/2027');
   const [newAdminPinInput, setNewAdminPinInput] = useState('EXEC-2026');
@@ -204,12 +211,16 @@ export default function Page() {
       const savedStyle = localStorage.getItem('clubsync_bg_style');
       const savedImg = localStorage.getItem('clubsync_bg_image');
       const savedLogo = localStorage.getItem('clubsync_logo_url');
+      const savedPayQr = localStorage.getItem('clubsync_payment_qr');
+      const savedPayBank = localStorage.getItem('clubsync_payment_bank');
       if (savedStyle) setBgStyle(savedStyle);
       if (savedImg) setBgImageUrl(savedImg);
       if (savedLogo) {
         setLogoUrl(savedLogo);
         setLogoUrlInput(savedLogo);
       }
+      if (savedPayQr) setPaymentQrUrl(savedPayQr);
+      if (savedPayBank) setPaymentBankInfo(savedPayBank);
     }
   }, []);
 
@@ -252,6 +263,9 @@ export default function Page() {
       dormitory: String(raw.dormitory || ''),
       member_status: String(raw.member_status || 'Active'),
       batch_year: String(raw.batch_year || '2026/2027'),
+      bank_name: String(raw.bank_name || ''),
+      bank_account_no: String(raw.bank_account_no || ''),
+      bank_account_holder: String(raw.bank_account_holder || ''),
       created_at: String(raw.created_at || ''),
     };
   };
@@ -338,6 +352,15 @@ export default function Page() {
       setOwnerPinSetting(oPin);
       setNewOwnerPinInput(oPin);
       setOwnerUserId(sRes.data.owner_user_id ? String(sRes.data.owner_user_id) : null);
+
+      if (sRes.data.payment_qr_url) {
+        setPaymentQrUrl(String(sRes.data.payment_qr_url));
+        if (typeof window !== 'undefined') localStorage.setItem('clubsync_payment_qr', String(sRes.data.payment_qr_url));
+      }
+      if (sRes.data.payment_bank_info) {
+        setPaymentBankInfo(String(sRes.data.payment_bank_info));
+        if (typeof window !== 'undefined') localStorage.setItem('clubsync_payment_bank', String(sRes.data.payment_bank_info));
+      }
 
       const localStyle = typeof window !== 'undefined' ? localStorage.getItem('clubsync_bg_style') : null;
       const localImg = typeof window !== 'undefined' ? localStorage.getItem('clubsync_bg_image') : null;
@@ -444,6 +467,97 @@ export default function Page() {
       await supabase.from('event_rsvps').update(corePayload).eq('id', existing.id);
     }
     fetchAllData();
+  };
+
+  const handleExportSingleEventExcel = async (ev: Budget) => {
+    const evPayments = feePayments.filter((f) => f.budget_id === ev.id);
+    const evClaims = claims.filter((c) => c.budget_id === ev.id);
+    const evRsvps = rsvps.filter((r) => r.budget_id === ev.id);
+    const evAttending = evRsvps.filter((r) => r.attendance === 'Attending');
+    const evApprovedClaims = evClaims.filter((c) => c.status === 'Approved');
+    const feesTotal = evPayments
+      .filter((f) => f.status !== 'Rejected')
+      .reduce((s, f) => s + Number(f.amount_paid), 0);
+    const reimbursedTotal = evApprovedClaims.reduce((s, c) => s + Number(c.amount), 0);
+
+    await exportMultiSheetExcel(`${ev.event_name}_Excel_Report`, [
+      {
+        name: '1_Event_Summary',
+        headers: ['Metric', 'Value'],
+        rows: [
+          ['Activity Name', ev.event_name],
+          ['Department', ev.category],
+          ['Date & Time', `${ev.event_date} (${ev.event_time})`],
+          ['Location', ev.location],
+          ['Total Fee Payments Received (RM)', feesTotal.toFixed(2)],
+          ['Total Reimbursements Paid (RM)', reimbursedTotal.toFixed(2)],
+          ['Net Event Balance (RM)', (feesTotal - reimbursedTotal).toFixed(2)],
+          ['Total Attending Members', evAttending.length],
+          ['Total QR Checked-In', evRsvps.filter((r) => r.qr_checked_in).length],
+        ],
+      },
+      {
+        name: '2_Fee_Received',
+        headers: ['Date', 'Student Name', 'Matric No', 'Phone', 'Amount Paid (RM)', 'Status', 'Receipt URL'],
+        rows: evPayments.map((p) => [
+          p.created_at?.split('T')[0] || '',
+          p.student_name,
+          p.matric_no,
+          p.phone_number,
+          Number(p.amount_paid).toFixed(2),
+          p.status,
+          p.receipt_url,
+        ]),
+      },
+      {
+        name: '3_Reimbursements_Paid',
+        headers: ['Date', 'Claimant', 'Matric No', 'Phone', 'Title', 'Amount (RM)', 'Bank / DuitNow Info', 'Reviewed By', 'Receipt URL', 'Proof of Paid URL'],
+        rows: evApprovedClaims.map((c) => [
+          c.expense_date,
+          c.claimant_name,
+          c.matric_no,
+          c.phone_number,
+          c.title,
+          Number(c.amount).toFixed(2),
+          c.payment_info || (c.description?.includes('Reimburse To:') ? c.description.split('Reimburse To:')[1]?.trim() : '-'),
+          c.reviewed_by || '-',
+          c.receipt_url,
+          c.payout_proof_url || '-',
+        ]),
+      },
+      {
+        name: '4_All_Claims',
+        headers: ['Date', 'Claimant', 'Matric No', 'Title', 'Category', 'Merchant', 'Amount (RM)', 'Status', 'Bank / DuitNow Info', 'Receipt URL', 'Proof of Paid URL'],
+        rows: evClaims.map((c) => [
+          c.expense_date,
+          c.claimant_name,
+          c.matric_no,
+          c.title,
+          c.category,
+          c.merchant_name,
+          Number(c.amount).toFixed(2),
+          c.status,
+          c.payment_info || '-',
+          c.receipt_url,
+          c.payout_proof_url || '-',
+        ]),
+      },
+      {
+        name: '5_Attendance_Carpool',
+        headers: ['Name', 'Matric No', 'Phone', 'RSVP', 'QR Checked-In', 'Transport', 'Dorm', 'Assigned Driver'],
+        rows: evRsvps.map((r) => [
+          r.student_name,
+          r.matric_no,
+          r.phone_number,
+          r.attendance,
+          r.qr_checked_in ? 'Yes' : 'No',
+          r.is_driver ? `Driver (${r.car_details})` : r.transport_type,
+          r.dormitory || '-',
+          r.assigned_driver_name || '-',
+        ]),
+      },
+    ]);
+    showToast(`Exported Multi-Sheet Excel for "${ev.event_name}"`);
   };
 
   const handleUnlockAdmin = async (pin: string): Promise<boolean> => {
@@ -940,7 +1054,7 @@ export default function Page() {
                   </div>
                 </div>
 
-                {/* Cohesive Emerald + Neutral Slate Glass Activity Cards (No Purple Clutter) */}
+                {/* Cohesive Emerald + Neutral Slate Glass Activity Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   {visibleBudgets.map((ev) => {
                     const myRsvp = rsvps.find((r) => r.budget_id === ev.id && r.user_id === profile.id);
@@ -974,32 +1088,45 @@ export default function Page() {
                             <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 border border-emerald-500/20">
                               {ev.category}
                             </span>
-                            {effectivePermissions.can_manage_activities && (
+                            {isAdminOrOwner && (
                               <div className="flex gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    setEditingActivity(ev);
-                                    setIsBudgetModalOpen(true);
-                                  }}
-                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer ${
-                                    isDarkCanvas ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
-                                  }`}
+                                  onClick={() => handleExportSingleEventExcel(ev)}
+                                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                                  title="Download Multi-Sheet Excel Report for this Activity"
                                 >
-                                  <Edit3 className="w-3 h-3" />
-                                  <span>Edit</span>
+                                  <FileSpreadsheet className="w-3 h-3" />
+                                  <span>Excel</span>
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    await supabase.from('budgets').delete().eq('id', ev.id);
-                                    fetchAllData();
-                                    showToast('Activity deleted');
-                                  }}
-                                  className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                {effectivePermissions.can_manage_activities && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingActivity(ev);
+                                        setIsBudgetModalOpen(true);
+                                      }}
+                                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer ${
+                                        isDarkCanvas ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                                      }`}
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                      <span>Edit</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        await supabase.from('budgets').delete().eq('id', ev.id);
+                                        fetchAllData();
+                                        showToast('Activity deleted');
+                                      }}
+                                      className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1194,47 +1321,70 @@ export default function Page() {
                   <thead>
                     <tr className="bg-slate-50 border-b">
                       <th className="py-3 px-4">Item</th>
-                      <th className="py-3 px-4">Claimant</th>
+                      <th className="py-3 px-4">Claimant &amp; Bank</th>
                       <th className="py-3 px-4">Amount</th>
-                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4">Status &amp; Proof</th>
                       <th className="py-3 px-4 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {visibleClaims.map((c) => (
-                      <tr key={c.id}>
-                        <td className="py-3 px-4 font-bold">
-                          {c.title} <span className="text-emerald-700 block font-normal">{c.category}</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          {c.claimant_name} ({c.matric_no})
-                        </td>
-                        <td className="py-3 px-4 font-extrabold">RM {Number(c.amount).toFixed(2)}</td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full font-bold ${
-                              c.status === 'Approved'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : c.status === 'Rejected'
-                                ? 'bg-rose-100 text-rose-700'
-                                : 'bg-amber-100 text-amber-900'
-                            }`}
-                          >
-                            {c.status}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedClaim(c)}
-                            className="px-3 py-1 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5 inline mr-1" />
-                            {effectivePermissions.can_manage_claims_fees ? 'Review' : 'View'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {visibleClaims.map((c) => {
+                      const bankStr =
+                        c.payment_info ||
+                        (c.description?.includes('Reimburse To:')
+                          ? c.description.split('Reimburse To:')[1]?.trim()
+                          : '');
+                      return (
+                        <tr key={c.id}>
+                          <td className="py-3 px-4 font-bold">
+                            {c.title} <span className="text-emerald-700 block font-normal">{c.category}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="font-semibold">
+                              {c.claimant_name} ({c.matric_no})
+                            </div>
+                            {bankStr && <div className="text-[11px] font-mono text-slate-500">{bankStr}</div>}
+                          </td>
+                          <td className="py-3 px-4 font-extrabold">RM {Number(c.amount).toFixed(2)}</td>
+                          <td className="py-3 px-4 space-y-1">
+                            <span
+                              className={`inline-block px-2.5 py-0.5 rounded-full font-bold ${
+                                c.status === 'Approved'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : c.status === 'Rejected'
+                                  ? 'bg-rose-100 text-rose-700'
+                                  : 'bg-amber-100 text-amber-900'
+                              }`}
+                            >
+                              {c.status}
+                            </span>
+                            {c.payout_proof_url && (
+                              <div>
+                                <a
+                                  href={c.payout_proof_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:underline"
+                                >
+                                  <span>✓ Proof of Paid</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedClaim(c)}
+                              className="px-3 py-1 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5 inline mr-1" />
+                              {effectivePermissions.can_manage_claims_fees ? 'Review / Proof' : 'View'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1263,12 +1413,15 @@ export default function Page() {
               <LedgerSection
                 entries={ledgerEntries}
                 events={budgets.map((b) => ({ id: b.id, event_name: b.event_name }))}
+                budgets={budgets}
+                rsvps={rsvps}
                 claims={claims}
                 feePayments={feePayments}
                 profile={profile}
                 canEdit={effectivePermissions.can_manage_finance}
                 externalOpenModal={quickAdjustFinanceOpen}
                 onCloseExternalModal={() => setQuickAdjustFinanceOpen(false)}
+                onSelectClaim={(c) => setSelectedClaim(c)}
                 onRefresh={(m) => {
                   fetchAllData();
                   showToast(m);
@@ -1283,22 +1436,49 @@ export default function Page() {
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-extrabold flex items-center gap-2">
                     <Crown className="w-4 h-4 text-amber-500" />
-                    <span>Club Name, Departments &amp; Passcodes</span>
+                    <span>Club Settings, DuitNow / Payment QR &amp; Passcodes</span>
                   </h3>
                   <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-900 border">
                     {isOwner ? 'Owner' : 'Admin'}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <label className="block font-bold mb-1">Departments / Units (1 per line)</label>
-                    <textarea
-                      rows={5}
-                      value={departmentsText}
-                      disabled={!effectivePermissions.can_manage_members}
-                      onChange={(e) => setDepartmentsText(e.target.value)}
-                      className="w-full rounded-xl border p-2.5 font-semibold"
-                    />
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block font-bold mb-1">Departments / Units (1 per line)</label>
+                      <textarea
+                        rows={4}
+                        value={departmentsText}
+                        disabled={!effectivePermissions.can_manage_members}
+                        onChange={(e) => setDepartmentsText(e.target.value)}
+                        className="w-full rounded-xl border p-2.5 font-semibold"
+                      />
+                    </div>
+                    <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2">
+                      <label className="block font-extrabold text-emerald-950">
+                        Club DuitNow / TNG / Payment QR (Shown in Activity Fee Payment)
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        onChange={(e) => setPaymentQrFile(e.target.files?.[0] || null)}
+                        className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+                      />
+                      <input
+                        type="url"
+                        value={paymentQrUrl}
+                        onChange={(e) => setPaymentQrUrl(e.target.value)}
+                        placeholder="Or paste Payment QR Image / PDF URL..."
+                        className="w-full rounded-xl border bg-white px-3 py-1.5"
+                      />
+                      <input
+                        type="text"
+                        value={paymentBankInfo}
+                        onChange={(e) => setPaymentBankInfo(e.target.value)}
+                        placeholder="Club Bank Name, Account No & Holder (e.g., Maybank 551234567890 UTM Chess Club)"
+                        className="w-full rounded-xl border bg-white px-3 py-1.5 font-mono font-bold"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2.5">
                     <div className="grid grid-cols-2 gap-2">
@@ -1345,31 +1525,51 @@ export default function Page() {
                         </div>
                       </div>
                     )}
-                    {(isOwner || effectivePermissions.can_manage_members) && (
+                    {(isOwner || effectivePermissions.can_manage_members || effectivePermissions.can_manage_claims_fees) && (
                       <button
                         type="button"
                         onClick={async () => {
+                          let finalPayQr = paymentQrUrl.trim();
+                          if (paymentQrFile && paymentQrFile.size <= MAX_FILE_SIZE_BYTES) {
+                            const ext = paymentQrFile.name.split('.').pop() || 'png';
+                            const path = `payment-qr/club-qr-${Date.now()}.${ext}`;
+                            const { error } = await supabase.storage.from('receipts').upload(path, paymentQrFile);
+                            if (!error) finalPayQr = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
+                          }
+                          setPaymentQrUrl(finalPayQr);
+                          setPaymentQrFile(null);
+                          if (typeof window !== 'undefined') {
+                            localStorage.setItem('clubsync_payment_qr', finalPayQr);
+                            localStorage.setItem('clubsync_payment_bank', paymentBankInfo.trim());
+                          }
+
                           const depts = departmentsText
                             .split('\n')
                             .map((s) => s.trim())
                             .filter(Boolean);
-                          const payload: Record<string, unknown> = {
+                          const corePayload: Record<string, unknown> = {
                             id: 1,
                             departments: depts.length ? depts : DEFAULT_DEPARTMENTS,
                           };
                           if (isOwner) {
-                            payload.club_name = clubNameInput.trim() || 'ClubSync';
-                            payload.current_batch = newBatchInput.trim();
-                            payload.admin_pin = newAdminPinInput.trim();
-                            payload.owner_pin = newOwnerPinInput.trim();
+                            corePayload.club_name = clubNameInput.trim() || 'ClubSync';
+                            corePayload.current_batch = newBatchInput.trim();
+                            corePayload.admin_pin = newAdminPinInput.trim();
+                            corePayload.owner_pin = newOwnerPinInput.trim();
                           }
-                          await supabase.from('club_settings').upsert(payload);
+                          const fullPayload = {
+                            ...corePayload,
+                            payment_qr_url: finalPayQr,
+                            payment_bank_info: paymentBankInfo.trim(),
+                          };
+                          const { error } = await supabase.from('club_settings').upsert(fullPayload);
+                          if (error) await supabase.from('club_settings').upsert(corePayload);
                           fetchAllData();
-                          showToast('Settings saved');
+                          showToast('Settings & Club Payment QR saved');
                         }}
-                        className="w-full py-2.5 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"
+                        className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
                       >
-                        Save Settings
+                        Save Settings &amp; Payment QR
                       </button>
                     )}
                   </div>
@@ -1851,6 +2051,9 @@ export default function Page() {
         permissions={effectivePermissions}
         rsvps={rsvps}
         feePayments={feePayments}
+        claims={claims}
+        paymentQrUrl={paymentQrUrl}
+        paymentBankInfo={paymentBankInfo}
         onClose={() => setOpsModalEvent(null)}
         onOpenScanner={() => setIsQrScannerOpen(true)}
         onRefresh={(m) => {

@@ -1,19 +1,20 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES } from '@/lib/supabase';
-import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle, Loader2, Car, UserCheck } from 'lucide-react';
+import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, Claim, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES, exportMultiSheetExcel } from '@/lib/supabase';
+import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle, Loader2, Car, UserCheck, FileSpreadsheet } from 'lucide-react';
 
 interface EventOperationsModalProps {
   event: Budget | null; initialTab: 'fee' | 'transport' | 'qr' | 'pass'; profile: UserProfile;
   isAdmin: boolean; permissions: AdminPermissions; rsvps: EventRsvp[]; feePayments: ActivityFeePayment[];
+  claims?: Claim[]; paymentQrUrl?: string; paymentBankInfo?: string;
   onClose: () => void; onOpenScanner?: () => void; onRefresh: (msg: string) => void;
 }
 
 type TransportSurveyChoice = 'OWN' | 'One-Way' | 'Return Trip' | 'Round Trip' | 'DRIVER';
 
 export default function EventOperationsModal({
-  event, initialTab, profile, isAdmin, permissions, rsvps, feePayments, onClose, onOpenScanner, onRefresh,
+  event, initialTab, profile, isAdmin, permissions, rsvps, feePayments, claims = [], paymentQrUrl = '', paymentBankInfo = '', onClose, onOpenScanner, onRefresh,
 }: EventOperationsModalProps) {
   const [tab, setTab] = useState<'fee' | 'transport' | 'qr' | 'pass'>(initialTab);
   const [amountPaid, setAmountPaid] = useState('0');
@@ -82,6 +83,7 @@ export default function EventOperationsModal({
   const passengers = attendingRsvps.filter((r) => r.transport_type !== 'None' && !r.is_driver);
   const eventDrivers = attendingRsvps.filter((r) => r.is_driver);
   const eventPayments = feePayments.filter((f) => f.budget_id === event.id);
+  const eventClaims = claims.filter((c) => c.budget_id === event.id);
   const visibleFeePayments = isAdmin ? eventPayments : eventPayments.filter((p) => p.user_id === profile.id);
   const allowancePerTrip = Number(event.driver_allowance_per_trip || 0);
   const reqFee = Number(event.registration_fee || 0);
@@ -110,6 +112,110 @@ export default function EventOperationsModal({
     setLocalPassOverrides((prev) => ({ ...prev, [rsvp.id]: nextVal }));
     await supabase.from('event_rsvps').update({ pass_approved: nextVal }).eq('id', rsvp.id);
     onRefresh(`${nextVal ? 'Granted' : 'Locked'} pass for ${rsvp.student_name}.`);
+  };
+
+  const handleExportActivityMultiSheetExcel = async () => {
+    const totalFeeReceived = eventPayments
+      .filter((f) => f.status !== 'Rejected')
+      .reduce((s, f) => s + Number(f.amount_paid), 0);
+    const approvedClaims = eventClaims.filter((c) => c.status === 'Approved');
+    const totalReimbursed = approvedClaims.reduce((s, c) => s + Number(c.amount), 0);
+
+    await exportMultiSheetExcel(`${event.event_name}_Full_Report`, [
+      {
+        name: '1_Event_Summary',
+        headers: ['Metric', 'Value'],
+        rows: [
+          ['Activity Name', event.event_name],
+          ['Department / Category', event.category],
+          ['Date & Time', `${event.event_date} (${event.event_time})`],
+          ['Venue', event.location],
+          ['Registration Fee (RM)', reqFee.toFixed(2)],
+          ['Total Fee Payments Received (RM)', totalFeeReceived.toFixed(2)],
+          ['Total Approved Reimbursements (RM)', totalReimbursed.toFixed(2)],
+          ['Net Event Balance (Fees - Claims) (RM)', (totalFeeReceived - totalReimbursed).toFixed(2)],
+          ['Total Attending Members', attendingRsvps.length],
+          ['Total QR Checked-In', qrCheckedInList.length],
+          ['Total Carpool Passengers / Drivers', `${passengers.length} Passengers / ${eventDrivers.length} Drivers`],
+        ],
+      },
+      {
+        name: '2_Fee_Received',
+        headers: ['Date', 'Student Name', 'Matric No', 'Phone', 'Amount Paid (RM)', 'Status', 'Receipt URL'],
+        rows: eventPayments.map((p) => [
+          p.created_at?.split('T')[0] || '',
+          p.student_name,
+          p.matric_no,
+          p.phone_number,
+          Number(p.amount_paid).toFixed(2),
+          p.status,
+          p.receipt_url,
+        ]),
+      },
+      {
+        name: '3_Reimbursements_Paid',
+        headers: ['Expense Date', 'Claimant', 'Matric No', 'Phone', 'Title', 'Amount (RM)', 'Bank / DuitNow Details', 'Reviewed By', 'Receipt URL', 'Proof of Paid URL'],
+        rows: approvedClaims.map((c) => [
+          c.expense_date,
+          c.claimant_name,
+          c.matric_no,
+          c.phone_number,
+          c.title,
+          Number(c.amount).toFixed(2),
+          c.payment_info || (c.description?.includes('Reimburse To:') ? c.description.split('Reimburse To:')[1]?.trim() : '-'),
+          c.reviewed_by || '-',
+          c.receipt_url,
+          c.payout_proof_url || '-',
+        ]),
+      },
+      {
+        name: '4_All_Claims',
+        headers: ['Date', 'Claimant', 'Matric No', 'Title', 'Category', 'Merchant', 'Amount (RM)', 'Status', 'Bank / DuitNow Info', 'Receipt URL', 'Proof of Paid URL'],
+        rows: eventClaims.map((c) => [
+          c.expense_date,
+          c.claimant_name,
+          c.matric_no,
+          c.title,
+          c.category,
+          c.merchant_name,
+          Number(c.amount).toFixed(2),
+          c.status,
+          c.payment_info || '-',
+          c.receipt_url,
+          c.payout_proof_url || '-',
+        ]),
+      },
+      {
+        name: '5_Attendance_Passes',
+        headers: ['Student Name', 'Matric No', 'Phone', 'Department', 'RSVP', 'Pass Status', 'QR Checked-In', 'Check-In Time'],
+        rows: eventRsvps.map((r) => [
+          r.student_name,
+          r.matric_no,
+          r.phone_number,
+          r.member_type,
+          r.attendance,
+          isMemberEligibleForPass(r) ? 'Unlocked' : 'Locked',
+          r.qr_checked_in ? 'Yes' : 'No',
+          r.qr_checked_in_at || '-',
+        ]),
+      },
+      {
+        name: '6_Carpool_Drivers',
+        headers: ['Role', 'Name', 'Matric No', 'Phone', 'Pickup Dorm', 'Trip Type', 'Car Details', 'Seats', 'Assigned Driver'],
+        rows: attendingRsvps.map((r) => [
+          r.is_driver ? 'DRIVER' : r.transport_type !== 'None' ? 'PASSENGER' : 'OWN TRANSPORT',
+          r.student_name,
+          r.matric_no,
+          r.phone_number,
+          r.dormitory || '-',
+          r.transport_type,
+          r.car_details || '-',
+          r.is_driver ? r.seats_available : '-',
+          r.assigned_driver_name || '-',
+        ]),
+      },
+    ]);
+    onRefresh(`Exported Multi-Sheet Excel for "${event.event_name}"!`);
   };
 
   const handlePayFeeSubmit = async (e: React.FormEvent) => {
@@ -202,7 +308,18 @@ export default function EventOperationsModal({
             {hasEntryPass ? <Ticket className="w-5 h-5 text-emerald-400" /> : <QrCode className="w-5 h-5 text-emerald-400" />}
             <div><h2 className="text-base font-bold">{event.event_name}</h2><p className="text-xs text-slate-400">{event.event_date} • {event.location}</p></div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={handleExportActivityMultiSheetExcel}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                title="Download 6-Sheet Excel Report for this Activity"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Excel Report</span>
+              </button>
+            )}
             <div className="flex flex-wrap bg-slate-800 p-1 rounded-xl text-xs">
               {hasEntryPass && (
                 <button type="button" onClick={() => setTab('pass')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'pass' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Entry Pass</button>
@@ -311,6 +428,46 @@ export default function EventOperationsModal({
               <form onSubmit={handlePayFeeSubmit} className="lg:col-span-2 bg-slate-50 border rounded-2xl p-5 space-y-3 self-start">
                 <h3 className="text-sm font-extrabold">Fee Payment (RM {reqFee.toFixed(2)})</h3>
                 {hasEntryPass && passRule === 'auto_after_payment' && <p className="text-[11px] text-emerald-700 font-semibold">Your Entry Pass QR unlocks automatically after payment submission.</p>}
+
+                {(paymentQrUrl || paymentBankInfo) && (
+                  <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 space-y-2 text-center shadow-2xs">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-pink-600 text-white">
+                      Scan Club DuitNow / TNG / Payment QR
+                    </span>
+                    {paymentQrUrl && (
+                      paymentQrUrl.toLowerCase().endsWith('.pdf') ? (
+                        <div className="py-2">
+                          <a
+                            href={paymentQrUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+                          >
+                            <FileText className="w-4 h-4" />
+                            <span>Open Official Payment QR (PDF)</span>
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="p-2 bg-white rounded-2xl border mx-auto max-w-[200px]">
+                          <img src={paymentQrUrl} alt="Club Payment QR" className="w-full h-auto object-contain rounded-xl" />
+                        </div>
+                      )
+                    )}
+                    {paymentBankInfo && (
+                      <div className="text-[11px] bg-emerald-50/80 border border-emerald-200 rounded-xl p-2 flex items-center justify-between gap-2 text-left">
+                        <span className="font-mono font-bold text-slate-800 break-all">{paymentBankInfo}</span>
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(paymentBankInfo)}
+                          className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] shrink-0 cursor-pointer"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <input type="number" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
                 <label className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 hover:bg-emerald-50 cursor-pointer text-center transition">
                   <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">

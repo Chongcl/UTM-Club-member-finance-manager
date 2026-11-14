@@ -1,17 +1,38 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-export const isSupabaseConfigured =
-  Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
-  Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) &&
-  !process.env.NEXT_PUBLIC_SUPABASE_URL?.includes('your-project-id');
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+    supabaseAnonKey &&
+    supabaseUrl !== 'your-project-url.supabase.co' &&
+    supabaseUrl.startsWith('http')
+);
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-export type UserRole = 'member' | 'treasurer' | 'owner';
-export type TicketQrMode = 'scan_attendance' | 'entry_pass' | 'all_registered' | 'paid_only' | 'manual_only';
-export type PassApprovalRule = 'auto_after_payment' | 'manual_only';
+export const supabase = createClient(
+  isSupabaseConfigured ? supabaseUrl : 'https://placeholder.supabase.co',
+  isSupabaseConfigured ? supabaseAnonKey : 'placeholder-anon-key'
+);
+
+export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+export const MAX_FILE_SIZE_LABEL = '50 MB';
+
+export const DEFAULT_DEPARTMENTS: string[] = [
+  'Executive Committee (EXCO)',
+  'President / Vice President',
+  'Secretary',
+  'Treasurer / Finance',
+  'Logistics & Equipment Unit',
+  'Multimedia & Publicity Unit',
+  'Program & Event Unit',
+  'Sponsorship & External Relations',
+  'Welfare & Safety Unit',
+  'Committee Member (AJK)',
+  'Ordinary Member',
+];
+
+export type ExpenseCategory = string;
 
 export interface AdminPermissions {
   can_manage_activities: boolean;
@@ -24,88 +45,322 @@ export interface AdminPermissions {
 }
 
 export const DEFAULT_ADMIN_PERMISSIONS: AdminPermissions = {
-  can_manage_activities: false, can_manage_posters_polls: false, can_manage_equipment: false,
-  can_manage_claims_fees: false, can_manage_transport: false, can_manage_finance: false, can_manage_members: false,
+  can_manage_activities: true,
+  can_manage_posters_polls: true,
+  can_manage_equipment: true,
+  can_manage_claims_fees: false,
+  can_manage_transport: true,
+  can_manage_finance: false,
+  can_manage_members: false,
 };
 
 export const FULL_OWNER_PERMISSIONS: AdminPermissions = {
-  can_manage_activities: true, can_manage_posters_polls: true, can_manage_equipment: true,
-  can_manage_claims_fees: true, can_manage_transport: true, can_manage_finance: true, can_manage_members: true,
+  can_manage_activities: true,
+  can_manage_posters_polls: true,
+  can_manage_equipment: true,
+  can_manage_claims_fees: true,
+  can_manage_transport: true,
+  can_manage_finance: true,
+  can_manage_members: true,
 };
 
-export const PERMISSION_LABELS: { key: keyof AdminPermissions; label: string; desc: string }[] = [
-  { key: 'can_manage_activities', label: 'Manage Activities & QR Settings', desc: 'Create/edit activities, configure attendance mode, and manage QR passes.' },
-  { key: 'can_manage_posters_polls', label: 'Customize Logo, Background, Posters & Polls', desc: 'Change club logo, background themes, posters, notices, and poll visibility.' },
-  { key: 'can_manage_equipment', label: 'Manage Equipment Inventory & Loans', desc: 'Add/edit equipment items and manage member borrow records.' },
-  { key: 'can_manage_claims_fees', label: 'Approve Claims & Verify Activity Fees', desc: 'Approve/reject reimbursement claims and verify student fee payments.' },
-  { key: 'can_manage_transport', label: 'Manage Carpool & Assign Drivers', desc: 'Adjust driver allowances and assign passengers to drivers.' },
-  { key: 'can_manage_finance', label: 'Manage Club Finance & Savings Ledger', desc: 'Add, edit, or delete income and expense ledger entries.' },
-  { key: 'can_manage_members', label: 'Manage Members, Batch Clearance & Departments', desc: 'Promote Admins, run batch clearance, and customize department names.' },
+export const PERMISSION_LABELS: {
+  key: keyof AdminPermissions;
+  label: string;
+  desc: string;
+}[] = [
+  { key: 'can_manage_activities', label: '1. Activities & QR Attendance', desc: 'Create/edit activities and manage QR check-ins' },
+  { key: 'can_manage_posters_polls', label: '2. Posters, Announcements & Polls', desc: 'Publish posters, notices, and polls' },
+  { key: 'can_manage_equipment', label: '3. Equipment Inventory & Loans', desc: 'Add equipment and mark items returned' },
+  { key: 'can_manage_claims_fees', label: '4. Approve Claims & Verify Fees', desc: 'Approve/reject claims and verify fee receipts' },
+  { key: 'can_manage_transport', label: '5. Carpool & Driver Assignment', desc: 'Assign passengers to drivers and manage trips' },
+  { key: 'can_manage_finance', label: '6. Edit Club Finance & Savings', desc: 'Add/edit/delete Money In & Out (Otherwise View-Only)' },
+  { key: 'can_manage_members', label: '7. Manage Members & Departments', desc: 'Customize departments and remove regular members' },
 ];
 
 export interface UserProfile {
-  id: string; email: string; full_name: string; matric_no: string; phone_number: string;
-  role: UserRole; admin_permissions: AdminPermissions; member_type: string; year_of_study: string;
-  course: string; hometown: string; ic_no: string; dormitory: string; member_status: string;
-  batch_year: string; created_at: string;
+  id: string;
+  email: string;
+  full_name: string;
+  matric_no: string;
+  phone_number: string;
+  role: 'member' | 'treasurer' | 'owner';
+  admin_permissions?: AdminPermissions;
+  member_type?: string;
+  year_of_study?: string;
+  course?: string;
+  hometown?: string;
+  ic_no?: string;
+  dormitory?: string;
+  member_status?: string;
+  batch_year?: string;
+  bank_name?: string;
+  bank_account_no?: string;
+  bank_account_holder?: string;
+  created_at: string;
 }
 
-export interface Budget {
-  id: string; event_name: string; category: string; event_date: string; event_time: string;
-  location: string; allocated_amount: number; spent_amount: number; registration_fee: number;
-  driver_allowance_per_trip: number; driver_recruitment_open: boolean; qr_code_token?: string;
-  ticket_qr_mode?: TicketQrMode; description: string; status: 'Active' | 'Closed'; created_at: string;
-}
-
-export interface EventRsvp {
-  id: string; budget_id: string; user_id: string; student_name: string; matric_no: string;
-  phone_number: string; member_type: string; dormitory: string;
-  attendance: 'Attending' | 'Not Attending';
-  transport_type: 'None' | 'One-Way' | 'Return Trip' | 'Round Trip';
-  is_driver: boolean; car_details: string; seats_available: number; trips_count: number;
-  assigned_driver_name: string; qr_checked_in?: boolean; qr_checked_in_at?: string | null;
-  pass_approved?: boolean; updated_at: string;
-}
-
-export interface ActivityFeePayment {
-  id: string; budget_id: string; user_id: string; student_name: string; matric_no: string;
-  phone_number: string; amount_paid: number; receipt_url: string; receipt_file_name: string;
-  status: 'Pending' | 'Verified' | 'Rejected'; admin_remarks: string; created_at: string;
-}
-
-export interface Claim {
-  id: string; budget_id: string | null; custom_event_name?: string; user_id: string;
-  claimant_name: string; matric_no: string; phone_number: string; title: string;
-  merchant_name: string; expense_date: string; amount: number; category: string;
-  description: string; receipt_url: string; receipt_file_name: string; ai_ocr_summary: string;
-  status: 'Pending' | 'Approved' | 'Rejected'; treasurer_remarks: string; reviewed_by: string;
-  reviewed_at: string | null; created_at: string;
-}
-
-export interface EquipmentItem { id: string; item_name: string; total_quantity: number; remarks: string; created_at: string; }
-export interface EquipmentLoan {
-  id: string; equipment_id: string; equipment_name: string; user_id: string; borrower_name: string;
-  matric_no: string; phone_number: string; quantity: number; application_date: string;
-  borrow_date: string; return_date: string; status: 'Pending' | 'Borrowed' | 'Returned' | 'Overdue';
-  remarks: string; created_at: string;
-}
-export interface Announcement {
-  id: string; title: string; subtitle: string; content: string; poster_url: string;
-  external_link: string; link_label: string; is_pinned: boolean; show_in_carousel: boolean;
-  created_by: string; created_at: string;
-}
-export interface Poll {
-  id: string; question: string; options: string[]; is_active: boolean;
-  show_results?: boolean; created_by: string; created_at: string;
-}
-export interface PollVote { id: string; poll_id: string; user_id: string; voter_name: string; option_index: number; created_at: string; }
-
-export const DEFAULT_DEPARTMENTS = ['Member', 'Logistics & Equipment Unit', 'Event & Tournament Unit', 'Multimedia & Publicity Unit', 'Training & Development Unit', 'Other'];
-export const CLUB_DEPARTMENTS = DEFAULT_DEPARTMENTS;
-export const EXPENSE_CATEGORIES = DEFAULT_DEPARTMENTS;
-export const TRANSPORT_OPTIONS = ['None', 'One-Way', 'Return Trip', 'Round Trip'] as const;
-export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+// Simplified to 2 primary modes: 'scan_attendance' vs 'entry_pass' (with backward compatibility for older values)
+export type TicketQrMode = 'scan_attendance' | 'entry_pass' | 'all_registered' | 'paid_only' | 'manual_only';
+export type PassApprovalRule = 'auto_after_payment' | 'manual_only';
 
 export function isEntryPassMode(mode?: string): boolean {
   return mode === 'entry_pass' || mode === 'paid_only' || mode === 'manual_only';
+}
+
+export interface Budget {
+  id: string;
+  event_name: string;
+  category: string;
+  event_date: string;
+  event_time: string;
+  location: string;
+  allocated_amount: number;
+  spent_amount: number;
+  registration_fee: number;
+  driver_allowance_per_trip: number;
+  driver_recruitment_open: boolean;
+  qr_code_token?: string;
+  ticket_qr_mode?: TicketQrMode;
+  description: string;
+  status: 'Active' | 'Closed';
+  created_at: string;
+}
+
+export interface EventRsvp {
+  id: string;
+  budget_id: string;
+  user_id: string;
+  student_name: string;
+  matric_no: string;
+  phone_number: string;
+  member_type: string;
+  dormitory: string;
+  attendance: 'Attending' | 'Not Attending';
+  transport_type: 'None' | 'One-Way' | 'Return Trip' | 'Round Trip';
+  is_driver: boolean;
+  car_details: string;
+  seats_available: number;
+  trips_count: number;
+  assigned_driver_name: string;
+  qr_checked_in?: boolean;
+  qr_checked_in_at?: string | null;
+  pass_approved?: boolean;
+  updated_at: string;
+}
+
+export interface ActivityFeePayment {
+  id: string;
+  budget_id: string;
+  user_id: string;
+  student_name: string;
+  matric_no: string;
+  phone_number: string;
+  amount_paid: number;
+  receipt_url: string;
+  receipt_file_name: string;
+  status: 'Verified' | 'Pending' | 'Rejected';
+  created_at: string;
+}
+
+export interface Claim {
+  id: string;
+  user_id: string;
+  claimant_name: string;
+  matric_no: string;
+  phone_number: string;
+  budget_id: string | null;
+  custom_event_name?: string;
+  title: string;
+  category: string;
+  amount: number;
+  expense_date: string;
+  merchant_name: string;
+  description: string;
+  payment_info?: string;
+  payout_proof_url?: string;
+  payout_proof_name?: string;
+  paid_at?: string;
+  receipt_url: string;
+  receipt_file_name: string;
+  ai_extracted_amount: number | null;
+  ai_extracted_merchant: string | null;
+  ai_extracted_date: string | null;
+  ai_confidence: number | null;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  reviewed_by: string | null;
+  review_remarks: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface EquipmentItem {
+  id: string;
+  item_name: string;
+  category: string;
+  total_quantity: number;
+  available_quantity: number;
+  location: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface EquipmentLoan {
+  id: string;
+  item_id: string;
+  item_name: string;
+  user_id: string;
+  borrower_name: string;
+  matric_no: string;
+  phone_number: string;
+  quantity: number;
+  purpose: string;
+  borrow_date: string;
+  return_date: string;
+  status: 'Borrowed' | 'Returned' | 'Overdue';
+  returned_at: string | null;
+  created_at: string;
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  subtitle: string;
+  content: string;
+  poster_url: string;
+  external_link: string;
+  link_label: string;
+  is_pinned: boolean;
+  show_in_carousel: boolean;
+  created_by: string;
+  created_at: string;
+}
+
+export interface Poll {
+  id: string;
+  question: string;
+  options: string[];
+  is_active: boolean;
+  show_results?: boolean;
+  created_by: string;
+  created_at: string;
+}
+
+export interface PollVote {
+  id: string;
+  poll_id: string;
+  user_id: string;
+  voter_name: string;
+  option_index: number;
+  created_at: string;
+}
+
+export const TRANSPORT_OPTIONS: ('None' | 'One-Way' | 'Return Trip' | 'Round Trip')[] = [
+  'None',
+  'One-Way',
+  'Return Trip',
+  'Round Trip',
+];
+
+export interface ExcelSheetInput {
+  name: string;
+  headers: string[];
+  rows: (string | number | null | undefined)[][];
+}
+
+declare global {
+  interface Window {
+    XLSX?: {
+      utils: {
+        book_new: () => unknown;
+        aoa_to_sheet: (data: (string | number)[][]) => Record<string, unknown>;
+        book_append_sheet: (wb: unknown, ws: unknown, name: string) => void;
+      };
+      writeFile: (wb: unknown, filename: string) => void;
+    };
+  }
+}
+
+function escapeXml(val: string): string {
+  return val
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+export async function exportMultiSheetExcel(filenameBase: string, sheets: ExcelSheetInput[]) {
+  if (typeof window === 'undefined') return;
+  const safeBase = filenameBase.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  if (!window.XLSX) {
+    await new Promise<void>((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => resolve();
+      document.head.appendChild(script);
+    });
+  }
+
+  if (window.XLSX) {
+    const wb = window.XLSX.utils.book_new();
+    sheets.forEach((sheet, idx) => {
+      const cleanName = (sheet.name || `Sheet${idx + 1}`).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31);
+      const aoa: (string | number)[][] = [
+        sheet.headers,
+        ...sheet.rows.map((r) => r.map((c) => (c === null || c === undefined ? '' : c))),
+      ];
+      const ws = window.XLSX!.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = sheet.headers.map((h) => ({ wch: Math.max(16, h.length + 5) }));
+      window.XLSX!.utils.book_append_sheet(wb, ws, cleanName);
+    });
+    window.XLSX.writeFile(wb, `${safeBase}.xlsx`);
+    return;
+  }
+
+  // Fallback multi-worksheet Excel XML (.xls)
+  const worksheetsXml = sheets
+    .map((sheet, idx) => {
+      const cleanName = escapeXml((sheet.name || `Sheet${idx + 1}`).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31));
+      const headerRow = `<Row>${sheet.headers
+        .map((h) => `<Cell ss:StyleID="sHeader"><Data ss:Type="String">${escapeXml(String(h))}</Data></Cell>`)
+        .join('')}</Row>`;
+      const dataRows = sheet.rows
+        .map(
+          (row) =>
+            `<Row>${row
+              .map((cell) => {
+                const isNum = typeof cell === 'number' && !isNaN(cell);
+                return `<Cell><Data ss:Type="${isNum ? 'Number' : 'String'}">${escapeXml(
+                  String(cell ?? '')
+                )}</Data></Cell>`;
+              })
+              .join('')}</Row>`
+        )
+        .join('');
+      return `<Worksheet ss:Name="${cleanName}"><Table>${headerRow}${dataRows}</Table></Worksheet>`;
+    })
+    .join('');
+
+  const xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="sHeader">
+   <Font ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#047857" ss:Pattern="Solid"/>
+  </Style>
+ </Styles>
+ ${worksheetsXml}
+</Workbook>`;
+
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${safeBase}.xls`;
+  a.click();
 }
