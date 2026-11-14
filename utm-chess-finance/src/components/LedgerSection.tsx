@@ -20,6 +20,7 @@ import {
   Loader2,
   Edit3,
   Trash2,
+  RefreshCw,
 } from 'lucide-react';
 
 export interface LedgerEntryItem {
@@ -49,6 +50,25 @@ interface LedgerSectionProps {
   onRefresh: (msg: string) => void;
 }
 
+const IN_CATEGORIES = [
+  'Carry-Forward / Opening Balance',
+  'Club Savings / Reserve Adjustment',
+  'University Grant / Allocation',
+  'Sponsorship / Donation',
+  'Activity / Tournament Income',
+  'Other Income',
+];
+
+const OUT_CATEGORIES = [
+  'Event / Activity Expense',
+  'Equipment & Logistics',
+  'Food & Refreshments',
+  'Prizes & Certificates',
+  'Transport / Carpool Allowance',
+  'Club Savings / Reserve Adjustment',
+  'Other Expense',
+];
+
 export default function LedgerSection({
   entries,
   events = [],
@@ -61,10 +81,11 @@ export default function LedgerSection({
   onRefresh,
 }: LedgerSectionProps) {
   const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState<'IN' | 'OUT' | 'SET_SAVINGS'>('IN');
   const [editingEntry, setEditingEntry] = useState<LedgerEntryItem | null>(null);
   const [entryType, setEntryType] = useState<'IN' | 'OUT'>('IN');
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('Club Savings / Opening Balance');
+  const [category, setCategory] = useState(IN_CATEGORIES[0]);
   const [selectedEventOption, setSelectedEventOption] = useState<string>('GENERAL');
   const [customEventName, setCustomEventName] = useState('');
   const [amount, setAmount] = useState('');
@@ -75,43 +96,6 @@ export default function LedgerSection({
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (externalOpenModal && canEdit) {
-      openAddModal();
-      if (onCloseExternalModal) onCloseExternalModal();
-    }
-  }, [externalOpenModal, canEdit, onCloseExternalModal]);
-
-  const openAddModal = () => {
-    setEditingEntry(null);
-    setEntryType('IN');
-    setTitle('');
-    setCategory('Club Savings / Opening Balance');
-    setSelectedEventOption('GENERAL');
-    setCustomEventName('');
-    setAmount('');
-    setEntryDate(new Date().toISOString().split('T')[0]);
-    setNotes('');
-    setAttachmentFile(null);
-    setErrorMsg(null);
-    setShowModal(true);
-  };
-
-  const openEditModal = (entry: LedgerEntryItem) => {
-    setEditingEntry(entry);
-    setEntryType(entry.entry_type);
-    setTitle(entry.title);
-    setCategory(entry.category);
-    setSelectedEventOption('OTHER');
-    setCustomEventName(entry.event_name || 'General Club Fund');
-    setAmount(String(entry.amount));
-    setEntryDate(entry.entry_date);
-    setNotes(entry.notes || '');
-    setAttachmentFile(null);
-    setErrorMsg(null);
-    setShowModal(true);
-  };
 
   const manualIn = entries
     .filter((e) => e.entry_type === 'IN')
@@ -130,19 +114,108 @@ export default function LedgerSection({
   const totalOut = manualOut + approvedClaimsOut;
   const currentSavingsBalance = totalIn - totalOut;
 
+  useEffect(() => {
+    if (externalOpenModal && canEdit) {
+      openAddModal('IN');
+      if (onCloseExternalModal) onCloseExternalModal();
+    }
+  }, [externalOpenModal, canEdit, onCloseExternalModal]);
+
+  const openAddModal = (mode: 'IN' | 'OUT' | 'SET_SAVINGS' = 'IN') => {
+    setEditingEntry(null);
+    setModalMode(mode);
+    if (mode === 'SET_SAVINGS') {
+      setEntryType('IN');
+      setTitle('Carry-Forward / Current Savings Balance Update');
+      setCategory('Carry-Forward / Opening Balance');
+      setSelectedEventOption('GENERAL');
+      setCustomEventName('');
+      setAmount(currentSavingsBalance.toFixed(2));
+      setNotes('Carry-forward club savings across batches');
+    } else if (mode === 'OUT') {
+      setEntryType('OUT');
+      setTitle('');
+      setCategory(OUT_CATEGORIES[0]);
+      setSelectedEventOption('GENERAL');
+      setCustomEventName('');
+      setAmount('');
+      setNotes('');
+    } else {
+      setEntryType('IN');
+      setTitle('');
+      setCategory(IN_CATEGORIES[0]);
+      setSelectedEventOption('GENERAL');
+      setCustomEventName('');
+      setAmount('');
+      setNotes('');
+    }
+    setEntryDate(new Date().toISOString().split('T')[0]);
+    setAttachmentFile(null);
+    setErrorMsg(null);
+    setShowModal(true);
+  };
+
+  const openEditModal = (entry: LedgerEntryItem) => {
+    setEditingEntry(entry);
+    setModalMode(entry.entry_type);
+    setEntryType(entry.entry_type);
+    setTitle(entry.title);
+    setCategory(entry.category);
+    setSelectedEventOption('OTHER');
+    setCustomEventName(entry.event_name || 'General Club Fund');
+    setAmount(String(entry.amount));
+    setEntryDate(entry.entry_date);
+    setNotes(entry.notes || '');
+    setAttachmentFile(null);
+    setErrorMsg(null);
+    setShowModal(true);
+  };
+
+  const saveLedgerPayloadWithFallback = async (
+    fullPayload: Record<string, unknown>,
+    editId?: string
+  ) => {
+    const corePayload = {
+      entry_type: fullPayload.entry_type,
+      title: fullPayload.title,
+      category: fullPayload.category,
+      amount: fullPayload.amount,
+      entry_date: fullPayload.entry_date,
+      person_in_charge: fullPayload.person_in_charge,
+      notes: fullPayload.notes,
+    };
+    if (editId) {
+      const { error } = await supabase
+        .from('ledger_entries')
+        .update(fullPayload)
+        .eq('id', editId);
+      if (error) {
+        const { error: fallbackErr } = await supabase
+          .from('ledger_entries')
+          .update(corePayload)
+          .eq('id', editId);
+        if (fallbackErr) throw fallbackErr;
+      }
+    } else {
+      const { error } = await supabase.from('ledger_entries').insert(fullPayload);
+      if (error) {
+        const { error: fallbackErr } = await supabase
+          .from('ledger_entries')
+          .insert(corePayload);
+        if (fallbackErr) throw fallbackErr;
+      }
+    }
+  };
+
   const handleSaveEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEdit) return;
     setErrorMsg(null);
     const num = parseFloat(amount);
-    if (!title.trim() || isNaN(num) || num <= 0) return;
-
-    const finalEventName =
-      selectedEventOption === 'GENERAL'
-        ? 'General Club Fund'
-        : selectedEventOption === 'OTHER'
-        ? customEventName.trim() || 'Other Event'
-        : selectedEventOption;
+    if (isNaN(num) || (modalMode !== 'SET_SAVINGS' && num <= 0)) {
+      setErrorMsg('Please enter a valid amount.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -158,11 +231,51 @@ export default function LedgerSection({
         const { error: upErr } = await supabase.storage
           .from('receipts')
           .upload(safePath, attachmentFile);
-        if (upErr) throw upErr;
-        attachmentUrl = supabase.storage.from('receipts').getPublicUrl(safePath)
-          .data.publicUrl;
-        attachmentName = attachmentFile.name;
+        if (!upErr) {
+          attachmentUrl = supabase.storage.from('receipts').getPublicUrl(safePath)
+            .data.publicUrl;
+          attachmentName = attachmentFile.name;
+        }
       }
+
+      if (modalMode === 'SET_SAVINGS' && !editingEntry) {
+        const diff = Number((num - currentSavingsBalance).toFixed(2));
+        if (Math.abs(diff) < 0.01) {
+          setShowModal(false);
+          onRefresh(`Current Club Savings is already RM ${num.toFixed(2)}.`);
+          return;
+        }
+        const adjType: 'IN' | 'OUT' = diff > 0 ? 'IN' : 'OUT';
+        const adjAmount = Math.abs(diff);
+        const payload = {
+          entry_type: adjType,
+          title: title.trim() || `Carry-Forward Savings Update (Target RM ${num.toFixed(2)})`,
+          category: 'Carry-Forward / Opening Balance',
+          event_name: 'Carry-Forward (All Batches)',
+          amount: adjAmount,
+          entry_date: entryDate,
+          person_in_charge: `${profile.full_name} (${profile.matric_no})`,
+          notes: notes.trim() || `Adjusted savings from RM ${currentSavingsBalance.toFixed(2)} to RM ${num.toFixed(2)}`,
+          attachment_url: attachmentUrl,
+          attachment_name: attachmentName,
+        };
+        await saveLedgerPayloadWithFallback(payload);
+        setShowModal(false);
+        onRefresh(`Updated Current Club Savings to RM ${num.toFixed(2)}!`);
+        return;
+      }
+
+      if (!title.trim()) {
+        setErrorMsg('Please enter a title.');
+        return;
+      }
+
+      const finalEventName =
+        selectedEventOption === 'GENERAL'
+          ? 'General Club Fund (Carry-Forward)'
+          : selectedEventOption === 'OTHER'
+          ? customEventName.trim() || 'Other Event'
+          : selectedEventOption;
 
       const payload = {
         entry_type: entryType,
@@ -178,16 +291,13 @@ export default function LedgerSection({
       };
 
       if (editingEntry) {
-        const { error } = await supabase
-          .from('ledger_entries')
-          .update(payload)
-          .eq('id', editingEntry.id);
-        if (error) throw error;
+        await saveLedgerPayloadWithFallback(payload, editingEntry.id);
         onRefresh(`Updated "${title.trim()}"!`);
       } else {
-        const { error } = await supabase.from('ledger_entries').insert(payload);
-        if (error) throw error;
-        onRefresh(`Recorded RM ${num.toFixed(2)}!`);
+        await saveLedgerPayloadWithFallback(payload);
+        onRefresh(
+          `${entryType === 'IN' ? 'Added Money In' : 'Recorded Expense Out'}: RM ${num.toFixed(2)}!`
+        );
       }
       setShowModal(false);
     } catch (err: unknown) {
@@ -260,52 +370,90 @@ export default function LedgerSection({
     a.click();
   };
 
+  const activeCategoryList = entryType === 'IN' ? IN_CATEGORIES : OUT_CATEGORIES;
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-emerald-800 text-white rounded-3xl p-5 shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-emerald-200">
-              Current Club Savings
-            </span>
-            <Wallet className="w-5 h-5 text-emerald-300" />
+        <div className="bg-emerald-800 text-white rounded-3xl p-5 shadow-md flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase text-emerald-200">
+                Current Club Savings
+              </span>
+              <Wallet className="w-5 h-5 text-emerald-300" />
+            </div>
+            <p className="text-2xl font-extrabold mt-2">
+              RM {currentSavingsBalance.toFixed(2)}
+            </p>
+            <p className="text-[11px] text-emerald-200 mt-1">
+              Carry-Forward Balance Across All Batches
+            </p>
           </div>
-          <p className="text-2xl font-extrabold mt-2">
-            RM {currentSavingsBalance.toFixed(2)}
-          </p>
-          <p className="text-[11px] text-emerald-200 mt-1">
-            Total In minus Total Out
-          </p>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => openAddModal('SET_SAVINGS')}
+              className="mt-3 w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Set / Update Current Savings</span>
+            </button>
+          )}
         </div>
 
-        <div className="bg-white rounded-3xl p-5 border border-emerald-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-slate-500">
-              Total Money In
-            </span>
-            <TrendingUp className="w-5 h-5 text-emerald-700" />
+        <div className="bg-white rounded-3xl p-5 border border-emerald-200 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase text-slate-500">
+                Total Money In
+              </span>
+              <TrendingUp className="w-5 h-5 text-emerald-700" />
+            </div>
+            <p className="text-2xl font-extrabold text-emerald-700 mt-2">
+              + RM {totalIn.toFixed(2)}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Includes RM {verifiedFeesIn.toFixed(2)} activity fees
+            </p>
           </div>
-          <p className="text-2xl font-extrabold text-emerald-700 mt-2">
-            + RM {totalIn.toFixed(2)}
-          </p>
-          <p className="text-[11px] text-slate-500 mt-1">
-            Includes RM {verifiedFeesIn.toFixed(2)} activity fees
-          </p>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => openAddModal('IN')}
+              className="mt-3 w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>+ Add Money In / Carry-Forward</span>
+            </button>
+          )}
         </div>
 
-        <div className="bg-white rounded-3xl p-5 border border-rose-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-slate-500">
-              Total Money Out
-            </span>
-            <TrendingDown className="w-5 h-5 text-rose-600" />
+        <div className="bg-white rounded-3xl p-5 border border-rose-200 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase text-slate-500">
+                Total Money Out
+              </span>
+              <TrendingDown className="w-5 h-5 text-rose-600" />
+            </div>
+            <p className="text-2xl font-extrabold text-rose-600 mt-2">
+              - RM {totalOut.toFixed(2)}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Includes RM {approvedClaimsOut.toFixed(2)} approved claims
+            </p>
           </div>
-          <p className="text-2xl font-extrabold text-rose-600 mt-2">
-            - RM {totalOut.toFixed(2)}
-          </p>
-          <p className="text-[11px] text-slate-500 mt-1">
-            Includes RM {approvedClaimsOut.toFixed(2)} approved claims
-          </p>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => openAddModal('OUT')}
+              className="mt-3 w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>+ Record Expense Out</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -313,24 +461,34 @@ export default function LedgerSection({
         <div className="p-5 border-b border-emerald-100 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-extrabold text-emerald-950">
-              Club Financial Ledger
+              Club Financial Ledger (Carry-Forward Across All Batches)
             </h2>
             <p className="text-xs text-slate-500">
               {canEdit
-                ? 'Add, edit, or delete club funds and expense records.'
+                ? 'All club savings, carry-forward reserves, and expenses are permanently retained across batches.'
                 : 'View-Only Admin Mode: Ask the Club Owner for Finance permission to add or edit records.'}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {canEdit && (
-              <button
-                type="button"
-                onClick={openAddModal}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-700 text-white cursor-pointer"
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>+ Add / Adjust Record</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => openAddModal('SET_SAVINGS')}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Update Savings</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openAddModal('IN')}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-600 text-white cursor-pointer"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>+ Add Record</span>
+                </button>
+              </>
             )}
             <button
               type="button"
@@ -349,83 +507,91 @@ export default function LedgerSection({
               <tr className="bg-emerald-50/70 text-[11px] font-bold uppercase text-emerald-900 border-b border-emerald-100">
                 <th className="py-3 px-4">Date</th>
                 <th className="py-3 px-4">Type</th>
-                <th className="py-3 px-4">Event</th>
+                <th className="py-3 px-4">Event / Scope</th>
                 <th className="py-3 px-4">Title &amp; Category</th>
                 <th className="py-3 px-4 text-right">Amount</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-emerald-100">
-              {entries.map((e) => (
-                <tr key={e.id} className="hover:bg-emerald-50/40">
-                  <td className="py-3 px-4 font-mono">{e.entry_date}</td>
-                  <td className="py-3 px-4">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                        e.entry_type === 'IN'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-rose-100 text-rose-700'
-                      }`}
-                    >
-                      {e.entry_type === 'IN' ? 'Money In' : 'Expense Out'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 font-semibold text-emerald-900">
-                    {e.event_name || 'General'}
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="font-bold text-slate-900">{e.title}</div>
-                    <div className="text-[11px] text-slate-500">
-                      {e.category} {e.notes ? `• ${e.notes}` : ''}
-                    </div>
-                  </td>
-                  <td
-                    className={`py-3 px-4 text-right font-extrabold text-sm ${
-                      e.entry_type === 'IN'
-                        ? 'text-emerald-700'
-                        : 'text-rose-600'
-                    }`}
-                  >
-                    {e.entry_type === 'IN' ? '+' : '-'} RM{' '}
-                    {Number(e.amount).toFixed(2)}
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <div className="inline-flex items-center gap-1.5">
-                      {e.attachment_url && (
-                        <a
-                          href={e.attachment_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700"
-                          title="View File"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                      {canEdit && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(e)}
-                            className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-emerald-50 cursor-pointer"
-                            title="Edit"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteEntry(e)}
-                            className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </>
-                      )}
-                    </div>
+              {entries.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                    No ledger records yet. Click &ldquo;Set / Update Current Savings&rdquo; or &ldquo;+ Add Record&rdquo; to begin.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                entries.map((e) => (
+                  <tr key={e.id} className="hover:bg-emerald-50/40">
+                    <td className="py-3 px-4 font-mono">{e.entry_date}</td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                          e.entry_type === 'IN'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-rose-100 text-rose-700'
+                        }`}
+                      >
+                        {e.entry_type === 'IN' ? 'Money In' : 'Expense Out'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 font-semibold text-emerald-900">
+                      {e.event_name || 'General (Carry-Forward)'}
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="font-bold text-slate-900">{e.title}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {e.category} {e.notes ? `• ${e.notes}` : ''}
+                      </div>
+                    </td>
+                    <td
+                      className={`py-3 px-4 text-right font-extrabold text-sm ${
+                        e.entry_type === 'IN'
+                          ? 'text-emerald-700'
+                          : 'text-rose-600'
+                      }`}
+                    >
+                      {e.entry_type === 'IN' ? '+' : '-'} RM{' '}
+                      {Number(e.amount).toFixed(2)}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="inline-flex items-center gap-1.5">
+                        {e.attachment_url && (
+                          <a
+                            href={e.attachment_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700"
+                            title="View File"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                        {canEdit && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(e)}
+                              className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-emerald-50 cursor-pointer"
+                              title="Edit"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteEntry(e)}
+                              className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -436,7 +602,11 @@ export default function LedgerSection({
           <div className="bg-white rounded-3xl shadow-2xl border border-emerald-200 max-w-md w-full overflow-hidden my-8">
             <div className="bg-emerald-800 text-white px-6 py-4 flex items-center justify-between">
               <h3 className="text-base font-bold">
-                {editingEntry ? 'Edit Finance Record' : 'Add Finance Record'}
+                {editingEntry
+                  ? 'Edit Finance Record'
+                  : modalMode === 'SET_SAVINGS'
+                  ? 'Set / Update Current Club Savings'
+                  : 'Add Finance Record'}
               </h3>
               <button
                 type="button"
@@ -447,79 +617,142 @@ export default function LedgerSection({
               </button>
             </div>
             <form onSubmit={handleSaveEntry} className="p-6 space-y-3.5">
-              <div className="grid grid-cols-2 gap-2 bg-emerald-50 p-1 rounded-xl border border-emerald-200">
-                <button
-                  type="button"
-                  onClick={() => setEntryType('IN')}
-                  className={`py-2 rounded-lg text-xs font-bold cursor-pointer ${
-                    entryType === 'IN'
-                      ? 'bg-emerald-700 text-white'
-                      : 'text-emerald-900'
-                  }`}
-                >
-                  + Money In / Savings
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEntryType('OUT')}
-                  className={`py-2 rounded-lg text-xs font-bold cursor-pointer ${
-                    entryType === 'OUT'
-                      ? 'bg-rose-600 text-white'
-                      : 'text-slate-700'
-                  }`}
-                >
-                  - Expense Out
-                </button>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-emerald-900 mb-1">
-                  Related Event
-                </label>
-                <select
-                  value={selectedEventOption}
-                  onChange={(e) => setSelectedEventOption(e.target.value)}
-                  className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm"
-                >
-                  <option value="GENERAL">General Club Fund / Savings</option>
-                  {events.map((ev) => (
-                    <option key={ev.id} value={ev.event_name}>
-                      {ev.event_name}
-                    </option>
-                  ))}
-                  <option value="OTHER">Other (Type Custom Name)</option>
-                </select>
-              </div>
-              {selectedEventOption === 'OTHER' && (
-                <input
-                  type="text"
-                  value={customEventName}
-                  onChange={(e) => setCustomEventName(e.target.value)}
-                  placeholder="Custom event name..."
-                  className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm"
-                  required
-                />
+              {!editingEntry && (
+                <div className="grid grid-cols-3 gap-1.5 bg-emerald-50 p-1 rounded-xl border border-emerald-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalMode('SET_SAVINGS');
+                      setEntryType('IN');
+                      setTitle('Carry-Forward / Current Savings Balance Update');
+                      setCategory('Carry-Forward / Opening Balance');
+                      setAmount(currentSavingsBalance.toFixed(2));
+                    }}
+                    className={`py-2 rounded-lg text-[11px] font-bold cursor-pointer ${
+                      modalMode === 'SET_SAVINGS'
+                        ? 'bg-emerald-800 text-white'
+                        : 'text-emerald-900'
+                    }`}
+                  >
+                    Set Savings
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalMode('IN');
+                      setEntryType('IN');
+                      setTitle('');
+                      setCategory(IN_CATEGORIES[0]);
+                      setAmount('');
+                    }}
+                    className={`py-2 rounded-lg text-[11px] font-bold cursor-pointer ${
+                      modalMode === 'IN'
+                        ? 'bg-emerald-600 text-white'
+                        : 'text-emerald-900'
+                    }`}
+                  >
+                    + Money In
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalMode('OUT');
+                      setEntryType('OUT');
+                      setTitle('');
+                      setCategory(OUT_CATEGORIES[0]);
+                      setAmount('');
+                    }}
+                    className={`py-2 rounded-lg text-[11px] font-bold cursor-pointer ${
+                      modalMode === 'OUT'
+                        ? 'bg-rose-600 text-white'
+                        : 'text-slate-700'
+                    }`}
+                  >
+                    - Expense Out
+                  </button>
+                </div>
               )}
-              <div>
-                <label className="block text-xs font-bold text-emerald-900 mb-1">
-                  Title *
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm"
-                  required
-                />
-              </div>
+
+              {modalMode === 'SET_SAVINGS' && !editingEntry ? (
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 font-semibold">Current Calculated Balance:</span>
+                    <span className="font-mono font-extrabold text-emerald-900">RM {currentSavingsBalance.toFixed(2)}</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-800">
+                    Enter the exact total savings your club currently holds. The system will automatically record a Carry-Forward adjustment so your balance carries forward across all batches.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-emerald-900 mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold"
+                    >
+                      {activeCategoryList.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-emerald-900 mb-1">
+                      Related Event / Scope
+                    </label>
+                    <select
+                      value={selectedEventOption}
+                      onChange={(e) => setSelectedEventOption(e.target.value)}
+                      className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm"
+                    >
+                      <option value="GENERAL">General Club Fund (Carry-Forward All Batches)</option>
+                      {events.map((ev) => (
+                        <option key={ev.id} value={ev.event_name}>
+                          {ev.event_name}
+                        </option>
+                      ))}
+                      <option value="OTHER">Other (Type Custom Name)</option>
+                    </select>
+                  </div>
+                  {selectedEventOption === 'OTHER' && (
+                    <input
+                      type="text"
+                      value={customEventName}
+                      onChange={(e) => setCustomEventName(e.target.value)}
+                      placeholder="Custom event name..."
+                      className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm"
+                      required
+                    />
+                  )}
+                  <div>
+                    <label className="block text-xs font-bold text-emerald-900 mb-1">
+                      Title / Description *
+                    </label>
+                    <input
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder={entryType === 'IN' ? 'e.g., Batch Carry-Forward / Sponsorship' : 'e.g., Tournament Refreshments'}
+                      className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm"
+                      required
+                    />
+                  </div>
+                </>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-emerald-900 mb-1">
-                    Amount (RM) *
+                    {modalMode === 'SET_SAVINGS' && !editingEntry ? 'New Total Savings (RM) *' : 'Amount (RM) *'}
                   </label>
                   <input
                     type="number"
                     step="0.01"
-                    min="0.10"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm font-bold"
@@ -541,7 +774,7 @@ export default function LedgerSection({
               </div>
               <div>
                 <label className="block text-xs font-bold text-emerald-900 mb-1">
-                  Attachment (Max 50MB)
+                  Attachment / Proof (Max 50MB)
                 </label>
                 <input
                   type="file"
@@ -560,6 +793,7 @@ export default function LedgerSection({
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Optional notes..."
                   className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm"
                 />
               </div>
@@ -579,14 +813,14 @@ export default function LedgerSection({
                 <button
                   type="submit"
                   disabled={saving}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-emerald-700 text-white cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
                 >
                   {saving ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <CheckCircle2 className="w-4 h-4" />
                   )}
-                  <span>Save</span>
+                  <span>{modalMode === 'SET_SAVINGS' && !editingEntry ? 'Update Savings' : 'Save Record'}</span>
                 </button>
               </div>
             </form>

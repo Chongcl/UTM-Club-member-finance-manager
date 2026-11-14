@@ -681,28 +681,33 @@ export default function Page() {
 
   if (!sessionUserId || !profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-950 via-emerald-950 to-slate-900">
-        <div className="max-w-md w-full bg-white text-slate-900 rounded-3xl shadow-2xl overflow-hidden">
-          <div className="bg-slate-900 p-6 text-center text-white">
+      <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-4 bg-gradient-to-br from-emerald-50 via-teal-50/70 to-sky-100">
+        <div className="fixed -top-28 -left-28 w-96 h-96 rounded-full bg-emerald-300/30 blur-3xl pointer-events-none" />
+        <div className="fixed -bottom-28 -right-28 w-96 h-96 rounded-full bg-sky-300/30 blur-3xl pointer-events-none" />
+        <div className="relative z-10 max-w-md w-full bg-white/90 backdrop-blur-xl text-slate-900 rounded-3xl shadow-xl border border-white overflow-hidden">
+          <div className="bg-gradient-to-b from-emerald-100/80 via-teal-50/50 to-white p-6 text-center text-slate-900 border-b border-emerald-100">
             {logoUrl && !logoUrl.toLowerCase().endsWith('.pdf') ? (
-              <img src={logoUrl} alt={clubName} className="w-14 h-14 rounded-2xl object-cover mx-auto mb-2 bg-white" />
+              <img src={logoUrl} alt={clubName} className="w-14 h-14 rounded-2xl object-cover mx-auto mb-2 bg-white shadow-sm border border-emerald-200" />
             ) : (
-              <Layers className="w-9 h-9 mx-auto mb-1 text-emerald-400" />
+              <div className="w-13 h-13 rounded-2xl bg-emerald-600 text-white flex items-center justify-center mx-auto mb-2 shadow-sm">
+                <Layers className="w-7 h-7" />
+              </div>
             )}
-            <h1 className="text-lg font-extrabold">{clubName}</h1>
+            <h1 className="text-lg font-extrabold text-emerald-950">{clubName}</h1>
+            <p className="text-xs text-slate-500 mt-0.5">Club Finance &amp; Activity Portal</p>
           </div>
-          <div className="grid grid-cols-2 bg-slate-100 p-1 m-5 mb-2 rounded-2xl">
+          <div className="grid grid-cols-2 bg-emerald-50/80 border border-emerald-100 p-1 m-5 mb-2 rounded-2xl">
             <button
               type="button"
               onClick={() => setAuthMode('login')}
-              className={`py-2 text-xs font-bold rounded-xl ${authMode === 'login' ? 'bg-emerald-600 text-white' : ''}`}
+              className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${authMode === 'login' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-emerald-800'}`}
             >
               Sign In
             </button>
             <button
               type="button"
               onClick={() => setAuthMode('signup')}
-              className={`py-2 text-xs font-bold rounded-xl ${authMode === 'signup' ? 'bg-emerald-600 text-white' : ''}`}
+              className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${authMode === 'signup' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-emerald-800'}`}
             >
               Register
             </button>
@@ -737,7 +742,7 @@ export default function Page() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="Full Name *"
-                  className="w-full rounded-xl border px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 text-sm"
                   required
                 />
                 <div className="grid grid-cols-2 gap-2">
@@ -746,7 +751,7 @@ export default function Page() {
                     value={matricNo}
                     onChange={(e) => setMatricNo(e.target.value)}
                     placeholder="Matric No *"
-                    className="rounded-xl border px-3 py-2 font-mono"
+                    className="rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 font-mono"
                     required
                   />
                   <input
@@ -754,7 +759,7 @@ export default function Page() {
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
                     placeholder="Phone *"
-                    className="rounded-xl border px-3 py-2 font-mono"
+                    className="rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 font-mono"
                     required
                   />
                 </div>
@@ -765,7 +770,7 @@ export default function Page() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email *"
-              className="w-full rounded-xl border px-3 py-2 text-sm"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 text-sm"
               required
             />
             <input
@@ -774,11 +779,11 @@ export default function Page() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password *"
-              className="w-full rounded-xl border px-3 py-2 text-sm"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 text-sm"
               required
             />
             {authError && <div className="text-rose-600">{authError}</div>}
-            <button type="submit" className="w-full py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-sm cursor-pointer">
+            <button type="submit" className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-sm cursor-pointer">
               {authMode === 'login' ? 'Sign In' : 'Register'}
             </button>
           </form>
