@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES } from '@/lib/supabase';
-import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle } from 'lucide-react';
+import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle, Loader2, Car, UserCheck } from 'lucide-react';
 
 interface EventOperationsModalProps {
   event: Budget | null; initialTab: 'fee' | 'transport' | 'qr' | 'pass'; profile: UserProfile;
@@ -25,6 +25,8 @@ export default function EventOperationsModal({
   const [carDetails, setCarDetails] = useState('');
   const [seatsAvailable, setSeatsAvailable] = useState('4');
   const [tripsCount, setTripsCount] = useState('1');
+  const [savingTransport, setSavingTransport] = useState(false);
+  const [transportSavedSuccess, setTransportSavedSuccess] = useState(false);
   const [qrToken, setQrToken] = useState('');
   const [hasEntryPass, setHasEntryPass] = useState(false);
   const [passRule, setPassRule] = useState<PassApprovalRule>('auto_after_payment');
@@ -42,6 +44,7 @@ export default function EventOperationsModal({
 
     setLocalPassOverrides({});
     setFeeError(null);
+    setTransportSavedSuccess(false);
     const feeVal = Number(event.registration_fee || 0);
     setAmountPaid(String(feeVal));
     setQrToken(event.qr_code_token || event.id.slice(0, 6).toUpperCase());
@@ -79,9 +82,11 @@ export default function EventOperationsModal({
   const passengers = attendingRsvps.filter((r) => r.transport_type !== 'None' && !r.is_driver);
   const eventDrivers = attendingRsvps.filter((r) => r.is_driver);
   const eventPayments = feePayments.filter((f) => f.budget_id === event.id);
+  const visibleFeePayments = isAdmin ? eventPayments : eventPayments.filter((p) => p.user_id === profile.id);
   const allowancePerTrip = Number(event.driver_allowance_per_trip || 0);
   const reqFee = Number(event.registration_fee || 0);
   const requiresFee = reqFee > 0;
+  const isCurrentUserDriver = Boolean(myRsvp?.is_driver) || surveyChoice === 'DRIVER';
 
   const isMemberEligibleForPass = (rsvp?: EventRsvp) => {
     if (!rsvp || rsvp.attendance !== 'Attending') return false;
@@ -153,20 +158,35 @@ export default function EventOperationsModal({
 
   const handleSaveTransportForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    const isDriving = surveyChoice === 'DRIVER';
-    const nextTransport = surveyChoice === 'OWN' || surveyChoice === 'DRIVER' ? 'None' : surveyChoice;
-    await supabase.from('event_rsvps').upsert({
-      budget_id: event.id, user_id: profile.id, student_name: profile.full_name,
-      matric_no: profile.matric_no, phone_number: profile.phone_number, member_type: profile.member_type || 'Member',
-      dormitory: dormitoryInput.trim() || profile.dormitory || '', attendance: 'Attending',
-      transport_type: nextTransport, is_driver: isDriving, car_details: isDriving ? carDetails.trim() : '',
-      seats_available: isDriving ? Math.max(1, parseInt(seatsAvailable) || 4) : 0,
-      trips_count: isDriving ? Math.max(1, parseInt(tripsCount) || 1) : 0,
-      assigned_driver_name: nextTransport === 'None' ? '' : myRsvp?.assigned_driver_name || '',
-      pass_approved: myRsvp?.pass_approved ?? false,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'budget_id,user_id' });
-    onRefresh('Carpool choice saved!');
+    setSavingTransport(true);
+    setTransportSavedSuccess(false);
+    try {
+      const isDriving = surveyChoice === 'DRIVER';
+      const nextTransport = surveyChoice === 'OWN' || surveyChoice === 'DRIVER' ? 'None' : surveyChoice;
+      await supabase.from('event_rsvps').upsert({
+        budget_id: event.id, user_id: profile.id, student_name: profile.full_name,
+        matric_no: profile.matric_no, phone_number: profile.phone_number, member_type: profile.member_type || 'Member',
+        dormitory: dormitoryInput.trim() || profile.dormitory || '', attendance: 'Attending',
+        transport_type: nextTransport, is_driver: isDriving, car_details: isDriving ? carDetails.trim() : '',
+        seats_available: isDriving ? Math.max(1, parseInt(seatsAvailable) || 4) : 0,
+        trips_count: isDriving ? Math.max(1, parseInt(tripsCount) || 1) : 0,
+        assigned_driver_name: nextTransport === 'None' ? '' : myRsvp?.assigned_driver_name || '',
+        pass_approved: myRsvp?.pass_approved ?? false,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'budget_id,user_id' });
+      setTransportSavedSuccess(true);
+      onRefresh('✓ Carpool & Transport updated!');
+      setTimeout(() => {
+        onClose();
+      }, 450);
+    } finally {
+      setSavingTransport(false);
+    }
+  };
+
+  const handleDriverClaimPassenger = async (passenger: EventRsvp, driverName: string) => {
+    await supabase.from('event_rsvps').update({ assigned_driver_name: driverName }).eq('id', passenger.id);
+    onRefresh(driverName ? `${driverName} assigned to pick up ${passenger.student_name}!` : `Released ${passenger.student_name}.`);
   };
 
   const exportCsv = (filename: string, headers: string[], rows: (string | number)[][]) => {
@@ -201,8 +221,8 @@ export default function EventOperationsModal({
 
         <div className="p-6 max-h-[75vh] overflow-y-auto space-y-6 text-xs">
           {tab === 'pass' && hasEntryPass && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-5 bg-gradient-to-b from-slate-900 to-emerald-950 text-white rounded-3xl p-6 flex flex-col items-center text-center justify-between shadow-xl border border-emerald-700/40">
+            <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-12' : 'max-w-sm mx-auto'} gap-6`}>
+              <div className={`${isAdmin ? 'lg:col-span-5' : 'w-full'} bg-gradient-to-b from-slate-900 to-emerald-950 text-white rounded-3xl p-6 flex flex-col items-center text-center justify-between shadow-xl border border-emerald-700/40`}>
                 <div className="space-y-1">
                   <span className="px-3 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-600 text-white">Entry Pass</span>
                   <h3 className="text-base font-extrabold mt-1">{event.event_name}</h3>
@@ -229,38 +249,40 @@ export default function EventOperationsModal({
                   </div>
                 )}
                 <div className="w-full pt-3 border-t border-white/15 flex justify-between text-[11px]">
-                  <span className="text-emerald-200">Status:</span>
+                  <span className="text-emerald-200">My Pass Status:</span>
                   <span className="font-extrabold">{myRsvp?.qr_checked_in ? '✓ ATTENDED' : myPassEligible ? '✓ PASS READY' : '✗ LOCKED'}</span>
                 </div>
               </div>
 
-              <div className="lg:col-span-7 space-y-4">
-                {isAdmin && onOpenScanner && (
-                  <div className="p-4 rounded-2xl bg-slate-900 text-white flex items-center justify-between gap-3">
-                    <div><h4 className="font-extrabold text-emerald-400"><Camera className="w-4 h-4 inline mr-1" />Scan Entry Pass QR</h4><p className="text-[11px] text-slate-300">Automatically verifies eligibility and records attendance.</p></div>
-                    <button type="button" onClick={() => { onClose(); onOpenScanner(); }} className="px-4 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-white/20 text-white font-extrabold cursor-pointer">Scan Pass</button>
+              {isAdmin && (
+                <div className="lg:col-span-7 space-y-4">
+                  {onOpenScanner && (
+                    <div className="p-4 rounded-2xl bg-slate-900 text-white flex items-center justify-between gap-3">
+                      <div><h4 className="font-extrabold text-emerald-400"><Camera className="w-4 h-4 inline mr-1" />Scan Entry Pass QR</h4><p className="text-[11px] text-slate-300">Automatically verifies eligibility and records attendance.</p></div>
+                      <button type="button" onClick={() => { onClose(); onOpenScanner(); }} className="px-4 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 border border-white/20 text-white font-extrabold cursor-pointer">Scan Pass</button>
+                    </div>
+                  )}
+                  <div className="border rounded-2xl overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                      <thead><tr className="bg-slate-50 border-b"><th className="py-2 px-3">Member</th>{requiresFee && <th className="py-2 px-3">Fee</th>}<th className="py-2 px-3">Pass Status</th><th className="py-2 px-3 text-right">Action</th></tr></thead>
+                      <tbody className="divide-y">
+                        {attendingRsvps.map((r) => {
+                          const paid = eventPayments.find((f) => f.user_id === r.user_id && f.status === 'Verified');
+                          const hasPass = isMemberEligibleForPass(r);
+                          return (
+                            <tr key={r.id}>
+                              <td className="py-2 px-3 font-bold">{r.student_name} ({r.matric_no})</td>
+                              {requiresFee && <td className="py-2 px-3">{paid ? <span className="text-emerald-700 font-bold">Paid ✓</span> : <span className="text-amber-700 font-bold">Unpaid</span>}</td>}
+                              <td className="py-2 px-3">{r.qr_checked_in ? <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold text-[10px]"><ShieldCheck className="w-3 h-3 inline mr-0.5" />Attended</span> : hasPass ? <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">✓ Unlocked</span> : <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold text-[10px]">Locked</span>}</td>
+                              <td className="py-2 px-3 text-right"><button type="button" onClick={() => handleToggleManualPass(r)} className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${hasPass ? 'bg-rose-50 text-rose-700' : 'bg-emerald-600 text-white'}`}>{hasPass ? 'Lock' : 'Grant Pass'}</button></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                )}
-                <div className="border rounded-2xl overflow-hidden">
-                  <table className="w-full text-left border-collapse">
-                    <thead><tr className="bg-slate-50 border-b"><th className="py-2 px-3">Member</th>{requiresFee && <th className="py-2 px-3">Fee</th>}<th className="py-2 px-3">Pass Status</th>{isAdmin && <th className="py-2 px-3 text-right">Action</th>}</tr></thead>
-                    <tbody className="divide-y">
-                      {attendingRsvps.map((r) => {
-                        const paid = eventPayments.find((f) => f.user_id === r.user_id && f.status === 'Verified');
-                        const hasPass = isMemberEligibleForPass(r);
-                        return (
-                          <tr key={r.id}>
-                            <td className="py-2 px-3 font-bold">{r.student_name} ({r.matric_no})</td>
-                            {requiresFee && <td className="py-2 px-3">{paid ? <span className="text-emerald-700 font-bold">Paid ✓</span> : <span className="text-amber-700 font-bold">Unpaid</span>}</td>}
-                            <td className="py-2 px-3">{r.qr_checked_in ? <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold text-[10px]"><ShieldCheck className="w-3 h-3 inline mr-0.5" />Attended</span> : hasPass ? <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">✓ Unlocked</span> : <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold text-[10px]">Locked</span>}</td>
-                            {isAdmin && <td className="py-2 px-3 text-right"><button type="button" onClick={() => handleToggleManualPass(r)} className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${hasPass ? 'bg-rose-50 text-rose-700' : 'bg-emerald-600 text-white'}`}>{hasPass ? 'Lock' : 'Grant Pass'}</button></td>}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -307,11 +329,17 @@ export default function EventOperationsModal({
                 <button type="submit" disabled={submittingFee} className="w-full py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"><CheckCircle2 className="w-4 h-4 inline mr-1" />{submittingFee ? 'Uploading...' : 'Submit Payment'}</button>
               </form>
               <div className="lg:col-span-3 space-y-3">
-                <h3 className="text-sm font-extrabold">Fee Submissions ({eventPayments.length})</h3>
+                <h3 className="text-sm font-extrabold">{isAdmin ? `All Fee Submissions (${visibleFeePayments.length})` : `My Fee Receipt (${visibleFeePayments.length})`}</h3>
                 <div className="border rounded-2xl overflow-hidden">
                   <table className="w-full text-left border-collapse">
                     <thead><tr className="bg-slate-50 border-b"><th className="py-2 px-3">Student</th><th className="py-2 px-3">Amount</th><th className="py-2 px-3">Status</th><th className="py-2 px-3 text-right">Receipt</th></tr></thead>
-                    <tbody className="divide-y">{eventPayments.filter((p) => isAdmin || p.user_id === profile.id).map((p) => (<tr key={p.id}><td className="py-2 px-3 font-bold">{p.student_name}</td><td className="py-2 px-3 font-extrabold text-emerald-700">RM {Number(p.amount_paid).toFixed(2)}</td><td className="py-2 px-3">{p.status}</td><td className="py-2 px-3 text-right"><a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold"><ExternalLink className="w-3.5 h-3.5 inline" /></a></td></tr>))}</tbody>
+                    <tbody className="divide-y">
+                      {visibleFeePayments.length === 0 ? (
+                        <tr><td colSpan={4} className="py-6 text-center text-slate-400">No payment submission yet.</td></tr>
+                      ) : (
+                        visibleFeePayments.map((p) => (<tr key={p.id}><td className="py-2 px-3 font-bold">{p.student_name}</td><td className="py-2 px-3 font-extrabold text-emerald-700">RM {Number(p.amount_paid).toFixed(2)}</td><td className="py-2 px-3"><span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">{p.status}</span></td><td className="py-2 px-3 text-right"><a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold"><ExternalLink className="w-3.5 h-3.5 inline" /></a></td></tr>))
+                      )}
+                    </tbody>
                   </table>
                 </div>
               </div>
@@ -320,31 +348,158 @@ export default function EventOperationsModal({
 
           {tab === 'transport' && (
             <div className="space-y-5">
-              <div className="flex justify-between items-center bg-slate-50 p-3.5 rounded-2xl border">
-                <span className="font-bold text-slate-800">Passengers: {passengers.length} • Drivers: {eventDrivers.length}</span>
+              <div className="flex flex-wrap justify-between items-center gap-2 bg-slate-50 p-3.5 rounded-2xl border">
+                <span className="font-bold text-slate-800">Passengers Needing Ride: {passengers.length} • Drivers Available: {eventDrivers.length}</span>
                 <div className="flex gap-1.5">
-                  <button type="button" onClick={() => { const lines = eventDrivers.map((d, i) => `Car ${i + 1}: ${d.student_name} (${d.car_details}) -> ` + passengers.filter((p) => p.assigned_driver_name === d.student_name).map((p) => `${p.student_name} (${p.dormitory})`).join(', ')); navigator.clipboard.writeText(lines.join('\n')); onRefresh('Copied WhatsApp list!'); }} className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"><Copy className="w-3 h-3 inline mr-1" />Copy List</button>
+                  <button type="button" onClick={() => { const lines = eventDrivers.map((d, i) => `Car ${i + 1}: ${d.student_name} (${d.car_details || 'Car'}) -> ` + (passengers.filter((p) => p.assigned_driver_name === d.student_name).map((p) => `${p.student_name} (${p.dormitory || 'Campus'})`).join(', ') || 'No passengers yet')); navigator.clipboard.writeText(lines.join('\n')); onRefresh('Copied WhatsApp carpool list!'); }} className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"><Copy className="w-3 h-3 inline mr-1" />Copy List</button>
                   <button type="button" onClick={() => exportCsv(`${event.event_name}_Carpool.csv`, ['Passenger', 'Matric', 'Phone', 'Dorm', 'Trip', 'Driver'], passengers.map((p) => [p.student_name, p.matric_no, p.phone_number, p.dormitory, p.transport_type, p.assigned_driver_name || 'Unassigned']))} className="px-3 py-1.5 rounded-xl bg-white border font-bold cursor-pointer">Export CSV</button>
                 </div>
               </div>
-              <form onSubmit={handleSaveTransportForm} className="p-4 rounded-2xl border border-slate-200 space-y-3">
+
+              <form onSubmit={handleSaveTransportForm} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-slate-900">1. Update My Transport / Driver Status</h4>
+                  {myRsvp?.assigned_driver_name && <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">Assigned Driver: {myRsvp.assigned_driver_name}</span>}
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {(['OWN', 'One-Way', 'Return Trip', 'Round Trip', ...(event.driver_recruitment_open || isAdmin ? (['DRIVER'] as const) : [])] as TransportSurveyChoice[]).map((opt) => (
-                    <button type="button" key={opt} onClick={() => setSurveyChoice(opt)} className={`p-2 rounded-xl border font-bold cursor-pointer transition ${surveyChoice === opt ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'}`}>{opt === 'OWN' ? 'Own Transport' : opt === 'DRIVER' ? `Driver (RM ${allowancePerTrip}/trip)` : `Need: ${opt}`}</button>
+                    <button type="button" key={opt} onClick={() => setSurveyChoice(opt)} className={`p-2 rounded-xl border font-bold cursor-pointer transition ${surveyChoice === opt ? 'bg-slate-900 text-white border-slate-900 shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100'}`}>{opt === 'OWN' ? 'Own Transport' : opt === 'DRIVER' ? `Driver (RM ${allowancePerTrip}/trip)` : `Need: ${opt}`}</button>
                   ))}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                  <input type="text" value={dormitoryInput} onChange={(e) => setDormitoryInput(e.target.value)} placeholder="Pickup Dorm (e.g., KTDI M17)" className="rounded-xl border px-3 py-2 font-bold" />
+                  <input type="text" value={dormitoryInput} onChange={(e) => setDormitoryInput(e.target.value)} placeholder="Pickup Dorm / Location (e.g., KTDI M17)" className="rounded-xl border bg-white px-3 py-2 font-bold" />
                   {surveyChoice === 'DRIVER' && (
                     <>
-                      <input type="text" value={carDetails} onChange={(e) => setCarDetails(e.target.value)} placeholder="Car & Plate *" className="rounded-xl border px-3 py-2" required />
-                      <input type="number" min="1" value={seatsAvailable} onChange={(e) => setSeatsAvailable(e.target.value)} placeholder="Seats *" className="rounded-xl border px-3 py-2 font-bold" required />
-                      <input type="number" min="1" value={tripsCount} onChange={(e) => setTripsCount(e.target.value)} placeholder="Trips *" className="rounded-xl border px-3 py-2 font-bold" required />
+                      <input type="text" value={carDetails} onChange={(e) => setCarDetails(e.target.value)} placeholder="Car Model & Plate *" className="rounded-xl border bg-white px-3 py-2" required />
+                      <input type="number" min="1" value={seatsAvailable} onChange={(e) => setSeatsAvailable(e.target.value)} placeholder="Seats *" className="rounded-xl border bg-white px-3 py-2 font-bold" required />
+                      <input type="number" min="1" value={tripsCount} onChange={(e) => setTripsCount(e.target.value)} placeholder="Trips *" className="rounded-xl border bg-white px-3 py-2 font-bold" required />
                     </>
                   )}
                 </div>
-                <div className="flex justify-end"><button type="submit" className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer">Save Carpool</button></div>
+                <div className="flex items-center justify-end gap-3 pt-1">
+                  {transportSavedSuccess && (
+                    <span className="text-emerald-700 font-extrabold flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Saved! Closing...</span>
+                    </span>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={savingTransport}
+                    className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold shadow-sm transition active:scale-95 cursor-pointer"
+                  >
+                    {savingTransport ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    <span>{savingTransport ? 'Saving & Updating...' : 'Confirm & Save Carpool'}</span>
+                  </button>
+                </div>
               </form>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                <div className="lg:col-span-5 space-y-2">
+                  <h4 className="font-extrabold text-slate-900 flex items-center gap-1.5"><Car className="w-4 h-4 text-emerald-600" /><span>Registered Drivers ({eventDrivers.length})</span></h4>
+                  <div className="border rounded-2xl overflow-hidden bg-white">
+                    {eventDrivers.length === 0 ? (
+                      <div className="p-4 text-center text-slate-400">No drivers registered yet.</div>
+                    ) : (
+                      <div className="divide-y">
+                        {eventDrivers.map((d) => {
+                          const assignedCount = passengers.filter((p) => p.assigned_driver_name === d.student_name).length;
+                          const maxSeats = Number(d.seats_available) || 4;
+                          return (
+                            <div key={d.id} className="p-3 flex items-center justify-between gap-2">
+                              <div>
+                                <div className="font-bold text-slate-900">{d.student_name}</div>
+                                <div className="text-[11px] text-slate-500">{d.car_details || 'Vehicle'} • <span className="font-mono">{d.phone_number}</span></div>
+                              </div>
+                              <span className={`px-2.5 py-1 rounded-full font-extrabold text-[11px] ${assignedCount >= maxSeats ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
+                                {assignedCount}/{maxSeats} seats
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="lg:col-span-7 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-extrabold text-slate-900 flex items-center gap-1.5"><UserCheck className="w-4 h-4 text-emerald-600" /><span>Members Needing Transport ({passengers.length})</span></h4>
+                    {isCurrentUserDriver && <span className="text-[11px] text-emerald-700 font-bold">Driver Mode: Click &ldquo;Pick Up&rdquo; to claim passengers</span>}
+                  </div>
+                  <div className="border rounded-2xl overflow-hidden bg-white">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b">
+                          <th className="py-2 px-3">Passenger</th>
+                          <th className="py-2 px-3">Pickup Dorm</th>
+                          <th className="py-2 px-3">Trip</th>
+                          <th className="py-2 px-3 text-right">Driver / Pickup</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {passengers.length === 0 ? (
+                          <tr><td colSpan={4} className="py-6 text-center text-slate-400">No members currently requesting transport.</td></tr>
+                        ) : (
+                          passengers.map((p) => {
+                            const isPickedByMe = p.assigned_driver_name === profile.full_name;
+                            return (
+                              <tr key={p.id}>
+                                <td className="py-2 px-3">
+                                  <div className="font-bold text-slate-900">{p.student_name}</div>
+                                  <div className="font-mono text-[10px] text-slate-500">{p.phone_number}</div>
+                                </td>
+                                <td className="py-2 px-3 font-semibold text-emerald-900">{p.dormitory || '-'}</td>
+                                <td className="py-2 px-3"><span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[10px]">{p.transport_type}</span></td>
+                                <td className="py-2 px-3 text-right">
+                                  {isAdmin ? (
+                                    <select
+                                      value={p.assigned_driver_name || ''}
+                                      onChange={(e) => handleDriverClaimPassenger(p, e.target.value)}
+                                      className="rounded-lg border px-2 py-1 font-bold text-[11px] bg-white"
+                                    >
+                                      <option value="">-- Unassigned --</option>
+                                      {eventDrivers.map((d) => (<option key={d.id} value={d.student_name}>{d.student_name}</option>))}
+                                    </select>
+                                  ) : isCurrentUserDriver ? (
+                                    isPickedByMe ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDriverClaimPassenger(p, '')}
+                                        className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold cursor-pointer"
+                                      >
+                                        Picked Up ✓ (Release)
+                                      </button>
+                                    ) : p.assigned_driver_name ? (
+                                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px]">
+                                        By {p.assigned_driver_name}
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDriverClaimPassenger(p, profile.full_name)}
+                                        className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                                      >
+                                        Pick Up
+                                      </button>
+                                    )
+                                  ) : p.assigned_driver_name ? (
+                                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                                      ✓ {p.assigned_driver_name}
+                                    </span>
+                                  ) : (
+                                    <span className="text-amber-700 font-semibold text-[11px]">Waiting for driver</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
