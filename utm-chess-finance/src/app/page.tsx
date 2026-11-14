@@ -266,6 +266,7 @@ export default function Page() {
       bank_name: String(raw.bank_name || ''),
       bank_account_no: String(raw.bank_account_no || ''),
       bank_account_holder: String(raw.bank_account_holder || ''),
+      bank_qr_url: String(raw.bank_qr_url || ''),
       created_at: String(raw.created_at || ''),
     };
   };
@@ -1001,7 +1002,7 @@ export default function Page() {
                 pollVotes={pollVotes}
                 profile={profile}
                 isAdmin={effectivePermissions.can_manage_posters_polls}
-                onRefresh={(m) => {
+                onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
                 }}
@@ -1054,7 +1055,6 @@ export default function Page() {
                   </div>
                 </div>
 
-                {/* Cohesive Emerald + Neutral Slate Glass Activity Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   {visibleBudgets.map((ev) => {
                     const myRsvp = rsvps.find((r) => r.budget_id === ev.id && r.user_id === profile.id);
@@ -1292,7 +1292,7 @@ export default function Page() {
                 loans={equipmentLoans}
                 profile={profile}
                 isAdmin={effectivePermissions.can_manage_equipment}
-                onRefresh={(m) => {
+                onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
                 }}
@@ -1399,7 +1399,7 @@ export default function Page() {
                 budgets={budgets}
                 myRsvps={rsvps.filter((r) => r.user_id === profile.id)}
                 myFeePayments={feePayments.filter((f) => f.user_id === profile.id)}
-                onUpdated={(u, m) => {
+                onUpdated={(u: Partial<UserProfile>, m: string) => {
                   setProfile((p) => (p ? { ...p, ...u } : null));
                   fetchAllData();
                   showToast(m);
@@ -1421,8 +1421,8 @@ export default function Page() {
                 canEdit={effectivePermissions.can_manage_finance}
                 externalOpenModal={quickAdjustFinanceOpen}
                 onCloseExternalModal={() => setQuickAdjustFinanceOpen(false)}
-                onSelectClaim={(c) => setSelectedClaim(c)}
-                onRefresh={(m) => {
+                onSelectClaim={(c: Claim) => setSelectedClaim(c)}
+                onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
                 }}
@@ -2038,7 +2038,7 @@ export default function Page() {
         feePayments={feePayments}
         profile={profile}
         isAdmin={isAdminOrOwner}
-        onSuccess={(m) => {
+        onSuccess={(m: string) => {
           showToast(m);
           fetchAllData();
         }}
@@ -2056,7 +2056,7 @@ export default function Page() {
         paymentBankInfo={paymentBankInfo}
         onClose={() => setOpsModalEvent(null)}
         onOpenScanner={() => setIsQrScannerOpen(true)}
-        onRefresh={(m) => {
+        onRefresh={(m: string) => {
           showToast(m);
           fetchAllData();
         }}
@@ -2067,7 +2067,7 @@ export default function Page() {
         budgets={budgets}
         departments={departments}
         profile={profile}
-        onSuccess={(m) => {
+        onSuccess={(m: string) => {
           showToast(m);
           fetchAllData();
         }}
@@ -2077,7 +2077,7 @@ export default function Page() {
         budget={budgets.find((b) => b.id === selectedClaim?.budget_id)}
         profile={{ ...profile, role: effectivePermissions.can_manage_claims_fees ? 'treasurer' : 'member' }}
         onClose={() => setSelectedClaim(null)}
-        onUpdated={(m) => {
+        onUpdated={(m: string) => {
           showToast(m);
           fetchAllData();
         }}
@@ -2092,7 +2092,7 @@ export default function Page() {
         departments={departments}
         rsvps={rsvps}
         feePayments={feePayments}
-        onSuccess={(m) => {
+        onSuccess={(m: string) => {
           showToast(m);
           fetchAllData();
         }}

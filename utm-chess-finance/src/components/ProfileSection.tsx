@@ -8,6 +8,8 @@ import {
   EventRsvp,
   ActivityFeePayment,
   DEFAULT_DEPARTMENTS,
+  MAX_FILE_SIZE_BYTES,
+  downloadFileFromUrl,
 } from '@/lib/supabase';
 import {
   UserCheck,
@@ -18,6 +20,8 @@ import {
   Car,
   ExternalLink,
   Landmark,
+  Download,
+  Trash2,
 } from 'lucide-react';
 
 interface ProfileSectionProps {
@@ -51,6 +55,8 @@ export default function ProfileSection({
   const [bankName, setBankName] = useState(profile.bank_name || '');
   const [bankAccountNo, setBankAccountNo] = useState(profile.bank_account_no || '');
   const [bankAccountHolder, setBankAccountHolder] = useState(profile.bank_account_holder || profile.full_name || '');
+  const [bankQrUrl, setBankQrUrl] = useState(profile.bank_qr_url || '');
+  const [bankQrFile, setBankQrFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -76,6 +82,7 @@ export default function ProfileSection({
         setBankAccountHolder(
           profile.bank_account_holder || parsed.bank_account_holder || profile.full_name || ''
         );
+        setBankQrUrl(profile.bank_qr_url || parsed.bank_qr_url || '');
         return;
       } catch {
         /* ignore */
@@ -84,16 +91,30 @@ export default function ProfileSection({
     setBankName(profile.bank_name || '');
     setBankAccountNo(profile.bank_account_no || '');
     setBankAccountHolder(profile.bank_account_holder || profile.full_name || '');
+    setBankQrUrl(profile.bank_qr_url || '');
   }, [profile, departments]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
+      let finalQrUrl = bankQrUrl.trim();
+      if (bankQrFile && bankQrFile.size <= MAX_FILE_SIZE_BYTES) {
+        const ext = bankQrFile.name.split('.').pop() || 'png';
+        const path = `member-qr/${profile.id}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from('receipts').upload(path, bankQrFile);
+        if (!upErr) {
+          finalQrUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
+        }
+      }
+      setBankQrUrl(finalQrUrl);
+      setBankQrFile(null);
+
       const bankData = {
         bank_name: bankName.trim(),
         bank_account_no: bankAccountNo.trim(),
         bank_account_holder: bankAccountHolder.trim() || fullName.trim(),
+        bank_qr_url: finalQrUrl,
       };
       if (typeof window !== 'undefined') {
         localStorage.setItem(`clubsync_bank_${profile.id}`, JSON.stringify(bankData));
@@ -116,7 +137,7 @@ export default function ProfileSection({
       if (error) {
         await supabase.from('users').update(coreUpdates).eq('id', profile.id);
       }
-      onUpdated(fullUpdates, 'Profile & Bank reimbursement details saved!');
+      onUpdated(fullUpdates, 'Profile, Bank & Reimbursement QR saved!');
     } finally {
       setSaving(false);
     }
@@ -131,7 +152,7 @@ export default function ProfileSection({
             <div>
               <h2 className="text-base font-bold">My Member Profile</h2>
               <p className="text-xs text-emerald-200">
-                Auto-fills your name, matric, dorm &amp; bank info across events and claims
+                Auto-fills your name, matric, dorm &amp; bank/QR info across events and claims
               </p>
             </div>
           </div>
@@ -252,10 +273,10 @@ export default function ProfileSection({
               <Landmark className="w-4 h-4 text-emerald-700" />
               <div>
                 <h3 className="text-xs font-extrabold text-emerald-950">
-                  Bank Account / DuitNow / TNG eWallet (Auto-Fills Reimbursement Claims)
+                  My Bank / DuitNow / TNG QR (Optional — For Receiving Reimbursements)
                 </h3>
                 <p className="text-[11px] text-slate-600">
-                  Saved here so the Treasurer can reimburse your approved claims in 1 click.
+                  Save your bank details or upload your personal QR (JPG, PNG, PDF) so the Admin can scan directly or download it to reimburse your claims.
                 </p>
               </div>
             </div>
@@ -296,6 +317,46 @@ export default function ProfileSection({
                   className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
                 />
               </div>
+            </div>
+
+            <div className="pt-2 border-t border-emerald-200/70 space-y-2 text-xs">
+              <label className="block font-bold text-emerald-900">
+                Upload My Personal DuitNow / TNG QR (Optional — JPG, PNG, PDF)
+              </label>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setBankQrFile(e.target.files?.[0] || null)}
+                className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+              />
+              {bankQrUrl && (
+                <div className="p-3 rounded-xl bg-white border border-emerald-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    {!bankQrUrl.toLowerCase().split('?')[0].endsWith('.pdf') && (
+                      <img src={bankQrUrl} alt="My QR" className="w-14 h-14 object-contain rounded-lg border" />
+                    )}
+                    <span className="font-bold text-emerald-900">Saved Personal Payment QR</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => downloadFileFromUrl(bankQrUrl, `${matricNo}_Payment_QR`)}
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-bold cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5 inline mr-1" />
+                      Download
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBankQrUrl('')}
+                      className="p-1.5 rounded-lg bg-rose-50 text-rose-700 cursor-pointer"
+                      title="Remove QR"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

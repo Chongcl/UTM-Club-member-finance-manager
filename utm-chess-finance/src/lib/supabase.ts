@@ -97,10 +97,10 @@ export interface UserProfile {
   bank_name?: string;
   bank_account_no?: string;
   bank_account_holder?: string;
+  bank_qr_url?: string;
   created_at: string;
 }
 
-// Simplified to 2 primary modes: 'scan_attendance' vs 'entry_pass' (with backward compatibility for older values)
 export type TicketQrMode = 'scan_attendance' | 'entry_pass' | 'all_registered' | 'paid_only' | 'manual_only';
 export type PassApprovalRule = 'auto_after_payment' | 'manual_only';
 
@@ -178,8 +178,10 @@ export interface Claim {
   merchant_name: string;
   description: string;
   payment_info?: string;
+  claimant_qr_url?: string;
   payout_proof_url?: string;
   payout_proof_name?: string;
+  show_payout_proof?: boolean;
   paid_at?: string;
   receipt_url: string;
   receipt_file_name: string;
@@ -262,6 +264,26 @@ export const TRANSPORT_OPTIONS: ('None' | 'One-Way' | 'Return Trip' | 'Round Tri
   'Round Trip',
 ];
 
+export async function downloadFileFromUrl(url: string, fallbackName: string) {
+  if (!url) return;
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const ext = url.split('?')[0].split('.').pop() || 'png';
+    const finalName = fallbackName.includes('.') ? fallbackName : `${fallbackName}.${ext}`;
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = finalName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
+
 export interface ExcelSheetInput {
   name: string;
   headers: string[];
@@ -321,7 +343,6 @@ export async function exportMultiSheetExcel(filenameBase: string, sheets: ExcelS
     return;
   }
 
-  // Fallback multi-worksheet Excel XML (.xls)
   const worksheetsXml = sheets
     .map((sheet, idx) => {
       const cleanName = escapeXml((sheet.name || `Sheet${idx + 1}`).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31));

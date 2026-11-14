@@ -9,7 +9,7 @@ import {
   MAX_FILE_SIZE_BYTES,
 } from '@/lib/supabase';
 import ReceiptDropzone, { ScannedReceiptData } from './ReceiptDropzone';
-import { X, CheckCircle2, AlertCircle, Loader2, Sparkles, Landmark } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Loader2, Sparkles, Landmark, Eye, EyeOff } from 'lucide-react';
 
 interface ClaimFormModalProps {
   isOpen: boolean;
@@ -40,9 +40,12 @@ export default function ClaimFormModal({
   );
   const [merchantName, setMerchantName] = useState('');
   const [description, setDescription] = useState('');
+  const [includePaymentDetails, setIncludePaymentDetails] = useState(true);
   const [bankName, setBankName] = useState('');
   const [bankAccountNo, setBankAccountNo] = useState('');
   const [bankAccountHolder, setBankAccountHolder] = useState('');
+  const [claimantQrUrl, setClaimantQrUrl] = useState('');
+  const [claimantQrFile, setClaimantQrFile] = useState<File | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [scannedData, setScannedData] = useState<ScannedReceiptData | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -54,6 +57,7 @@ export default function ClaimFormModal({
       bank_name: profile.bank_name || '',
       bank_account_no: profile.bank_account_no || '',
       bank_account_holder: profile.bank_account_holder || profile.full_name || '',
+      bank_qr_url: profile.bank_qr_url || '',
     };
     if (typeof window !== 'undefined') {
       const raw = localStorage.getItem(`clubsync_bank_${profile.id}`);
@@ -65,6 +69,7 @@ export default function ClaimFormModal({
             bank_account_no: profile.bank_account_no || parsed.bank_account_no || '',
             bank_account_holder:
               profile.bank_account_holder || parsed.bank_account_holder || profile.full_name || '',
+            bank_qr_url: profile.bank_qr_url || parsed.bank_qr_url || '',
           };
         } catch {
           /* ignore */
@@ -74,6 +79,8 @@ export default function ClaimFormModal({
     setBankName(savedBank.bank_name);
     setBankAccountNo(savedBank.bank_account_no);
     setBankAccountHolder(savedBank.bank_account_holder);
+    setClaimantQrUrl(savedBank.bank_qr_url);
+    setClaimantQrFile(null);
   }, [isOpen, profile]);
 
   if (!isOpen) return null;
@@ -107,17 +114,29 @@ export default function ClaimFormModal({
 
     setSubmitting(true);
     try {
-      const paymentSummary = bankAccountNo.trim()
-        ? `${bankName.trim() || 'Bank/DuitNow'} • ${bankAccountNo.trim()} (${bankAccountHolder.trim() || profile.full_name})`
-        : '';
+      let finalClaimantQr = includePaymentDetails ? claimantQrUrl.trim() : '';
+      if (includePaymentDetails && claimantQrFile && claimantQrFile.size <= MAX_FILE_SIZE_BYTES) {
+        const qrExt = claimantQrFile.name.split('.').pop() || 'png';
+        const qrPath = `member-qr/${profile.id}-${Date.now()}.${qrExt}`;
+        const { error: qrErr } = await supabase.storage.from('receipts').upload(qrPath, claimantQrFile);
+        if (!qrErr) {
+          finalClaimantQr = supabase.storage.from('receipts').getPublicUrl(qrPath).data.publicUrl;
+        }
+      }
 
-      if (typeof window !== 'undefined' && bankAccountNo.trim()) {
+      const paymentSummary =
+        includePaymentDetails && bankAccountNo.trim()
+          ? `${bankName.trim() || 'Bank/DuitNow'} • ${bankAccountNo.trim()} (${bankAccountHolder.trim() || profile.full_name})`
+          : '';
+
+      if (typeof window !== 'undefined' && includePaymentDetails) {
         localStorage.setItem(
           `clubsync_bank_${profile.id}`,
           JSON.stringify({
             bank_name: bankName.trim(),
             bank_account_no: bankAccountNo.trim(),
             bank_account_holder: bankAccountHolder.trim() || profile.full_name,
+            bank_qr_url: finalClaimantQr,
           })
         );
       }
@@ -165,13 +184,28 @@ export default function ClaimFormModal({
         status: 'Pending',
       };
 
-      const { error: insertErr } = await supabase.from('claims').insert({
-        ...corePayload,
-        payment_info: paymentSummary,
-      });
+      const { data: inserted, error: insertErr } = await supabase
+        .from('claims')
+        .insert({
+          ...corePayload,
+          payment_info: paymentSummary,
+          claimant_qr_url: finalClaimantQr,
+        })
+        .select('id')
+        .maybeSingle();
+
       if (insertErr) {
-        const { error: fallbackErr } = await supabase.from('claims').insert(corePayload);
+        const { data: fbInserted, error: fallbackErr } = await supabase
+          .from('claims')
+          .insert(corePayload)
+          .select('id')
+          .maybeSingle();
         if (fallbackErr) throw fallbackErr;
+        if (fbInserted?.id && finalClaimantQr && typeof window !== 'undefined') {
+          localStorage.setItem(`clubsync_claimant_qr_${fbInserted.id}`, finalClaimantQr);
+        }
+      } else if (inserted?.id && finalClaimantQr && typeof window !== 'undefined') {
+        localStorage.setItem(`clubsync_claimant_qr_${inserted.id}`, finalClaimantQr);
       }
 
       onSuccess('Claim submitted!');
@@ -207,6 +241,7 @@ export default function ClaimFormModal({
           className="p-6 space-y-4 max-h-[82vh] overflow-y-auto"
         >
           <ReceiptDropzone
+            selectedFile={file}
             onFileSelect={(f) => {
               setFile(f);
               if (!f) setScannedData(null);
@@ -333,36 +368,65 @@ export default function ClaimFormModal({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
                   <Landmark className="w-4 h-4 text-emerald-700" />
-                  <span>Reimbursement Bank / DuitNow / TNG Details (Auto-Filled)</span>
+                  <span>My Reimbursement Bank / DuitNow QR (Displayed to Admin)</span>
                 </span>
-                <span className="text-[10px] font-bold text-emerald-700">Saved to Profile</span>
+                <button
+                  type="button"
+                  onClick={() => setIncludePaymentDetails(!includePaymentDetails)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer ${
+                    includePaymentDetails ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {includePaymentDetails ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                  <span>{includePaymentDetails ? 'Shown to Admin' : 'Hidden / Skip'}</span>
+                </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-                <input
-                  type="text"
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                  placeholder="Bank / eWallet (e.g., Maybank, TNG) *"
-                  className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
-                  required
-                />
-                <input
-                  type="text"
-                  value={bankAccountNo}
-                  onChange={(e) => setBankAccountNo(e.target.value)}
-                  placeholder="Account No / DuitNow Phone *"
-                  className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-mono font-bold"
-                  required
-                />
-                <input
-                  type="text"
-                  value={bankAccountHolder}
-                  onChange={(e) => setBankAccountHolder(e.target.value)}
-                  placeholder="Account Holder Name *"
-                  className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
-                  required
-                />
-              </div>
+              {includePaymentDetails && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                    <input
+                      type="text"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      placeholder="Bank / eWallet (e.g., Maybank, TNG)"
+                      className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
+                    />
+                    <input
+                      type="text"
+                      value={bankAccountNo}
+                      onChange={(e) => setBankAccountNo(e.target.value)}
+                      placeholder="Account No / DuitNow Phone"
+                      className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-mono font-bold"
+                    />
+                    <input
+                      type="text"
+                      value={bankAccountHolder}
+                      onChange={(e) => setBankAccountHolder(e.target.value)}
+                      placeholder="Account Holder Name"
+                      className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
+                    />
+                  </div>
+                  <div className="pt-1 text-xs space-y-1.5">
+                    <label className="block font-bold text-emerald-900">
+                      Or Upload My Personal DuitNow / TNG QR (JPG, PNG, PDF — Optional)
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) => setClaimantQrFile(e.target.files?.[0] || null)}
+                      className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+                    />
+                    {claimantQrUrl && !claimantQrFile && (
+                      <div className="flex items-center justify-between bg-white px-3 py-1.5 rounded-xl border text-[11px]">
+                        <span className="text-emerald-800 font-bold">✓ Personal Payment QR attached from Profile</span>
+                        <button type="button" onClick={() => setClaimantQrUrl('')} className="text-rose-600 font-bold cursor-pointer">
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="sm:col-span-2">

@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, Claim, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES, exportMultiSheetExcel } from '@/lib/supabase';
-import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle, Loader2, Car, UserCheck, FileSpreadsheet } from 'lucide-react';
+import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, Claim, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES, exportMultiSheetExcel, downloadFileFromUrl } from '@/lib/supabase';
+import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle, Loader2, Car, UserCheck, FileSpreadsheet, Eye, EyeOff, Settings } from 'lucide-react';
 
 interface EventOperationsModalProps {
   event: Budget | null; initialTab: 'fee' | 'transport' | 'qr' | 'pass'; profile: UserProfile;
@@ -21,6 +21,15 @@ export default function EventOperationsModal({
   const [feeFile, setFeeFile] = useState<File | null>(null);
   const [feeError, setFeeError] = useState<string | null>(null);
   const [submittingFee, setSubmittingFee] = useState(false);
+
+  // Admin customizable Club Payment QR / Bank Info & Visibility toggle per activity or club-wide
+  const [activePayQrUrl, setActivePayQrUrl] = useState(paymentQrUrl);
+  const [activePayBankInfo, setActivePayBankInfo] = useState(paymentBankInfo);
+  const [showQrToMembers, setShowQrToMembers] = useState(true);
+  const [adminQrSetupOpen, setAdminQrSetupOpen] = useState(false);
+  const [adminQrFile, setAdminQrFile] = useState<File | null>(null);
+  const [savingAdminQr, setSavingAdminQr] = useState(false);
+
   const [surveyChoice, setSurveyChoice] = useState<TransportSurveyChoice>('OWN');
   const [dormitoryInput, setDormitoryInput] = useState('');
   const [carDetails, setCarDetails] = useState('');
@@ -33,7 +42,6 @@ export default function EventOperationsModal({
   const [passRule, setPassRule] = useState<PassApprovalRule>('auto_after_payment');
   const [localPassOverrides, setLocalPassOverrides] = useState<Record<string, boolean>>({});
 
-  // Only initialize when opening a new event ID so granting a pass NEVER resets or jumps out of the tab
   const lastEventIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!event) {
@@ -46,9 +54,18 @@ export default function EventOperationsModal({
     setLocalPassOverrides({});
     setFeeError(null);
     setTransportSavedSuccess(false);
+    setAdminQrSetupOpen(false);
     const feeVal = Number(event.registration_fee || 0);
     setAmountPaid(String(feeVal));
     setQrToken(event.qr_code_token || event.id.slice(0, 6).toUpperCase());
+
+    const evQr = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_payqr_${event.id}`) : null;
+    const evBank = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_paybank_${event.id}`) : null;
+    const evShow = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_showqr_${event.id}`) : null;
+
+    setActivePayQrUrl(evQr !== null ? evQr : paymentQrUrl);
+    setActivePayBankInfo(evBank !== null ? evBank : paymentBankInfo);
+    setShowQrToMembers(evShow !== null ? evShow !== 'false' : true);
 
     const savedMode =
       (typeof window !== 'undefined' ? localStorage.getItem(`clubsync_qrmode_${event.id}`) : null) ||
@@ -72,7 +89,7 @@ export default function EventOperationsModal({
     setSeatsAvailable(String(cur?.seats_available ?? 4));
     setTripsCount(String(cur?.trips_count ?? 1));
     setDormitoryInput(cur?.dormitory || profile.dormitory || '');
-  }, [event, initialTab, isAdmin, rsvps, profile.id, profile.dormitory]);
+  }, [event, initialTab, isAdmin, rsvps, profile.id, profile.dormitory, paymentQrUrl, paymentBankInfo]);
 
   if (!event) return null;
 
@@ -112,6 +129,39 @@ export default function EventOperationsModal({
     setLocalPassOverrides((prev) => ({ ...prev, [rsvp.id]: nextVal }));
     await supabase.from('event_rsvps').update({ pass_approved: nextVal }).eq('id', rsvp.id);
     onRefresh(`${nextVal ? 'Granted' : 'Locked'} pass for ${rsvp.student_name}.`);
+  };
+
+  const handleSaveAdminPaymentQrSettings = async () => {
+    setSavingAdminQr(true);
+    try {
+      let finalUrl = activePayQrUrl.trim();
+      if (adminQrFile && adminQrFile.size <= MAX_FILE_SIZE_BYTES) {
+        const ext = adminQrFile.name.split('.').pop() || 'png';
+        const path = `payment-qr/event-${event.id}-${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from('receipts').upload(path, adminQrFile);
+        if (!error) {
+          finalUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
+        }
+      }
+      setActivePayQrUrl(finalUrl);
+      setAdminQrFile(null);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`clubsync_ev_payqr_${event.id}`, finalUrl);
+        localStorage.setItem(`clubsync_ev_paybank_${event.id}`, activePayBankInfo.trim());
+        localStorage.setItem(`clubsync_ev_showqr_${event.id}`, String(showQrToMembers));
+        localStorage.setItem('clubsync_payment_qr', finalUrl);
+        localStorage.setItem('clubsync_payment_bank', activePayBankInfo.trim());
+      }
+      await supabase.from('club_settings').upsert({
+        id: 1,
+        payment_qr_url: finalUrl,
+        payment_bank_info: activePayBankInfo.trim(),
+      });
+      setAdminQrSetupOpen(false);
+      onRefresh(showQrToMembers ? 'Payment QR & Bank details displayed to members!' : 'Payment QR hidden from members.');
+    } finally {
+      setSavingAdminQr(false);
+    }
   };
 
   const handleExportActivityMultiSheetExcel = async () => {
@@ -300,6 +350,8 @@ export default function EventOperationsModal({
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); a.download = filename; a.click();
   };
 
+  const isQrPdf = activePayQrUrl.toLowerCase().split('?')[0].endsWith('.pdf');
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto">
       <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border max-w-4xl w-full overflow-hidden my-8">
@@ -425,66 +477,181 @@ export default function EventOperationsModal({
 
           {tab === 'fee' && (requiresFee || isAdmin) && (
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-              <form onSubmit={handlePayFeeSubmit} className="lg:col-span-2 bg-slate-50 border rounded-2xl p-5 space-y-3 self-start">
-                <h3 className="text-sm font-extrabold">Fee Payment (RM {reqFee.toFixed(2)})</h3>
-                {hasEntryPass && passRule === 'auto_after_payment' && <p className="text-[11px] text-emerald-700 font-semibold">Your Entry Pass QR unlocks automatically after payment submission.</p>}
-
-                {(paymentQrUrl || paymentBankInfo) && (
-                  <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 space-y-2 text-center shadow-2xs">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-pink-600 text-white">
-                      Scan Club DuitNow / TNG / Payment QR
-                    </span>
-                    {paymentQrUrl && (
-                      paymentQrUrl.toLowerCase().endsWith('.pdf') ? (
-                        <div className="py-2">
-                          <a
-                            href={paymentQrUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+              <div className="lg:col-span-2 space-y-3 self-start">
+                {isAdmin && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-extrabold text-emerald-950 flex items-center gap-1.5">
+                        <Settings className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Admin: Payment QR &amp; Bank Display</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setAdminQrSetupOpen(!adminQrSetupOpen)}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                      >
+                        {adminQrSetupOpen ? 'Close' : 'Upload / Edit QR'}
+                      </button>
+                    </div>
+                    {adminQrSetupOpen && (
+                      <div className="space-y-2 pt-2 border-t border-emerald-200">
+                        <label className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white border cursor-pointer font-bold text-slate-800">
+                          <span className="flex items-center gap-1.5">
+                            {showQrToMembers ? <Eye className="w-3.5 h-3.5 text-emerald-600" /> : <EyeOff className="w-3.5 h-3.5 text-slate-400" />}
+                            <span>Display Payment QR / Bank Info to Members</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={showQrToMembers}
+                            onChange={(e) => setShowQrToMembers(e.target.checked)}
+                          />
+                        </label>
+                        <div>
+                          <label className="block font-bold text-emerald-900 mb-1">Upload QR File (JPG, PNG, WEBP, PDF)</label>
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            onChange={(e) => setAdminQrFile(e.target.files?.[0] || null)}
+                            className="w-full text-[11px] file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+                          />
+                        </div>
+                        <input
+                          type="url"
+                          value={activePayQrUrl}
+                          onChange={(e) => setActivePayQrUrl(e.target.value)}
+                          placeholder="Or paste QR Image / PDF URL (Leave empty for none)"
+                          className="w-full rounded-xl border bg-white px-2.5 py-1.5"
+                        />
+                        <input
+                          type="text"
+                          value={activePayBankInfo}
+                          onChange={(e) => setActivePayBankInfo(e.target.value)}
+                          placeholder="Bank Name, Account No & Holder Name"
+                          className="w-full rounded-xl border bg-white px-2.5 py-1.5 font-mono font-bold"
+                        />
+                        <div className="flex justify-between gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActivePayQrUrl('');
+                              setActivePayBankInfo('');
+                              setAdminQrFile(null);
+                            }}
+                            className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 font-bold cursor-pointer"
                           >
-                            <FileText className="w-4 h-4" />
-                            <span>Open Official Payment QR (PDF)</span>
-                          </a>
+                            Clear QR
+                          </button>
+                          <button
+                            type="button"
+                            disabled={savingAdminQr}
+                            onClick={handleSaveAdminPaymentQrSettings}
+                            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                          >
+                            {savingAdminQr ? 'Saving...' : 'Save QR Settings'}
+                          </button>
                         </div>
-                      ) : (
-                        <div className="p-2 bg-white rounded-2xl border mx-auto max-w-[200px]">
-                          <img src={paymentQrUrl} alt="Club Payment QR" className="w-full h-auto object-contain rounded-xl" />
-                        </div>
-                      )
-                    )}
-                    {paymentBankInfo && (
-                      <div className="text-[11px] bg-emerald-50/80 border border-emerald-200 rounded-xl p-2 flex items-center justify-between gap-2 text-left">
-                        <span className="font-mono font-bold text-slate-800 break-all">{paymentBankInfo}</span>
-                        <button
-                          type="button"
-                          onClick={() => navigator.clipboard.writeText(paymentBankInfo)}
-                          className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] shrink-0 cursor-pointer"
-                        >
-                          Copy
-                        </button>
                       </div>
                     )}
                   </div>
                 )}
 
-                <input type="number" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
-                <label className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 hover:bg-emerald-50 cursor-pointer text-center transition">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                    {feeFile ? <FileText className="w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
-                  </div>
-                  <div className="text-xs font-bold text-emerald-950 break-all">
-                    {feeFile ? feeFile.name : 'Upload Payment Receipt (JPG, PNG, PDF)'}
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px]">
-                    <UploadCloud className="w-3.5 h-3.5" />
-                    <span>{feeFile ? 'Change File' : 'Upload Receipt'}</span>
-                  </span>
-                  <input type="file" accept="image/*,application/pdf" onChange={(e) => { setFeeFile(e.target.files?.[0] || null); setFeeError(null); }} className="hidden" />
-                </label>
-                {feeError && <div className="flex items-center gap-1.5 text-xs bg-rose-50 text-rose-700 px-3 py-2 rounded-xl font-semibold"><AlertCircle className="w-4 h-4 shrink-0" /><span>{feeError}</span></div>}
-                <button type="submit" disabled={submittingFee} className="w-full py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"><CheckCircle2 className="w-4 h-4 inline mr-1" />{submittingFee ? 'Uploading...' : 'Submit Payment'}</button>
-              </form>
+                <form onSubmit={handlePayFeeSubmit} className="bg-slate-50 border rounded-2xl p-5 space-y-3">
+                  <h3 className="text-sm font-extrabold">Fee Payment (RM {reqFee.toFixed(2)})</h3>
+                  {hasEntryPass && passRule === 'auto_after_payment' && <p className="text-[11px] text-emerald-700 font-semibold">Your Entry Pass QR unlocks automatically after payment submission.</p>}
+
+                  {showQrToMembers && (activePayQrUrl || activePayBankInfo) && (
+                    <div className="p-4 rounded-2xl bg-white border-2 border-emerald-200 space-y-2.5 text-center shadow-xs">
+                      <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-600 text-white">
+                        Scan Directly or Download Payment QR
+                      </span>
+                      {activePayQrUrl && (
+                        isQrPdf ? (
+                          <div className="space-y-2">
+                            <iframe src={activePayQrUrl} title="Payment QR PDF" className="w-full h-48 rounded-xl border" />
+                            <div className="flex justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => downloadFileFromUrl(activePayQrUrl, `${event.event_name}_Payment_QR.pdf`)}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Download QR PDF</span>
+                              </button>
+                              <a
+                                href={activePayQrUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px]"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span>Open Full PDF</span>
+                              </a>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="p-2 bg-white rounded-2xl border mx-auto max-w-[220px] shadow-2xs">
+                              <img src={activePayQrUrl} alt="Club Payment QR" className="w-full h-auto object-contain rounded-xl" />
+                            </div>
+                            <div className="flex justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => downloadFileFromUrl(activePayQrUrl, `${event.event_name}_Payment_QR.png`)}
+                                className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Download QR</span>
+                              </button>
+                              <a
+                                href={activePayQrUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px]"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span>Full Size</span>
+                              </a>
+                            </div>
+                          </div>
+                        )
+                      )}
+                      {activePayBankInfo && (
+                        <div className="text-[11px] bg-emerald-50/80 border border-emerald-200 rounded-xl p-2.5 flex items-center justify-between gap-2 text-left">
+                          <div>
+                            <span className="text-[10px] font-bold text-emerald-800 block uppercase">Bank Transfer Details:</span>
+                            <span className="font-mono font-extrabold text-slate-900 break-all">{activePayBankInfo}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(activePayBankInfo)}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] shrink-0 cursor-pointer"
+                          >
+                            <Copy className="w-3 h-3 inline mr-0.5" />
+                            Copy
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <input type="number" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
+                  <label className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 hover:bg-emerald-50 cursor-pointer text-center transition">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                      {feeFile ? <FileText className="w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
+                    </div>
+                    <div className="text-xs font-bold text-emerald-950 break-all">
+                      {feeFile ? feeFile.name : 'Upload Payment Receipt (JPG, PNG, PDF)'}
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px]">
+                      <UploadCloud className="w-3.5 h-3.5" />
+                      <span>{feeFile ? 'Change File' : 'Upload Receipt'}</span>
+                    </span>
+                    <input type="file" accept="image/*,application/pdf" onChange={(e) => { setFeeFile(e.target.files?.[0] || null); setFeeError(null); }} className="hidden" />
+                  </label>
+                  {feeError && <div className="flex items-center gap-1.5 text-xs bg-rose-50 text-rose-700 px-3 py-2 rounded-xl font-semibold"><AlertCircle className="w-4 h-4 shrink-0" /><span>{feeError}</span></div>}
+                  <button type="submit" disabled={submittingFee} className="w-full py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"><CheckCircle2 className="w-4 h-4 inline mr-1" />{submittingFee ? 'Uploading...' : 'Submit Payment'}</button>
+                </form>
+              </div>
               <div className="lg:col-span-3 space-y-3">
                 <h3 className="text-sm font-extrabold">{isAdmin ? `All Fee Submissions (${visibleFeePayments.length})` : `My Fee Receipt (${visibleFeePayments.length})`}</h3>
                 <div className="border rounded-2xl overflow-hidden">
