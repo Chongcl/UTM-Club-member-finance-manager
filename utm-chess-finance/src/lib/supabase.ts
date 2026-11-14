@@ -11,6 +11,9 @@ export const isSupabaseConfigured =
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export type UserRole = 'member' | 'treasurer' | 'owner';
 
+// Simplified to ONLY 2 clear modes: 'scan_attendance' or 'entry_pass'
+export type TicketQrMode = 'scan_attendance' | 'entry_pass' | 'all_registered' | 'paid_only' | 'manual_only';
+
 export interface AdminPermissions {
   can_manage_activities: boolean;
   can_manage_posters_polls: boolean;
@@ -22,36 +25,24 @@ export interface AdminPermissions {
 }
 
 export const DEFAULT_ADMIN_PERMISSIONS: AdminPermissions = {
-  can_manage_activities: false,
-  can_manage_posters_polls: false,
-  can_manage_equipment: false,
-  can_manage_claims_fees: false,
-  can_manage_transport: false,
-  can_manage_finance: false,
-  can_manage_members: false,
+  can_manage_activities: false, can_manage_posters_polls: false, can_manage_equipment: false,
+  can_manage_claims_fees: false, can_manage_transport: false, can_manage_finance: false, can_manage_members: false,
 };
 
 export const FULL_OWNER_PERMISSIONS: AdminPermissions = {
-  can_manage_activities: true,
-  can_manage_posters_polls: true,
-  can_manage_equipment: true,
-  can_manage_claims_fees: true,
-  can_manage_transport: true,
-  can_manage_finance: true,
-  can_manage_members: true,
+  can_manage_activities: true, can_manage_posters_polls: true, can_manage_equipment: true,
+  can_manage_claims_fees: true, can_manage_transport: true, can_manage_finance: true, can_manage_members: true,
 };
 
 export const PERMISSION_LABELS: { key: keyof AdminPermissions; label: string; desc: string }[] = [
-  { key: 'can_manage_activities', label: 'Set Up, Edit & Delete Activities + Generate QR', desc: 'Create/edit/remove activities, set Entry Pass QR rules, and generate QR codes.' },
-  { key: 'can_manage_posters_polls', label: 'Edit Homepage Background, Posters, Notices & Polls', desc: 'Customize homepage background design, banners, pinned notices, and live polls.' },
-  { key: 'can_manage_equipment', label: 'Edit & Delete Equipment Inventory & Loans', desc: 'Add/edit/remove equipment items and modify or delete member borrow records.' },
-  { key: 'can_manage_claims_fees', label: 'Approve/Reject Claims & Verify Activity Fees', desc: 'Approve or reject reimbursement claims and verify student fee receipts.' },
-  { key: 'can_manage_transport', label: 'Manage Event Transport & Assign Drivers', desc: 'Adjust driver rewards, fee settings, and assign passengers to drivers.' },
-  { key: 'can_manage_finance', label: 'Edit & Delete Club Finance & Savings Ledger', desc: 'Add, edit, or delete manual income/expense ledger entries.' },
-  { key: 'can_manage_members', label: 'Manage Members, Batch Clearance & Departments', desc: 'Promote members to Admin, run batch clearance, and rename departments.' },
+  { key: 'can_manage_activities', label: 'Manage Activities & QR Mode', desc: 'Create/edit activities, switch between Scan Attendance vs Entry Pass, and generate QR codes.' },
+  { key: 'can_manage_posters_polls', label: 'Customize Logo, Background, Posters & Polls', desc: 'Change club logo, animated background themes, event posters, and live polls.' },
+  { key: 'can_manage_equipment', label: 'Manage Equipment Inventory & Loans', desc: 'Add/edit equipment items and manage member borrow records.' },
+  { key: 'can_manage_claims_fees', label: 'Approve Claims & Verify Activity Fees', desc: 'Approve/reject reimbursement claims and verify student fee payments.' },
+  { key: 'can_manage_transport', label: 'Manage Carpool & Assign Drivers', desc: 'Adjust driver allowances and assign passengers to drivers.' },
+  { key: 'can_manage_finance', label: 'Manage Club Finance & Savings Ledger', desc: 'Add, edit, or delete income and expense ledger entries.' },
+  { key: 'can_manage_members', label: 'Manage Members, Batch Clearance & Departments', desc: 'Promote Admins, run batch clearance, and customize department names.' },
 ];
-
-export type TicketQrMode = 'all_registered' | 'paid_only' | 'manual_only';
 
 export interface UserProfile {
   id: string; email: string; full_name: string; matric_no: string; phone_number: string;
@@ -112,3 +103,7 @@ export const CLUB_DEPARTMENTS = DEFAULT_DEPARTMENTS;
 export const EXPENSE_CATEGORIES = DEFAULT_DEPARTMENTS;
 export const TRANSPORT_OPTIONS = ['None', 'One-Way', 'Return Trip', 'Round Trip'] as const;
 export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
+
+export function isEntryPassMode(mode?: string): boolean {
+  return mode === 'entry_pass' || mode === 'paid_only' || mode === 'manual_only';
+}
