@@ -101,11 +101,12 @@ export default function BudgetModal({
   const isMemberEligibleForPass = (rsvp: EventRsvp) => {
     if (rsvp.attendance !== 'Attending') return false;
     if (localPassOverrides[rsvp.id] !== undefined) return localPassOverrides[rsvp.id];
-    if (rsvp.pass_approved === true) return true;
-    if (passRule === 'auto_after_payment' && reqFeeNum > 0) {
-      return eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Verified');
+    if (passRule === 'manual_only') return rsvp.pass_approved === true;
+    if (reqFeeNum > 0) {
+      const hasPaid = eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Verified');
+      return hasPaid || rsvp.pass_approved === true;
     }
-    return false;
+    return rsvp.pass_approved === true;
   };
 
   const venueQrPayload = `CLUBSYNC_QR::v1::${eventId}::${qrToken}`;
@@ -204,7 +205,7 @@ export default function BudgetModal({
                     type="button"
                     onClick={() => setOpenSection(openSection === 'passes' ? 'none' : 'passes')}
                     className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl font-bold transition cursor-pointer border ${
-                      openSection === 'passes' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-200'
+                      openSection === 'passes' ? 'bg-slate-950 text-white border-slate-950' : 'bg-slate-950/90 hover:bg-slate-900 text-white border-slate-800'
                     }`}
                   >
                     <QrCode className="w-4 h-4" />
@@ -245,19 +246,19 @@ export default function BudgetModal({
                     <button
                       type="button"
                       onClick={() => setUseEntryPass(false)}
-                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${!useEntryPass ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-800 border-slate-200'}`}
+                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${!useEntryPass ? 'bg-slate-950 text-white border-slate-950' : 'bg-white text-slate-800 border-slate-200'}`}
                     >
                       <div className="font-bold flex items-center gap-1.5"><QrCode className="w-4 h-4" /><span>Scan Attendance Only</span></div>
-                      <p className={`text-[11px] mt-0.5 ${!useEntryPass ? 'text-emerald-100' : 'text-slate-500'}`}>Members scan the event QR to record attendance automatically.</p>
+                      <p className={`text-[11px] mt-0.5 ${!useEntryPass ? 'text-slate-300' : 'text-slate-500'}`}>Members scan the event QR to record attendance automatically.</p>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setUseEntryPass(true)}
-                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${useEntryPass ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-800 border-slate-200'}`}
+                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${useEntryPass ? 'bg-slate-950 text-white border-slate-950' : 'bg-white text-slate-800 border-slate-200'}`}
                     >
                       <div className="font-bold flex items-center gap-1.5"><Ticket className="w-4 h-4" /><span>Entry Pass</span></div>
-                      <p className={`text-[11px] mt-0.5 ${useEntryPass ? 'text-emerald-100' : 'text-slate-500'}`}>Members receive a personal Entry Pass QR code.</p>
+                      <p className={`text-[11px] mt-0.5 ${useEntryPass ? 'text-slate-300' : 'text-slate-500'}`}>Members receive a personal Entry Pass QR code.</p>
                     </button>
                   </div>
                 </div>
