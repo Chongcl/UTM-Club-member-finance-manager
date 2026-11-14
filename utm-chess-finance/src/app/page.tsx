@@ -69,6 +69,16 @@ interface ConfirmDialogState {
   onConfirm: () => Promise<void>;
 }
 
+const NO_PERMISSIONS: AdminPermissions = {
+  can_manage_activities: false,
+  can_manage_posters_polls: false,
+  can_manage_equipment: false,
+  can_manage_claims_fees: false,
+  can_manage_transport: false,
+  can_manage_finance: false,
+  can_manage_members: false,
+};
+
 const BG_PRESETS = [
   {
     id: 'emerald-aurora',
@@ -247,11 +257,11 @@ export default function Page() {
       phone_number: String(raw.phone_number || ''),
       role: (raw.role as 'member' | 'treasurer' | 'owner') || 'member',
       admin_permissions: {
-        can_manage_activities: Boolean(p.can_manage_activities),
-        can_manage_posters_polls: Boolean(p.can_manage_posters_polls),
-        can_manage_equipment: Boolean(p.can_manage_equipment),
+        can_manage_activities: p.can_manage_activities ?? DEFAULT_ADMIN_PERMISSIONS.can_manage_activities,
+        can_manage_posters_polls: p.can_manage_posters_polls ?? DEFAULT_ADMIN_PERMISSIONS.can_manage_posters_polls,
+        can_manage_equipment: p.can_manage_equipment ?? DEFAULT_ADMIN_PERMISSIONS.can_manage_equipment,
         can_manage_claims_fees: Boolean(p.can_manage_claims_fees),
-        can_manage_transport: Boolean(p.can_manage_transport),
+        can_manage_transport: p.can_manage_transport ?? DEFAULT_ADMIN_PERMISSIONS.can_manage_transport,
         can_manage_finance: Boolean(p.can_manage_finance),
         can_manage_members: Boolean(p.can_manage_members),
       },
@@ -271,6 +281,17 @@ export default function Page() {
     };
   };
 
+  const resolveValidRoleMode = (norm: UserProfile, saved: 'member' | 'admin' | 'owner' | null): 'member' | 'admin' | 'owner' => {
+    if (norm.role === 'member') {
+      if (typeof window !== 'undefined') localStorage.setItem(`clubsync_mode_${norm.id}`, 'member');
+      return 'member';
+    }
+    if (norm.role === 'treasurer') {
+      return saved === 'member' ? 'member' : 'admin';
+    }
+    return saved || 'owner';
+  };
+
   const fetchOrCreateProfile = useCallback(async (uid: string, uEmail: string, meta?: Record<string, string>) => {
     const saved =
       typeof window !== 'undefined'
@@ -279,7 +300,7 @@ export default function Page() {
     const { data: existing } = await supabase.from('users').select('*').eq('id', uid).maybeSingle();
     if (existing) {
       const norm = normalizeProfile(existing as Record<string, unknown>);
-      setRoleMode(saved || (norm.role === 'owner' ? 'owner' : norm.role === 'treasurer' ? 'admin' : 'member'));
+      setRoleMode(resolveValidRoleMode(norm, saved));
       setProfile(norm);
       return;
     }
@@ -327,7 +348,10 @@ export default function Page() {
       setAllMembers(list);
       if (sessionUserId) {
         const me = list.find((u) => u.id === sessionUserId);
-        if (me) setProfile(me);
+        if (me) {
+          setProfile(me);
+          if (me.role === 'member') setRoleMode('member');
+        }
       }
     }
     if (lRes.data) setLedgerEntries(lRes.data as LedgerEntryItem[]);
@@ -574,6 +598,7 @@ export default function Page() {
         .update({ role: 'owner', admin_permissions: FULL_OWNER_PERMISSIONS })
         .eq('id', profile.id);
       await supabase.from('club_settings').update({ owner_user_id: profile.id }).eq('id', 1);
+      setProfile((prev) => (prev ? { ...prev, role: 'owner', admin_permissions: FULL_OWNER_PERMISSIONS } : null));
       setRoleMode('owner');
       localStorage.setItem(`clubsync_mode_${profile.id}`, 'owner');
       fetchAllData();
@@ -584,9 +609,12 @@ export default function Page() {
       normalizedPin === adminPinSetting.trim().toUpperCase() ||
       normalizedPin === 'EXEC-2026'
     ) {
+      if (profile.role === 'member') {
+        await supabase.from('users').update({ role: 'treasurer', admin_permissions: DEFAULT_ADMIN_PERMISSIONS }).eq('id', profile.id);
+        setProfile((prev) => (prev ? { ...prev, role: 'treasurer', admin_permissions: DEFAULT_ADMIN_PERMISSIONS } : null));
+      }
       setRoleMode('admin');
       localStorage.setItem(`clubsync_mode_${profile.id}`, 'admin');
-      if (profile.role === 'member') await supabase.from('users').update({ role: 'treasurer' }).eq('id', profile.id);
       fetchAllData();
       showToast('Admin Mode unlocked');
       return true;
@@ -649,13 +677,14 @@ export default function Page() {
     }
   };
 
-  const isOwner = roleMode === 'owner';
-  const isAdminOrOwner = roleMode === 'admin' || roleMode === 'owner';
+  const hasAdminDbRole = profile?.role === 'treasurer' || profile?.role === 'owner';
+  const isOwner = roleMode === 'owner' && profile?.role === 'owner';
+  const isAdminOrOwner = (roleMode === 'admin' || roleMode === 'owner') && hasAdminDbRole;
   const effectivePermissions: AdminPermissions = isOwner
     ? FULL_OWNER_PERMISSIONS
-    : roleMode === 'admin'
+    : isAdminOrOwner
     ? profile?.admin_permissions || DEFAULT_ADMIN_PERMISSIONS
-    : DEFAULT_ADMIN_PERMISSIONS;
+    : NO_PERMISSIONS;
 
   const isNaturallyDarkStyle = bgStyle === 'galaxy-nebula' || bgStyle === 'obsidian-carbon';
   const isDarkCanvas = darkMode || isNaturallyDarkStyle;
@@ -952,10 +981,10 @@ export default function Page() {
           activeTab={activeTab}
           onSelectTab={setActiveTab}
           currentBatch={currentBatch}
-          roleMode={roleMode}
+          roleMode={isAdminOrOwner ? roleMode : 'member'}
           darkMode={isDarkCanvas}
           onToggleDarkMode={toggleDarkMode}
-          canCustomizeTheme={effectivePermissions.can_manage_posters_polls}
+          canCustomizeTheme={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
           onOpenThemeStudio={() => setShowThemeStudio(true)}
           pendingClaimsCount={isAdminOrOwner ? claims.filter((c) => c.status === 'Pending').length : 0}
           onUnlockAdmin={handleUnlockAdmin}
@@ -969,7 +998,7 @@ export default function Page() {
           onOpenNewClaim={() => setIsClaimModalOpen(true)}
           onOpenQrScanner={() => setIsQrScannerOpen(true)}
           onOpenNewActivity={
-            effectivePermissions.can_manage_activities
+            isAdminOrOwner && effectivePermissions.can_manage_activities
               ? () => {
                   setEditingActivity(null);
                   setIsBudgetModalOpen(true);
@@ -977,7 +1006,7 @@ export default function Page() {
               : undefined
           }
           onOpenNewFinance={
-            effectivePermissions.can_manage_finance
+            isAdminOrOwner && effectivePermissions.can_manage_finance
               ? () => {
                   setActiveTab('ledger');
                   setQuickAdjustFinanceOpen(true);
@@ -1001,7 +1030,7 @@ export default function Page() {
                 polls={polls}
                 pollVotes={pollVotes}
                 profile={profile}
-                isAdmin={effectivePermissions.can_manage_posters_polls}
+                isAdmin={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
                 onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
@@ -1024,7 +1053,7 @@ export default function Page() {
                       <QrCode className="w-4 h-4" />
                       <span>Scan QR</span>
                     </button>
-                    {effectivePermissions.can_manage_activities && (
+                    {isAdminOrOwner && effectivePermissions.can_manage_activities && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1291,7 +1320,7 @@ export default function Page() {
                 items={equipmentItems}
                 loans={equipmentLoans}
                 profile={profile}
-                isAdmin={effectivePermissions.can_manage_equipment}
+                isAdmin={isAdminOrOwner && effectivePermissions.can_manage_equipment}
                 onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
@@ -1379,7 +1408,7 @@ export default function Page() {
                               className="px-3 py-1 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"
                             >
                               <Eye className="w-3.5 h-3.5 inline mr-1" />
-                              {effectivePermissions.can_manage_claims_fees ? 'Review / Proof' : 'View'}
+                              {isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? 'Review / Proof' : 'View'}
                             </button>
                           </td>
                         </tr>
@@ -1860,7 +1889,7 @@ export default function Page() {
         </div>
       )}
 
-      {showThemeStudio && effectivePermissions.can_manage_posters_polls && (
+      {showThemeStudio && isAdminOrOwner && effectivePermissions.can_manage_posters_polls && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border max-w-lg w-full overflow-hidden my-8">
             <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
@@ -2075,7 +2104,7 @@ export default function Page() {
       <AuditReviewModal
         claim={selectedClaim}
         budget={budgets.find((b) => b.id === selectedClaim?.budget_id)}
-        profile={{ ...profile, role: effectivePermissions.can_manage_claims_fees ? 'treasurer' : 'member' }}
+        profile={{ ...profile, role: isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? 'treasurer' : 'member' }}
         onClose={() => setSelectedClaim(null)}
         onUpdated={(m: string) => {
           showToast(m);
