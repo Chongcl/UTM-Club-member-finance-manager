@@ -10,9 +10,8 @@ export const isSupabaseConfigured =
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export type UserRole = 'member' | 'treasurer' | 'owner';
-
-// Simplified to ONLY 2 clear modes: 'scan_attendance' or 'entry_pass'
 export type TicketQrMode = 'scan_attendance' | 'entry_pass' | 'all_registered' | 'paid_only' | 'manual_only';
+export type PassApprovalRule = 'auto_after_payment' | 'manual_only';
 
 export interface AdminPermissions {
   can_manage_activities: boolean;
@@ -35,8 +34,8 @@ export const FULL_OWNER_PERMISSIONS: AdminPermissions = {
 };
 
 export const PERMISSION_LABELS: { key: keyof AdminPermissions; label: string; desc: string }[] = [
-  { key: 'can_manage_activities', label: 'Manage Activities & QR Mode', desc: 'Create/edit activities, switch between Scan Attendance vs Entry Pass, and generate QR codes.' },
-  { key: 'can_manage_posters_polls', label: 'Customize Logo, Background, Posters & Polls', desc: 'Change club logo, animated background themes, event posters, and live polls.' },
+  { key: 'can_manage_activities', label: 'Manage Activities & QR Settings', desc: 'Create/edit activities, configure attendance mode, and manage QR passes.' },
+  { key: 'can_manage_posters_polls', label: 'Customize Logo, Background, Posters & Polls', desc: 'Change club logo, background themes, posters, notices, and poll visibility.' },
   { key: 'can_manage_equipment', label: 'Manage Equipment Inventory & Loans', desc: 'Add/edit equipment items and manage member borrow records.' },
   { key: 'can_manage_claims_fees', label: 'Approve Claims & Verify Activity Fees', desc: 'Approve/reject reimbursement claims and verify student fee payments.' },
   { key: 'can_manage_transport', label: 'Manage Carpool & Assign Drivers', desc: 'Adjust driver allowances and assign passengers to drivers.' },
@@ -95,7 +94,10 @@ export interface Announcement {
   external_link: string; link_label: string; is_pinned: boolean; show_in_carousel: boolean;
   created_by: string; created_at: string;
 }
-export interface Poll { id: string; question: string; options: string[]; is_active: boolean; created_by: string; created_at: string; }
+export interface Poll {
+  id: string; question: string; options: string[]; is_active: boolean;
+  show_results?: boolean; created_by: string; created_at: string;
+}
 export interface PollVote { id: string; poll_id: string; user_id: string; voter_name: string; option_index: number; created_at: string; }
 
 export const DEFAULT_DEPARTMENTS = ['Member', 'Logistics & Equipment Unit', 'Event & Tournament Unit', 'Multimedia & Publicity Unit', 'Training & Development Unit', 'Other'];

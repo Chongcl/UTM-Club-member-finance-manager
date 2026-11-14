@@ -55,7 +55,6 @@ import {
   Ticket,
   Palette,
   AlertTriangle,
-  Sparkles,
   FileText,
 } from 'lucide-react';
 
@@ -69,45 +68,63 @@ interface ConfirmDialogState {
 
 const BG_PRESETS = [
   {
-    id: 'galaxy-nebula',
-    name: '1. Cosmic Galaxy & Starlight (Animated)',
-    desc: 'Moving deep-space nebula with gentle starlight & violet-cyan aurora',
-    swatch: 'linear-gradient(135deg, #0f172a 0%, #4c1d95 50%, #0d9488 100%)',
-  },
-  {
-    id: 'frosted-glass',
-    name: '2. Liquid Frosted Glass (Animated)',
-    desc: 'Floating translucent glass orbs with soft emerald & sky glow',
-    swatch: 'linear-gradient(135deg, #34d399 0%, #38bdf8 50%, #818cf8 100%)',
-  },
-  {
     id: 'emerald-aurora',
-    name: '3. Northern Aurora Wave (Animated)',
-    desc: 'Flowing emerald-mint & turquoise-cyan atmospheric waves',
+    name: '1. Aurora Borealis (Moving Silk)',
+    desc: 'Flowing emerald, teal & sky atmospheric waves',
     swatch: 'linear-gradient(135deg, #10b981 0%, #06b6d4 55%, #3b82f6 100%)',
   },
   {
-    id: 'royal-gold',
-    name: '4. Imperial Gold & Jade (Animated)',
-    desc: 'Warm golden champagne & deep emerald luxury drift',
-    swatch: 'linear-gradient(135deg, #f59e0b 0%, #10b981 55%, #0f766e 100%)',
+    id: 'frosted-glass',
+    name: '2. Frosted Glass Prism (Moving Orbs)',
+    desc: 'Translucent floating glass spheres over soft mint & sky',
+    swatch: 'linear-gradient(135deg, #34d399 0%, #38bdf8 50%, #94a3b8 100%)',
+  },
+  {
+    id: 'galaxy-nebula',
+    name: '3. Midnight Galaxy (Moving Nebula)',
+    desc: 'Deep space obsidian with drifting starlight & teal nebula',
+    swatch: 'linear-gradient(135deg, #090d16 0%, #1e293b 50%, #0d9488 100%)',
+  },
+  {
+    id: 'nordic-mist',
+    name: '4. Nordic Mist (Minimalist Glass)',
+    desc: 'Clean alabaster, soft sage & calm architectural glass',
+    swatch: 'linear-gradient(135deg, #f8fafc 0%, #d1fae5 55%, #e2e8f0 100%)',
   },
   {
     id: 'ocean-silk',
-    name: '5. Midnight Ocean Silk (Animated)',
-    desc: 'Smooth coastal sapphire, aqua & indigo fluid motion',
-    swatch: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 55%, #1e1b4b 100%)',
+    name: '5. Oceanic Horizon (Moving Wave)',
+    desc: 'Smooth coastal sapphire, aqua & deep sea motion',
+    swatch: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 55%, #0f172a 100%)',
+  },
+  {
+    id: 'royal-gold',
+    name: '6. Champagne & Jade (Moving Glow)',
+    desc: 'Warm sand, champagne gold & forest emerald drift',
+    swatch: 'linear-gradient(135deg, #f59e0b 0%, #10b981 55%, #0f766e 100%)',
+  },
+  {
+    id: 'obsidian-carbon',
+    name: '7. Obsidian Carbon (Dark Glass)',
+    desc: 'Sleek matte carbon dark mode with subtle emerald edge glow',
+    swatch: 'linear-gradient(135deg, #020617 0%, #0f172a 60%, #064e3b 100%)',
+  },
+  {
+    id: 'sunset-silk',
+    name: '8. Sunset Horizon (Moving Silk)',
+    desc: 'Warm coral, peach & twilight amber gradient',
+    swatch: 'linear-gradient(135deg, #fb923c 0%, #f43f5e 55%, #fbbf24 100%)',
   },
   {
     id: 'cyber-grid',
-    name: '6. Minimalist Studio Grid',
-    desc: 'Clean architectural 28px studio grid with top spotlight',
+    name: '9. Architectural Dot Matrix',
+    desc: 'Crisp minimalist studio grid with top spotlight',
     swatch: 'repeating-linear-gradient(45deg, #10b981 0, #10b981 3px, #0f172a 3px, #0f172a 10px)',
   },
   {
     id: 'custom-image',
-    name: '7. Custom Wallpaper Upload / URL',
-    desc: 'Upload your own photo or paste any custom wallpaper URL',
+    name: '10. Custom Wallpaper (Upload / URL)',
+    desc: 'Upload your own photo or paste any custom image URL',
     swatch: 'linear-gradient(135deg, #475569 0%, #0f172a 100%)',
   },
 ];
@@ -126,7 +143,7 @@ export default function Page() {
   const [ownerPinSetting, setOwnerPinSetting] = useState('OWNER-2026');
   const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
-  const [bgStyle, setBgStyle] = useState('galaxy-nebula');
+  const [bgStyle, setBgStyle] = useState('emerald-aurora');
   const [bgImageUrl, setBgImageUrl] = useState('');
 
   const [clubNameInput, setClubNameInput] = useState('ClubSync');
@@ -181,7 +198,6 @@ export default function Page() {
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
   const [quickAdjustFinanceOpen, setQuickAdjustFinanceOpen] = useState(false);
 
-  // Load persisted theme, logo & dark mode on mount so refresh NEVER resets them
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setDarkMode(localStorage.getItem('clubsync_dark') === 'true');
@@ -207,7 +223,7 @@ export default function Page() {
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage((p) => (p === msg ? null : p)), 4000);
+    setTimeout(() => setToastMessage((p) => (p === msg ? null : p)), 3500);
   };
 
   const normalizeProfile = (raw: Record<string, unknown>): UserProfile => {
@@ -341,7 +357,7 @@ export default function Page() {
         if (typeof window !== 'undefined') localStorage.setItem('clubsync_logo_url', String(sRes.data.logo_url));
       }
       if (depts.length > 0) {
-        setDepartments(depts);
+        setDepartments((prev) => (prev.join('|') === depts.join('|') ? prev : depts));
         setDepartmentsText(depts.join('\n'));
       }
     }
@@ -382,7 +398,6 @@ export default function Page() {
     return () => sub.subscription.unsubscribe();
   }, [fetchOrCreateProfile, fetchAllData]);
 
-  // Instant, Bug-Free Attend / Not Attending Handler with Optimistic State & Fallback Save
   const handleRsvpAttendance = async (ev: Budget, nextStatus: 'Attending' | 'Not Attending') => {
     if (!profile) return;
     const existing = rsvps.find((r) => r.budget_id === ev.id && r.user_id === profile.id);
@@ -408,15 +423,9 @@ export default function Page() {
       updated_at: new Date().toISOString(),
     };
 
-    // 1. Update UI immediately so button changes state with 0 delay
-    setRsvps((prev) => [
-      ...prev.filter((r) => !(r.budget_id === ev.id && r.user_id === profile.id)),
-      optimisticRow,
-    ]);
+    setRsvps((prev) => [...prev.filter((r) => !(r.budget_id === ev.id && r.user_id === profile.id)), optimisticRow]);
+    showToast(nextStatus === 'Attending' ? `Attending "${ev.event_name}"` : 'Marked as Not Attending');
 
-    showToast(nextStatus === 'Attending' ? `✓ Attending "${ev.event_name}"!` : 'Marked as Not Attending.');
-
-    // 2. Save to Supabase (with safe fallback if optional columns are missing)
     const corePayload = {
       budget_id: ev.id,
       user_id: profile.id,
@@ -429,7 +438,6 @@ export default function Page() {
       transport_type: nextStatus === 'Not Attending' ? 'None' : existing?.transport_type || 'None',
       updated_at: new Date().toISOString(),
     };
-
     const { error } = await supabase.from('event_rsvps').upsert(corePayload, { onConflict: 'budget_id,user_id' });
     if (error && existing?.id && !existing.id.startsWith('temp-')) {
       await supabase.from('event_rsvps').update(corePayload).eq('id', existing.id);
@@ -448,7 +456,7 @@ export default function Page() {
     localStorage.setItem(`clubsync_mode_${profile.id}`, 'admin');
     if (profile.role === 'member') await supabase.from('users').update({ role: 'treasurer' }).eq('id', profile.id);
     fetchAllData();
-    showToast('Admin Mode unlocked!');
+    showToast('Admin Mode unlocked');
     return true;
   };
 
@@ -468,7 +476,7 @@ export default function Page() {
     setRoleMode('owner');
     localStorage.setItem(`clubsync_mode_${profile.id}`, 'owner');
     fetchAllData();
-    showToast('Owner Mode unlocked!');
+    showToast('Owner Mode unlocked');
     return true;
   };
 
@@ -477,7 +485,7 @@ export default function Page() {
     setRoleMode(target);
     localStorage.setItem(`clubsync_mode_${profile.id}`, target);
     if (target === 'member' && (activeTab === 'ledger' || activeTab === 'members')) setActiveTab('activities');
-    showToast(`Switched to ${target.toUpperCase()} Mode.`);
+    showToast(`Switched to ${target.toUpperCase()} Mode`);
   };
 
   const handleSaveThemeStudio = async (e: React.FormEvent) => {
@@ -511,19 +519,17 @@ export default function Page() {
         localStorage.setItem('clubsync_logo_url', finalLogoUrl);
       }
 
-      await supabase
-        .from('club_settings')
-        .upsert({
-          id: 1,
-          bg_style: chosenStyle,
-          bg_image_url: finalBgUrl,
-          logo_url: finalLogoUrl,
-        });
+      await supabase.from('club_settings').upsert({
+        id: 1,
+        bg_style: chosenStyle,
+        bg_image_url: finalBgUrl,
+        logo_url: finalLogoUrl,
+      });
 
       setBgFile(null);
       setLogoFile(null);
       setShowThemeStudio(false);
-      showToast('Saved Club Logo & Background Theme!');
+      showToast('Saved Logo & Background');
     } finally {
       setSavingTheme(false);
     }
@@ -537,11 +543,14 @@ export default function Page() {
     ? profile?.admin_permissions || DEFAULT_ADMIN_PERMISSIONS
     : DEFAULT_ADMIN_PERMISSIONS;
 
+  const isNaturallyDarkStyle = bgStyle === 'galaxy-nebula' || bgStyle === 'obsidian-carbon';
+  const isDarkCanvas = darkMode || isNaturallyDarkStyle;
+
   const getBackdropStyle = (): React.CSSProperties => {
     if (bgStyle === 'custom-image' && bgImageUrl) {
       return {
         backgroundImage: `linear-gradient(${
-          darkMode ? 'rgba(2,6,23,0.82), rgba(2,6,23,0.90)' : 'rgba(255,255,255,0.65), rgba(240,253,244,0.80)'
+          isDarkCanvas ? 'rgba(2,6,23,0.82), rgba(2,6,23,0.90)' : 'rgba(255,255,255,0.68), rgba(241,245,249,0.82)'
         }), url(${bgImageUrl})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
@@ -549,52 +558,58 @@ export default function Page() {
       };
     }
 
-    if (darkMode || bgStyle === 'galaxy-nebula') {
+    if (isDarkCanvas) {
       switch (bgStyle) {
         case 'galaxy-nebula':
           return {
-            backgroundColor: darkMode ? '#040611' : '#0f172a',
+            backgroundColor: '#050811',
             backgroundImage:
-              'radial-gradient(at 15% 15%, rgba(124, 58, 237, 0.42) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(13, 148, 136, 0.38) 0px, transparent 55%), radial-gradient(at 50% 90%, rgba(59, 130, 246, 0.32) 0px, transparent 55%)',
-            backgroundSize: '180% 180%',
-            animation: 'clubsyncNebula 18s ease infinite',
-          };
-        case 'frosted-glass':
-          return {
-            backgroundColor: '#06111c',
-            backgroundImage:
-              'radial-gradient(at 20% 20%, rgba(52, 211, 153, 0.36) 0px, transparent 50%), radial-gradient(at 80% 30%, rgba(56, 189, 248, 0.34) 0px, transparent 50%), radial-gradient(at 50% 85%, rgba(129, 140, 248, 0.30) 0px, transparent 55%)',
+              'radial-gradient(at 15% 15%, rgba(45, 212, 191, 0.28) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(56, 189, 248, 0.25) 0px, transparent 55%), radial-gradient(at 50% 90%, rgba(16, 185, 129, 0.22) 0px, transparent 55%)',
             backgroundSize: '180% 180%',
             animation: 'clubsyncNebula 20s ease infinite',
           };
-        case 'royal-gold':
+        case 'obsidian-carbon':
           return {
-            backgroundColor: '#090a0f',
+            backgroundColor: '#020617',
             backgroundImage:
-              'radial-gradient(at 10% 10%, rgba(245, 158, 11, 0.38) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(16, 185, 129, 0.32) 0px, transparent 55%), radial-gradient(at 50% 95%, rgba(217, 119, 6, 0.25) 0px, transparent 50%)',
-            backgroundSize: '180% 180%',
-            animation: 'clubsyncNebula 20s ease infinite',
+              'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.22) 0px, transparent 60%), radial-gradient(at 90% 90%, rgba(15, 23, 42, 0.9) 0px, transparent 50%)',
           };
         case 'ocean-silk':
           return {
             backgroundColor: '#020b18',
             backgroundImage:
-              'radial-gradient(at 10% 10%, rgba(14, 165, 233, 0.38) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(37, 99, 235, 0.35) 0px, transparent 55%), radial-gradient(at 50% 95%, rgba(99, 102, 241, 0.30) 0px, transparent 55%)',
+              'radial-gradient(at 10% 10%, rgba(14, 165, 233, 0.35) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(37, 99, 235, 0.30) 0px, transparent 55%), radial-gradient(at 50% 95%, rgba(20, 184, 166, 0.25) 0px, transparent 55%)',
             backgroundSize: '180% 180%',
             animation: 'clubsyncNebula 18s ease infinite',
+          };
+        case 'royal-gold':
+          return {
+            backgroundColor: '#090a0f',
+            backgroundImage:
+              'radial-gradient(at 10% 10%, rgba(245, 158, 11, 0.32) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(16, 185, 129, 0.28) 0px, transparent 55%)',
+            backgroundSize: '180% 180%',
+            animation: 'clubsyncNebula 20s ease infinite',
+          };
+        case 'sunset-silk':
+          return {
+            backgroundColor: '#13090c',
+            backgroundImage:
+              'radial-gradient(at 15% 15%, rgba(251, 146, 60, 0.30) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(244, 63, 94, 0.28) 0px, transparent 55%)',
+            backgroundSize: '180% 180%',
+            animation: 'clubsyncNebula 20s ease infinite',
           };
         case 'cyber-grid':
           return {
             backgroundColor: '#020617',
             backgroundImage:
-              'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.35) 0px, transparent 60%), linear-gradient(to right, rgba(16, 185, 129, 0.14) 1px, transparent 1px), linear-gradient(to bottom, rgba(16, 185, 129, 0.14) 1px, transparent 1px)',
-            backgroundSize: '100% 100%, 28px 28px, 28px 28px',
+              'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.28) 0px, transparent 60%), radial-gradient(rgba(16, 185, 129, 0.18) 1px, transparent 1px)',
+            backgroundSize: '100% 100%, 24px 24px',
           };
         default:
           return {
             backgroundColor: '#03120e',
             backgroundImage:
-              'radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.40) 0px, transparent 50%), radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.35) 0px, transparent 50%), radial-gradient(at 50% 100%, rgba(59, 130, 246, 0.28) 0px, transparent 50%)',
+              'radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.35) 0px, transparent 50%), radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.30) 0px, transparent 50%), radial-gradient(at 50% 100%, rgba(5, 150, 105, 0.25) 0px, transparent 50%)',
             backgroundSize: '180% 180%',
             animation: 'clubsyncNebula 18s ease infinite',
           };
@@ -602,19 +617,17 @@ export default function Page() {
     }
 
     switch (bgStyle) {
+      case 'nordic-mist':
+        return {
+          backgroundColor: '#f1f5f9',
+          backgroundImage:
+            'radial-gradient(at 0% 0%, rgba(167, 243, 208, 0.55) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(226, 232, 240, 0.8) 0px, transparent 50%)',
+        };
       case 'frosted-glass':
         return {
           backgroundColor: '#e0f2fe',
           backgroundImage:
-            'radial-gradient(at 15% 15%, rgba(52, 211, 153, 0.55) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(56, 189, 248, 0.55) 0px, transparent 50%), radial-gradient(at 50% 90%, rgba(129, 140, 248, 0.45) 0px, transparent 55%)',
-          backgroundSize: '180% 180%',
-          animation: 'clubsyncNebula 20s ease infinite',
-        };
-      case 'royal-gold':
-        return {
-          backgroundColor: '#fef3c7',
-          backgroundImage:
-            'radial-gradient(at 10% 10%, rgba(251, 191, 36, 0.60) 0px, transparent 50%), radial-gradient(at 90% 15%, rgba(52, 211, 153, 0.50) 0px, transparent 55%), radial-gradient(at 50% 90%, rgba(245, 158, 11, 0.38) 0px, transparent 55%)',
+            'radial-gradient(at 15% 15%, rgba(52, 211, 153, 0.50) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(56, 189, 248, 0.48) 0px, transparent 50%), radial-gradient(at 50% 90%, rgba(148, 163, 184, 0.35) 0px, transparent 55%)',
           backgroundSize: '180% 180%',
           animation: 'clubsyncNebula 20s ease infinite',
         };
@@ -622,22 +635,38 @@ export default function Page() {
         return {
           backgroundColor: '#dbeafe',
           backgroundImage:
-            'radial-gradient(at 10% 10%, rgba(34, 211, 238, 0.55) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(59, 130, 246, 0.48) 0px, transparent 55%), radial-gradient(at 50% 90%, rgba(99, 102, 241, 0.40) 0px, transparent 55%)',
+            'radial-gradient(at 10% 10%, rgba(34, 211, 238, 0.50) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(59, 130, 246, 0.42) 0px, transparent 55%)',
           backgroundSize: '180% 180%',
           animation: 'clubsyncNebula 18s ease infinite',
         };
+      case 'royal-gold':
+        return {
+          backgroundColor: '#fef3c7',
+          backgroundImage:
+            'radial-gradient(at 10% 10%, rgba(251, 191, 36, 0.50) 0px, transparent 50%), radial-gradient(at 90% 15%, rgba(52, 211, 153, 0.45) 0px, transparent 55%)',
+          backgroundSize: '180% 180%',
+          animation: 'clubsyncNebula 20s ease infinite',
+        };
+      case 'sunset-silk':
+        return {
+          backgroundColor: '#ffedd5',
+          backgroundImage:
+            'radial-gradient(at 12% 12%, rgba(251, 146, 60, 0.48) 0px, transparent 50%), radial-gradient(at 88% 18%, rgba(251, 113, 133, 0.42) 0px, transparent 55%)',
+          backgroundSize: '180% 180%',
+          animation: 'clubsyncNebula 20s ease infinite',
+        };
       case 'cyber-grid':
         return {
-          backgroundColor: '#ecfdf5',
+          backgroundColor: '#f0fdf4',
           backgroundImage:
-            'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.38) 0px, transparent 60%), linear-gradient(to right, rgba(4, 120, 87, 0.14) 1px, transparent 1px), linear-gradient(to bottom, rgba(4, 120, 87, 0.14) 1px, transparent 1px)',
-          backgroundSize: '100% 100%, 28px 28px, 28px 28px',
+            'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.32) 0px, transparent 60%), radial-gradient(rgba(4, 120, 87, 0.16) 1px, transparent 1px)',
+          backgroundSize: '100% 100%, 24px 24px',
         };
       default:
         return {
           backgroundColor: '#d1fae5',
           backgroundImage:
-            'radial-gradient(at 0% 0%, rgba(52, 211, 153, 0.60) 0px, transparent 50%), radial-gradient(at 100% 10%, rgba(34, 211, 238, 0.52) 0px, transparent 50%), radial-gradient(at 50% 100%, rgba(59, 130, 246, 0.38) 0px, transparent 55%)',
+            'radial-gradient(at 0% 0%, rgba(52, 211, 153, 0.55) 0px, transparent 50%), radial-gradient(at 100% 10%, rgba(34, 211, 238, 0.48) 0px, transparent 50%), radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.35) 0px, transparent 55%)',
           backgroundSize: '180% 180%',
           animation: 'clubsyncNebula 18s ease infinite',
         };
@@ -647,7 +676,7 @@ export default function Page() {
   if (authLoading)
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-emerald-700 animate-spin" />
+        <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
       </div>
     );
 
@@ -763,7 +792,6 @@ export default function Page() {
   const visibleClaims = claims.filter((c) => isAdminOrOwner || c.user_id === profile.id);
   const uniqueBatches = Array.from(new Set([currentBatch, ...allMembers.map((m) => m.batch_year || '2026/2027')]));
   const filteredMembers = allMembers.filter((m) => batchFilter === 'ALL' || (m.batch_year || '2026/2027') === batchFilter);
-  const isDarkCanvas = darkMode || bgStyle === 'galaxy-nebula';
 
   return (
     <div
@@ -772,7 +800,6 @@ export default function Page() {
       }`}
       style={getBackdropStyle()}
     >
-      {/* Smooth Keyframe Animations for Moving Galaxy / Glass / Aurora Backgrounds */}
       <style>{`
         @keyframes clubsyncNebula {
           0% { background-position: 0% 50%; }
@@ -781,19 +808,18 @@ export default function Page() {
         }
         @keyframes clubsyncFloat {
           0%, 100% { transform: translateY(0px) scale(1); }
-          50% { transform: translateY(-18px) scale(1.04); }
+          50% { transform: translateY(-16px) scale(1.03); }
         }
       `}</style>
 
-      {/* Subtle Ambient Floating Glass / Galaxy Orbs (Non-Intrusive, Pointer-Events-None) */}
-      {(bgStyle === 'galaxy-nebula' || bgStyle === 'frosted-glass') && (
+      {(bgStyle === 'galaxy-nebula' || bgStyle === 'frosted-glass' || bgStyle === 'emerald-aurora') && (
         <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
           <div
             className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-emerald-500/15 blur-3xl"
             style={{ animation: 'clubsyncFloat 12s ease-in-out infinite' }}
           />
           <div
-            className="absolute top-1/3 -right-24 w-96 h-96 rounded-full bg-violet-500/15 blur-3xl"
+            className="absolute top-1/3 -right-24 w-96 h-96 rounded-full bg-cyan-500/15 blur-3xl"
             style={{ animation: 'clubsyncFloat 15s ease-in-out infinite reverse' }}
           />
         </div>
@@ -843,8 +869,8 @@ export default function Page() {
         />
 
         {toastMessage && (
-          <div className="fixed bottom-5 right-5 z-50 bg-emerald-700 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-400/40">
-            <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+          <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-500/40">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             <span>{toastMessage}</span>
           </div>
         )}
@@ -866,17 +892,11 @@ export default function Page() {
 
               <section className="space-y-4">
                 <div
-                  className={`flex flex-wrap items-center justify-between gap-3 p-5 rounded-3xl border backdrop-blur-xl shadow-sm ${
-                    isDarkCanvas ? 'bg-slate-900/70 border-white/10' : 'bg-white/80 border-white/90'
+                  className={`flex flex-wrap items-center justify-between gap-3 p-5 rounded-3xl border backdrop-blur-xl shadow-xs ${
+                    isDarkCanvas ? 'bg-slate-900/75 border-white/10' : 'bg-white/85 border-white/90'
                   }`}
                 >
-                  <div>
-                    <div className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-emerald-500 mb-0.5">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Campus Activities, Attendance &amp; Carpool</span>
-                    </div>
-                    <h2 className="text-lg font-extrabold">Club Activities &amp; Events</h2>
-                  </div>
+                  <h2 className="text-lg font-extrabold tracking-tight">Activities &amp; Events</h2>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
@@ -884,7 +904,7 @@ export default function Page() {
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs cursor-pointer"
                     >
                       <QrCode className="w-4 h-4" />
-                      <span>{isAdminOrOwner ? 'Scan Attendance / Pass QR' : 'Scan Attendance QR'}</span>
+                      <span>Scan QR</span>
                     </button>
                     {effectivePermissions.can_manage_activities && (
                       <button
@@ -893,19 +913,21 @@ export default function Page() {
                           setEditingActivity(null);
                           setIsBudgetModalOpen(true);
                         }}
-                        className="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-900 text-white border border-white/15 cursor-pointer"
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold border cursor-pointer ${
+                          isDarkCanvas ? 'bg-white/10 border-white/15 text-white' : 'bg-slate-900 text-white border-slate-800'
+                        }`}
                       >
                         + New Activity
                       </button>
                     )}
-                    <div className={`flex p-1 rounded-xl text-xs ${isDarkCanvas ? 'bg-slate-800' : 'bg-slate-900/10'}`}>
+                    <div className={`flex p-1 rounded-xl text-xs ${isDarkCanvas ? 'bg-slate-800' : 'bg-slate-100'}`}>
                       {(['All', 'Active', 'Closed'] as const).map((t) => (
                         <button
                           type="button"
                           key={t}
                           onClick={() => setActivityTimeFilter(t)}
                           className={`px-3 py-1 rounded-lg font-bold cursor-pointer ${
-                            activityTimeFilter === t ? 'bg-emerald-600 text-white' : 'opacity-75'
+                            activityTimeFilter === t ? 'bg-emerald-600 text-white' : 'opacity-70'
                           }`}
                         >
                           {t === 'Active' ? 'Upcoming' : t === 'Closed' ? 'Past' : 'All'}
@@ -915,7 +937,7 @@ export default function Page() {
                   </div>
                 </div>
 
-                {/* Minimalistic, Semantically Colored Activity Cards */}
+                {/* Cohesive Emerald + Neutral Slate Glass Activity Cards (No Purple Clutter) */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   {visibleBudgets.map((ev) => {
                     const myRsvp = rsvps.find((r) => r.budget_id === ev.id && r.user_id === profile.id);
@@ -941,12 +963,12 @@ export default function Page() {
                         className={`rounded-3xl p-5 border backdrop-blur-xl flex flex-col justify-between space-y-4 transition hover:-translate-y-0.5 hover:shadow-xl ${
                           isDarkCanvas
                             ? 'bg-slate-900/75 border-white/10 hover:border-emerald-500/40'
-                            : 'bg-white/85 border-white/90 hover:bg-white/95 shadow-sm'
+                            : 'bg-white/85 border-white/90 hover:bg-white/95 shadow-xs'
                         }`}
                       >
                         <div className="space-y-2.5">
                           <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-500 border border-emerald-500/20">
+                            <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 border border-emerald-500/20">
                               {ev.category}
                             </span>
                             {effectivePermissions.can_manage_activities && (
@@ -969,7 +991,7 @@ export default function Page() {
                                   onClick={async () => {
                                     await supabase.from('budgets').delete().eq('id', ev.id);
                                     fetchAllData();
-                                    showToast('Activity deleted.');
+                                    showToast('Activity deleted');
                                   }}
                                   className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer"
                                 >
@@ -997,9 +1019,6 @@ export default function Page() {
                             </div>
                           </div>
 
-                          {/* Clean Semantic Action Buttons:
-                              - Entry Pass ONLY shows if event is Entry Pass mode
-                              - Pay Fee ONLY shows on member page if event requires a fee (reqFee > 0) */}
                           <div className="flex flex-wrap gap-2 pt-2">
                             {hasEntryPass ? (
                               <button
@@ -1008,10 +1027,10 @@ export default function Page() {
                                   setOpsModalEvent(ev);
                                   setOpsModalTab('pass');
                                 }}
-                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                               >
                                 <Ticket className="w-3.5 h-3.5" />
-                                <span>{myRsvp?.qr_checked_in ? '✓ Admitted' : 'Entry Pass'}</span>
+                                <span>{myRsvp?.qr_checked_in ? '✓ Attended' : 'Entry Pass'}</span>
                               </button>
                             ) : isAdminOrOwner ? (
                               <button
@@ -1020,7 +1039,7 @@ export default function Page() {
                                   setOpsModalEvent(ev);
                                   setOpsModalTab('qr');
                                 }}
-                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                               >
                                 <QrCode className="w-3.5 h-3.5" />
                                 <span>Venue QR ({qrCount})</span>
@@ -1029,10 +1048,10 @@ export default function Page() {
                               <button
                                 type="button"
                                 onClick={() => setIsQrScannerOpen(true)}
-                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                               >
                                 <QrCode className="w-3.5 h-3.5" />
-                                <span>{myRsvp?.qr_checked_in ? '✓ Scanned In' : 'Scan Attendance'}</span>
+                                <span>{myRsvp?.qr_checked_in ? '✓ Attended' : 'Scan Attendance'}</span>
                               </button>
                             )}
 
@@ -1043,7 +1062,11 @@ export default function Page() {
                                   setOpsModalEvent(ev);
                                   setOpsModalTab('fee');
                                 }}
-                                className="py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                                className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 border cursor-pointer ${
+                                  isDarkCanvas
+                                    ? 'bg-amber-500/20 border-amber-500/30 text-amber-300'
+                                    : 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'
+                                }`}
                               >
                                 <CreditCard className="w-3.5 h-3.5" />
                                 <span>RM {reqFee.toFixed(0)}</span>
@@ -1056,23 +1079,26 @@ export default function Page() {
                                 setOpsModalEvent(ev);
                                 setOpsModalTab('transport');
                               }}
-                              className="py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition cursor-pointer ${
+                                isDarkCanvas
+                                  ? 'bg-white/10 hover:bg-white/15 text-slate-100 border-white/10'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-200/80'
+                              }`}
                             >
-                              <Car className="w-3.5 h-3.5" />
-                              <span>Carpool ({paxCount}P/{drvCount}D)</span>
+                              <Car className="w-3.5 h-3.5 text-emerald-500" />
+                              <span>Carpool ({paxCount}/{drvCount})</span>
                             </button>
                           </div>
                         </div>
 
-                        {/* Upgraded Instant-Feedback Attendance Bar */}
                         <div className="pt-3 border-t border-slate-500/15 flex items-center justify-between gap-2 text-xs">
                           <div className="flex gap-1.5">
                             <button
                               type="button"
                               onClick={() => handleRsvpAttendance(ev, 'Attending')}
-                              className={`px-3.5 py-1.5 rounded-xl font-extrabold transition cursor-pointer flex items-center gap-1 ${
+                              className={`px-3.5 py-1.5 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 ${
                                 isAttending
-                                  ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-400/50'
+                                  ? 'bg-emerald-600 text-white shadow-xs'
                                   : isDarkCanvas
                                   ? 'bg-white/10 text-slate-300 hover:bg-emerald-600/30'
                                   : 'bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700'
@@ -1086,7 +1112,7 @@ export default function Page() {
                               onClick={() => handleRsvpAttendance(ev, 'Not Attending')}
                               className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
                                 isNotAttending
-                                  ? 'bg-rose-600 text-white shadow-sm'
+                                  ? 'bg-slate-800 text-white'
                                   : isDarkCanvas
                                   ? 'bg-white/5 text-slate-400 hover:bg-white/10'
                                   : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
@@ -1257,7 +1283,7 @@ export default function Page() {
                     <span>Club Name, Departments &amp; Passcodes</span>
                   </h3>
                   <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-900 border">
-                    {isOwner ? 'Owner Full Control' : 'Admin Mode'}
+                    {isOwner ? 'Owner' : 'Admin'}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
@@ -1336,7 +1362,7 @@ export default function Page() {
                           }
                           await supabase.from('club_settings').upsert(payload);
                           fetchAllData();
-                          showToast('Settings saved!');
+                          showToast('Settings saved');
                         }}
                         className="w-full py-2.5 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"
                       >
@@ -1351,11 +1377,8 @@ export default function Page() {
                 <div className="p-5 border-b flex flex-wrap justify-between items-center gap-3">
                   <div>
                     <h2 className="text-base font-extrabold">
-                      Batch Member Clearance &amp; Roster ({filteredMembers.length})
+                      Member Roster &amp; Clearance ({filteredMembers.length})
                     </h2>
-                    <p className="text-xs text-slate-500">
-                      Checks unreturned equipment before clearing members. Role changes require 2-step confirmation.
-                    </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <select
@@ -1375,9 +1398,9 @@ export default function Page() {
                         type="button"
                         onClick={() =>
                           setConfirmDialog({
-                            title: `Clear Graduated Batch (${batchFilter})`,
+                            title: `Clear Batch (${batchFilter})`,
                             message: `Confirm clearing all non-owner members in Batch "${batchFilter}" who have returned all equipment?`,
-                            confirmLabel: 'Confirm Batch Clearance',
+                            confirmLabel: 'Confirm Clearance',
                             danger: true,
                             onConfirm: async () => {
                               const toClear = filteredMembers.filter(
@@ -1388,7 +1411,7 @@ export default function Page() {
                               );
                               for (const m of toClear) await supabase.from('users').delete().eq('id', m.id);
                               fetchAllData();
-                              showToast(`Cleared ${toClear.length} member(s)!`);
+                              showToast(`Cleared ${toClear.length} member(s)`);
                             },
                           })
                         }
@@ -1411,7 +1434,7 @@ export default function Page() {
                         ].join('\n');
                         const a = document.createElement('a');
                         a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-                        a.download = 'Members_Clearance.csv';
+                        a.download = 'Members_Roster.csv';
                         a.click();
                       }}
                       className="px-3.5 py-1.5 rounded-xl font-bold bg-emerald-600 text-white cursor-pointer"
@@ -1428,8 +1451,8 @@ export default function Page() {
                       <tr className="bg-slate-50 border-b text-[11px] font-bold uppercase text-slate-600">
                         <th className="py-3 px-4">Member &amp; Batch</th>
                         <th className="py-3 px-4">Phone &amp; Dorm</th>
-                        <th className="py-3 px-4">Equipment Clearance</th>
-                        <th className="py-3 px-4">Role &amp; Perms</th>
+                        <th className="py-3 px-4">Equipment</th>
+                        <th className="py-3 px-4">Role</th>
                         <th className="py-3 px-4 text-right">Actions</th>
                       </tr>
                     </thead>
@@ -1455,22 +1478,22 @@ export default function Page() {
                             <td className="py-3 px-4">
                               {unreturnedLoans.length === 0 ? (
                                 <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700">
-                                  ✓ Clearance Ready
+                                  ✓ Clear
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900">
-                                  ⚠ Owes {unreturnedLoans.length} Equipment
+                                  Owes {unreturnedLoans.length}
                                 </span>
                               )}
                             </td>
                             <td className="py-3 px-4">
                               {isThisOwner ? (
                                 <span className="px-2.5 py-0.5 rounded-full font-extrabold bg-amber-400 text-slate-950">
-                                  Host / Owner
+                                  Owner
                                 </span>
                               ) : isThisAdmin ? (
                                 <span className="px-2.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-900">
-                                  Admin ({pCount === 0 ? 'View-Only' : `${pCount}/7 Perms`})
+                                  Admin ({pCount}/7)
                                 </span>
                               ) : (
                                 'Member'
@@ -1487,7 +1510,7 @@ export default function Page() {
                                     }}
                                     className="px-2.5 py-1 rounded-lg font-bold bg-emerald-50 text-emerald-900 border border-emerald-200 cursor-pointer"
                                   >
-                                    Permissions ({pCount}/7)
+                                    Permissions
                                   </button>
                                 )}
                                 {!isThisOwner && effectivePermissions.can_manage_members && (
@@ -1495,15 +1518,15 @@ export default function Page() {
                                     type="button"
                                     onClick={() => {
                                       if (isThisAdmin && !isOwner) {
-                                        showToast('Only Host / Owner can revoke Admin.');
+                                        showToast('Only Owner can revoke Admin');
                                         return;
                                       }
                                       setConfirmDialog({
-                                        title: isThisAdmin ? `Revoke Admin — ${m.full_name}` : `Grant Admin Role — ${m.full_name}`,
+                                        title: isThisAdmin ? `Revoke Admin — ${m.full_name}` : `Make Admin — ${m.full_name}`,
                                         message: isThisAdmin
                                           ? `Confirm revoking Admin status from ${m.full_name}?`
-                                          : `Confirm making ${m.full_name} an Admin (starts in View-Only mode)?`,
-                                        confirmLabel: isThisAdmin ? 'Confirm Revoke' : 'Confirm Make Admin',
+                                          : `Confirm making ${m.full_name} an Admin?`,
+                                        confirmLabel: 'Confirm',
                                         danger: isThisAdmin,
                                         onConfirm: async () => {
                                           const next = isThisAdmin ? 'member' : 'treasurer';
@@ -1512,7 +1535,7 @@ export default function Page() {
                                             .update({ role: next, admin_permissions: DEFAULT_ADMIN_PERMISSIONS })
                                             .eq('id', m.id);
                                           fetchAllData();
-                                          showToast('Role updated!');
+                                          showToast('Role updated');
                                         },
                                       });
                                     }}
@@ -1526,9 +1549,9 @@ export default function Page() {
                                     type="button"
                                     onClick={() =>
                                       setConfirmDialog({
-                                        title: `Transfer Host / Ownership to ${m.full_name}?`,
-                                        message: `Please reconfirm carefully: Transferring Host / Ownership to ${m.full_name} (${m.matric_no}) will grant them full Owner control and switch your account to Admin mode.`,
-                                        confirmLabel: 'Reconfirm & Transfer Host',
+                                        title: `Transfer Ownership to ${m.full_name}?`,
+                                        message: `Confirm transferring Owner control to ${m.full_name} (${m.matric_no})?`,
+                                        confirmLabel: 'Transfer',
                                         danger: true,
                                         onConfirm: async () => {
                                           await supabase.from('users').update({ role: 'treasurer' }).eq('id', profile.id);
@@ -1540,7 +1563,7 @@ export default function Page() {
                                           setRoleMode('admin');
                                           localStorage.setItem(`clubsync_mode_${profile.id}`, 'admin');
                                           fetchAllData();
-                                          showToast(`Transferred Host to ${m.full_name}.`);
+                                          showToast(`Transferred Ownership to ${m.full_name}`);
                                         },
                                       })
                                     }
@@ -1554,17 +1577,17 @@ export default function Page() {
                                     type="button"
                                     onClick={() =>
                                       setConfirmDialog({
-                                        title: `Clear Member — ${m.full_name}`,
+                                        title: `Remove Member — ${m.full_name}`,
                                         message:
                                           unreturnedLoans.length > 0
                                             ? `Warning: ${m.full_name} still owes ${unreturnedLoans.length} equipment item(s)! Remove anyway?`
-                                            : `Confirm clearing ${m.full_name} from the roster?`,
-                                        confirmLabel: 'Confirm Clear',
+                                            : `Confirm removing ${m.full_name} from the roster?`,
+                                        confirmLabel: 'Remove',
                                         danger: true,
                                         onConfirm: async () => {
                                           await supabase.from('users').delete().eq('id', m.id);
                                           fetchAllData();
-                                          showToast(`Cleared ${m.full_name}.`);
+                                          showToast(`Removed ${m.full_name}`);
                                         },
                                       })
                                     }
@@ -1587,7 +1610,6 @@ export default function Page() {
         </main>
       </div>
 
-      {/* 2-Step Confirmation Modal */}
       {confirmDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4">
           <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border max-w-md w-full overflow-hidden p-6 space-y-4">
@@ -1635,25 +1657,21 @@ export default function Page() {
         </div>
       )}
 
-      {/* Logo & Animated Background Studio Modal */}
       {showThemeStudio && effectivePermissions.can_manage_posters_polls && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border max-w-lg w-full overflow-hidden my-8">
             <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
               <span className="text-sm font-bold flex items-center gap-2">
                 <Palette className="w-4 h-4 text-amber-300" />
-                Club Logo &amp; Animated Background Studio
+                Logo &amp; Background Studio
               </span>
               <button type="button" onClick={() => setShowThemeStudio(false)} className="cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleSaveThemeStudio} className="p-6 space-y-4 text-xs max-h-[80vh] overflow-y-auto">
-              {/* Custom Club Logo Upload (JPG / PNG / PDF) */}
-              <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2.5">
-                <label className="block font-extrabold text-emerald-950">
-                  Club Logo Upload (Supports JPG, PNG, WEBP or PDF):
-                </label>
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                <label className="block font-bold text-slate-800">Club Logo (JPG, PNG, WEBP or PDF)</label>
                 <div className="flex items-center gap-3">
                   {logoUrl ? (
                     logoUrl.toLowerCase().endsWith('.pdf') ? (
@@ -1679,18 +1697,18 @@ export default function Page() {
                   type="url"
                   value={logoUrlInput}
                   onChange={(e) => setLogoUrlInput(e.target.value)}
-                  placeholder="Or paste Logo Image / PDF URL..."
+                  placeholder="Or paste Logo URL..."
                   className="w-full rounded-xl border bg-white px-3 py-1.5"
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="block font-extrabold text-slate-800">Select Animated / Glass Background Theme:</label>
+                <label className="block font-bold text-slate-800">Background Style (10 Choices)</label>
                 {BG_PRESETS.map((preset) => (
                   <label
                     key={preset.id}
-                    className={`flex items-center justify-between gap-3 p-3 rounded-2xl border cursor-pointer ${
-                      bgStyle === preset.id ? 'border-emerald-600 bg-emerald-50/80 ring-2 ring-emerald-500/30' : 'border-slate-200'
+                    className={`flex items-center justify-between gap-3 p-3 rounded-2xl border cursor-pointer transition ${
+                      bgStyle === preset.id ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-500/20' : 'border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -1708,7 +1726,7 @@ export default function Page() {
                         style={{ background: preset.swatch }}
                       />
                       <div>
-                        <div className="font-extrabold text-slate-900">{preset.name}</div>
+                        <div className="font-bold text-slate-900">{preset.name}</div>
                         <div className="text-slate-500">{preset.desc}</div>
                       </div>
                     </div>
@@ -1719,7 +1737,7 @@ export default function Page() {
               {bgStyle === 'custom-image' && (
                 <div className="p-3.5 rounded-2xl bg-slate-50 border space-y-2.5">
                   <div>
-                    <label className="block font-bold mb-1">Upload Background Image (Max 50MB)</label>
+                    <label className="block font-bold mb-1">Upload Wallpaper Image</label>
                     <input
                       type="file"
                       accept="image/*"
@@ -1749,7 +1767,7 @@ export default function Page() {
                   disabled={savingTheme}
                   className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"
                 >
-                  {savingTheme ? 'Saving...' : 'Save Logo & Background'}
+                  {savingTheme ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </form>
@@ -1763,7 +1781,7 @@ export default function Page() {
             <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
               <span className="text-sm font-bold">
                 <Shield className="w-4 h-4 inline mr-1.5 text-amber-300" />
-                Edit Admin Permissions — {permModalTarget.full_name}
+                Permissions — {permModalTarget.full_name}
               </span>
               <button type="button" onClick={() => setPermModalTarget(null)}>
                 <X className="w-5 h-5" />
@@ -1778,7 +1796,7 @@ export default function Page() {
                   .eq('id', permModalTarget.id);
                 setPermModalTarget(null);
                 fetchAllData();
-                showToast('Admin permissions updated!');
+                showToast('Permissions updated');
               }}
               className="p-6 space-y-2.5 text-xs"
             >
@@ -1791,7 +1809,7 @@ export default function Page() {
                     className="mt-0.5"
                   />
                   <div>
-                    <div className="font-extrabold">{item.label}</div>
+                    <div className="font-bold">{item.label}</div>
                     <div className="text-slate-500">{item.desc}</div>
                   </div>
                 </label>
@@ -1801,7 +1819,7 @@ export default function Page() {
                   Cancel
                 </button>
                 <button type="submit" className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold">
-                  Save Permissions
+                  Save
                 </button>
               </div>
             </form>
