@@ -21,6 +21,32 @@ export interface ReceiptDropzoneProps {
   onScanComplete?: (data: ScannedReceiptData) => void;
 }
 
+/** Convert an image file (PNG/WEBP/camera photo) to a compressed .jpg File for database/storage. */
+async function convertImageToJpg(file: File): Promise<File> {
+  if (file.type === 'image/jpeg' && /\.jpe?g$/i.test(file.name)) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxSide = 2200;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+    if (!blob) return file;
+    const baseName = file.name.replace(/\.[^/.]+$/, '') || 'receipt';
+    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
 /** Downscale + grayscale + stretch contrast: faster OCR and far better accuracy on phone photos. */
 async function prepareImageForOcr(file: File): Promise<Blob> {
   try {
@@ -141,22 +167,34 @@ export default function ReceiptDropzone({
     }
   };
 
-  const handleFileChange = (f: File | null, autoScan = false) => {
+  const handleFileChange = async (f: File | null, autoScan = false) => {
     setErrorMsg(null);
     if (f && f.size > MAX_FILE_SIZE_BYTES) {
       setErrorMsg('File size must be under 50 MB.');
       return;
     }
-    setInternalFile(f);
-    onFileSelect(f);
-    if (f && autoScan && onScanComplete) {
-      void runOcrOnFile(f);
+    let finalFile = f;
+    if (f && autoScan && f.type.startsWith('image/')) {
+      finalFile = await convertImageToJpg(f);
+    }
+    setInternalFile(finalFile);
+    onFileSelect(finalFile);
+    if (finalFile && autoScan && onScanComplete) {
+      void runOcrOnFile(finalFile);
     }
   };
 
   const handleScan = async () => {
     if (!activeFile) return;
-    await runOcrOnFile(activeFile);
+    let targetFile = activeFile;
+    if (activeFile.type.startsWith('image/')) {
+      targetFile = await convertImageToJpg(activeFile);
+      if (targetFile !== activeFile) {
+        setInternalFile(targetFile);
+        onFileSelect(targetFile);
+      }
+    }
+    await runOcrOnFile(targetFile);
   };
 
   return (
@@ -184,10 +222,10 @@ export default function ReceiptDropzone({
               disabled={scanning}
               onClick={() => cameraInputRef.current?.click()}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white text-[11px] font-bold cursor-pointer"
-              title="Take a photo or pick a receipt image and automatically scan it with OCR"
+              title="Take a photo or select a receipt image to scan and auto-fill"
             >
               <Camera className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Scan Receipt (Camera / OCR)</span>
+              <span>Scan Receipt</span>
             </button>
           )}
         </div>
@@ -224,10 +262,10 @@ export default function ReceiptDropzone({
                 disabled={scanning}
                 onClick={handleScan}
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-70 text-white font-bold text-[11px] cursor-pointer"
-                title="Reads amount, date and merchant from the receipt image (runs in your browser)"
+                title="Reads amount, date and merchant from the receipt image"
               >
                 {scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                <span>{scanning ? `Reading receipt… ${progress}%` : 'Scan Receipt (OCR)'}</span>
+                <span>{scanning ? `Reading receipt… ${progress}%` : 'Scan Receipt'}</span>
               </button>
             )}
             <button
