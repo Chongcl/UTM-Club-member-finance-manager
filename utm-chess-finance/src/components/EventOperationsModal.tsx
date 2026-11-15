@@ -355,10 +355,13 @@ export default function EventOperationsModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto">
       <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border max-w-4xl w-full overflow-hidden my-8">
-        <div className="bg-slate-900 text-white px-6 py-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            {hasEntryPass ? <Ticket className="w-5 h-5 text-emerald-400" /> : <QrCode className="w-5 h-5 text-emerald-400" />}
-            <div><h2 className="text-base font-bold">{event.event_name}</h2><p className="text-xs text-slate-400">{event.event_date} • {event.location}</p></div>
+        <div className="bg-slate-900 text-white px-6 py-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {hasEntryPass ? <Ticket className="w-5 h-5 text-emerald-400 shrink-0" /> : <QrCode className="w-5 h-5 text-emerald-400 shrink-0" />}
+              <div className="min-w-0"><h2 className="text-base font-bold truncate">{event.event_name}</h2><p className="text-xs text-slate-400 truncate">{event.event_date} • {event.location}</p></div>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center cursor-pointer transition"><X className="w-4 h-4" /></button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {isAdmin && (
@@ -384,7 +387,6 @@ export default function EventOperationsModal({
               )}
               <button type="button" onClick={() => setTab('transport')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'transport' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Carpool ({passengers.length}P / {eventDrivers.length}D)</button>
             </div>
-            <button type="button" onClick={onClose} className="text-slate-400 hover:text-white cursor-pointer ml-1"><X className="w-5 h-5" /></button>
           </div>
         </div>
 
@@ -634,7 +636,10 @@ export default function EventOperationsModal({
                     </div>
                   )}
 
-                  <input type="number" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
+                  <div>
+                    <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 mb-1">Amount Paid (RM)</label>
+                    <input type="number" step="0.01" value={amountPaid} onChange={(e) => setAmountPaid(e.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
+                  </div>
                   <label className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/60 hover:bg-emerald-50 cursor-pointer text-center transition">
                     <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
                       {feeFile ? <FileText className="w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
@@ -685,18 +690,31 @@ export default function EventOperationsModal({
                   <h4 className="font-extrabold text-slate-900">1. Update My Transport / Driver Status</h4>
                   {myRsvp?.assigned_driver_name && <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">Assigned Driver: {myRsvp.assigned_driver_name}</span>}
                 </div>
+                <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 -mb-1">Transport Option</label>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {(['OWN', 'One-Way', 'Return Trip', 'Round Trip', ...(event.driver_recruitment_open || isAdmin ? (['DRIVER'] as const) : [])] as TransportSurveyChoice[]).map((opt) => (
                     <button type="button" key={opt} onClick={() => setSurveyChoice(opt)} className={`p-2 rounded-xl border font-bold cursor-pointer transition ${surveyChoice === opt ? 'bg-slate-900 text-white border-slate-900 shadow-xs' : 'bg-white text-slate-700 hover:bg-slate-100'}`}>{opt === 'OWN' ? 'Own Transport' : opt === 'DRIVER' ? `Driver (RM ${allowancePerTrip}/trip)` : `Need: ${opt}`}</button>
                   ))}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                  <input type="text" value={dormitoryInput} onChange={(e) => setDormitoryInput(e.target.value)} placeholder="Pickup Dorm / Location (e.g., KTDI M17)" className="rounded-xl border bg-white px-3 py-2 font-bold" />
+                <div className="grid grid-cols-1 sm:grid-cols-6 gap-3">
+                  <div className={surveyChoice === 'DRIVER' ? 'sm:col-span-3' : 'sm:col-span-6'}>
+                    <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 mb-1">Pickup Dorm / Location</label>
+                    <input type="text" value={dormitoryInput} onChange={(e) => setDormitoryInput(e.target.value)} placeholder="e.g., KTDI M17" className="w-full rounded-xl border bg-white px-3 py-2 font-bold" />
+                  </div>
                   {surveyChoice === 'DRIVER' && (
                     <>
-                      <input type="text" value={carDetails} onChange={(e) => setCarDetails(e.target.value)} placeholder="Car Model & Plate *" className="rounded-xl border bg-white px-3 py-2" required />
-                      <input type="number" min="1" value={seatsAvailable} onChange={(e) => setSeatsAvailable(e.target.value)} placeholder="Seats *" className="rounded-xl border bg-white px-3 py-2 font-bold" required />
-                      <input type="number" min="1" value={tripsCount} onChange={(e) => setTripsCount(e.target.value)} placeholder="Trips *" className="rounded-xl border bg-white px-3 py-2 font-bold" required />
+                      <div className="sm:col-span-3">
+                        <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 mb-1">Car Model &amp; Plate No. *</label>
+                        <input type="text" value={carDetails} onChange={(e) => setCarDetails(e.target.value)} placeholder="e.g., Perodua Myvi - ABC 1234" className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
+                      </div>
+                      <div className="sm:col-span-3">
+                        <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 mb-1">Available Seats *</label>
+                        <input type="number" min="1" value={seatsAvailable} onChange={(e) => setSeatsAvailable(e.target.value)} placeholder="e.g., 4" className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
+                      </div>
+                      <div className="sm:col-span-3">
+                        <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 mb-1">Number of Trips *</label>
+                        <input type="number" min="1" value={tripsCount} onChange={(e) => setTripsCount(e.target.value)} placeholder="e.g., 1" className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
+                      </div>
                     </>
                   )}
                 </div>
