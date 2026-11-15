@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { MAX_FILE_SIZE_BYTES } from '@/lib/supabase';
 import { parseMalaysianReceipt } from '@/lib/receiptParser';
-import { UploadCloud, FileText, X, Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { UploadCloud, FileText, X, Sparkles, Loader2, AlertCircle, Camera } from 'lucide-react';
 
 export interface ScannedReceiptData {
   amount: number | null;
@@ -67,24 +67,16 @@ export default function ReceiptDropzone({
   const [scanning, setScanning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeFile = selectedFile !== undefined ? selectedFile : file !== undefined ? file : internalFile;
 
-  const handleFileChange = (f: File | null) => {
-    setErrorMsg(null);
-    if (f && f.size > MAX_FILE_SIZE_BYTES) {
-      setErrorMsg('File size must be under 50 MB.');
-      return;
-    }
-    setInternalFile(f);
-    onFileSelect(f);
-  };
-
-  const handleScan = async () => {
-    if (!activeFile || !onScanComplete) return;
+  const runOcrOnFile = async (targetFile: File) => {
+    if (!onScanComplete) return;
     setErrorMsg(null);
 
-    const isPdf = activeFile.type === 'application/pdf' || activeFile.name.toLowerCase().endsWith('.pdf');
+    const isPdf = targetFile.type === 'application/pdf' || targetFile.name.toLowerCase().endsWith('.pdf');
     if (isPdf) {
       setErrorMsg('PDF invoices cannot be auto-read. Upload a photo or screenshot (JPG / PNG) to auto-fill, or type the details in manually.');
       return;
@@ -105,7 +97,7 @@ export default function ReceiptDropzone({
         },
       })) as unknown as OcrWorker;
 
-      const prepared = await prepareImageForOcr(activeFile);
+      const prepared = await prepareImageForOcr(targetFile);
       const { data } = await worker.recognize(prepared);
       const parsed = parseMalaysianReceipt(data.text, data.confidence);
 
@@ -149,26 +141,78 @@ export default function ReceiptDropzone({
     }
   };
 
+  const handleFileChange = (f: File | null, autoScan = false) => {
+    setErrorMsg(null);
+    if (f && f.size > MAX_FILE_SIZE_BYTES) {
+      setErrorMsg('File size must be under 50 MB.');
+      return;
+    }
+    setInternalFile(f);
+    onFileSelect(f);
+    if (f && autoScan && onScanComplete) {
+      void runOcrOnFile(f);
+    }
+  };
+
+  const handleScan = async () => {
+    if (!activeFile) return;
+    await runOcrOnFile(activeFile);
+  };
+
   return (
     <div className="space-y-2">
-      <label className="flex flex-col items-center justify-center gap-2 p-5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-50 transition cursor-pointer text-center">
+      <div className="flex flex-col items-center justify-center gap-2.5 p-5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 text-center">
         <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
           {activeFile ? <FileText className="w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
         </div>
         <div className="text-xs font-bold text-emerald-950 break-all">
-          {activeFile ? activeFile.name : 'Upload Receipt or PDF Invoice (Max 50 MB)'}
+          {activeFile ? activeFile.name : 'Upload Receipt / PDF or Scan with Camera (Max 50 MB)'}
         </div>
-        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold">
-          <UploadCloud className="w-3.5 h-3.5" />
-          <span>{activeFile ? 'Change Receipt File' : 'Choose Receipt File'}</span>
-        </span>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            type="button"
+            disabled={scanning}
+            onClick={() => uploadInputRef.current?.click()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-[11px] font-bold cursor-pointer"
+          >
+            <UploadCloud className="w-3.5 h-3.5" />
+            <span>{activeFile ? 'Change File' : 'Upload File'}</span>
+          </button>
+          {onScanComplete && (
+            <button
+              type="button"
+              disabled={scanning}
+              onClick={() => cameraInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white text-[11px] font-bold cursor-pointer"
+              title="Take a photo or pick a receipt image and automatically scan it with OCR"
+            >
+              <Camera className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Scan Receipt (Camera / OCR)</span>
+            </button>
+          )}
+        </div>
         <input
+          ref={uploadInputRef}
           type="file"
           accept="image/*,application/pdf"
-          onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
+          onChange={(e) => {
+            handleFileChange(e.target.files?.[0] || null, false);
+            e.target.value = '';
+          }}
           className="hidden"
         />
-      </label>
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={(e) => {
+            handleFileChange(e.target.files?.[0] || null, true);
+            e.target.value = '';
+          }}
+          className="hidden"
+        />
+      </div>
 
       {activeFile && (
         <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
