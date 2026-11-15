@@ -1098,8 +1098,10 @@ export default function EquipmentSection({
                     value={startDate}
                     onChange={(e) => {
                       const v = e.target.value;
+                      if (!v) return;
+                      const span = Math.max(0, diffDaysBetween(startDate, returnDate));
                       setStartDate(v);
-                      if (returnDate < v) setReturnDate(v);
+                      setReturnDate(addDaysStr(v, span));
                     }}
                     className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm"
                     required
@@ -1117,6 +1119,63 @@ export default function EquipmentSection({
                   />
                 </div>
               </div>
+              {(() => {
+                const currentDays = Math.max(0, diffDaysBetween(startDate, returnDate));
+                const presets = [
+                  { label: 'Same Day', days: 0 },
+                  { label: '1 Day', days: 1 },
+                  { label: '3 Days', days: 3 },
+                  { label: '7 Days (1 Wk)', days: 7 },
+                  { label: '14 Days (2 Wks)', days: 14 },
+                  { label: '30 Days', days: 30 },
+                ];
+                return (
+                  <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="font-bold text-emerald-900">Borrowing Duration (How Long) *</label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          max={365}
+                          value={currentDays}
+                          onChange={(e) => {
+                            const n = Math.max(0, Math.min(365, parseInt(e.target.value || '0', 10) || 0));
+                            setReturnDate(addDaysStr(startDate, n));
+                          }}
+                          className="w-16 rounded-lg border border-emerald-300 bg-white px-2 py-1 text-center font-extrabold text-emerald-950"
+                          aria-label="Borrowing duration in days"
+                        />
+                        <span className="font-bold text-emerald-800">day(s)</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {presets.map((p) => {
+                        const active = currentDays === p.days;
+                        return (
+                          <button
+                            key={p.days}
+                            type="button"
+                            onClick={() => setReturnDate(addDaysStr(startDate, p.days))}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                              active
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                                : 'bg-white text-emerald-900 border-emerald-200 hover:bg-emerald-100'
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[11px] font-semibold text-emerald-800">
+                      {currentDays === 0
+                        ? `Same-day return (${startDate})`
+                        : `Duration: ${currentDays} day${currentDays === 1 ? '' : 's'} (${startDate} → ${returnDate})`}
+                    </p>
+                  </div>
+                );
+              })()}
               <div>
                 <label className="block font-bold text-emerald-900 mb-1">Quantity *</label>
                 <input

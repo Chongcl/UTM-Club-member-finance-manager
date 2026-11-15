@@ -962,6 +962,13 @@ export default function Page() {
 
   const visibleBudgets = budgets.filter((b) => activityTimeFilter === 'All' || b.status === activityTimeFilter);
   const visibleClaims = claims.filter((c) => isAdminOrOwner || c.user_id === profile.id);
+  const isUserClubOwner = (userId?: string) =>
+    Boolean(
+      userId &&
+        ((ownerUserId && userId === ownerUserId) ||
+          allMembers.some((u) => u.id === userId && u.role === 'owner') ||
+          ((isOwner || profile.role === 'owner') && userId === profile.id))
+    );
   const uniqueBatches = Array.from(new Set([currentBatch, ...allMembers.map((m) => m.batch_year || '2026/2027')]));
   const filteredMembers = allMembers.filter((m) => batchFilter === 'ALL' || (m.batch_year || '2026/2027') === batchFilter);
 
@@ -1432,7 +1439,11 @@ export default function Page() {
                               }`}
                             >
                               {c.status === 'Pending' && Number(c.amount) > claimThreshold
-                                ? c.treasurer_verified_by
+                                ? isUserClubOwner(c.user_id)
+                                  ? c.treasurer_verified_by
+                                    ? 'Treasurer Verified (Ready)'
+                                    : 'Awaiting Treasurer Approval'
+                                  : c.treasurer_verified_by
                                   ? 'Stage 2/2: Awaiting Owner'
                                   : 'Stage 1/2: Awaiting Treasurer'
                                 : c.status}
@@ -2210,6 +2221,7 @@ export default function Page() {
         budget={budgets.find((b) => b.id === selectedClaim?.budget_id)}
         profile={{ ...profile, role: isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? (isOwner ? 'owner' : 'treasurer') : 'member' }}
         isOwner={isOwner}
+        isClaimantOwner={isUserClubOwner(selectedClaim?.user_id)}
         approvalThreshold={claimThreshold}
         onClose={() => setSelectedClaim(null)}
         onUpdated={(m: string) => {

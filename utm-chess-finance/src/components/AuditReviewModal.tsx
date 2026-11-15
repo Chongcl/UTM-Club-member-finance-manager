@@ -29,6 +29,8 @@ interface AuditReviewModalProps {
   profile: UserProfile;
   /** True only for the club Owner (President / Advisor) acting in Owner mode. */
   isOwner?: boolean;
+  /** True when the claimant who submitted this claim is the club Owner. */
+  isClaimantOwner?: boolean;
   /** Claims above this RM amount need Treasurer verification + Owner approval. */
   approvalThreshold?: number;
   onClose: () => void;
@@ -40,6 +42,7 @@ export default function AuditReviewModal({
   budget,
   profile,
   isOwner = false,
+  isClaimantOwner = false,
   approvalThreshold = 200,
   onClose,
   onUpdated,
@@ -69,10 +72,14 @@ export default function AuditReviewModal({
 
   const isTreasurer = profile.role === 'treasurer' || profile.role === 'owner';
   const myLabel = `${profile.full_name} (${profile.matric_no})`;
-  const needsTwoStage = Number(claim.amount) > approvalThreshold;
   const verifiedBy = claim.treasurer_verified_by || '';
   const stage1Done = Boolean(verifiedBy);
   const isOwnClaim = claim.user_id === profile.id;
+  const isOwnerClaim = Boolean(
+    isClaimantOwner || (isOwnClaim && (isOwner || profile.role === 'owner'))
+  );
+  // Owner claims bypass Stage 2 Owner sign-off so Treasurer approval completes them in 1 step.
+  const needsTwoStage = Number(claim.amount) > approvalThreshold && !isOwnerClaim;
   const finalBy = claim.final_approved_by || '';
   const isPdf =
     claim.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
@@ -176,8 +183,14 @@ export default function AuditReviewModal({
 
       const fullUpdate: Record<string, unknown> = {
         ...coreUpdate,
-        ...(decision === 'Approved' && needsTwoStage
-          ? { final_approved_by: myLabel, final_approved_at: nowIso }
+        ...(decision === 'Approved' &&
+        (needsTwoStage || isOwnerClaim || Number(claim.amount) > approvalThreshold)
+          ? {
+              treasurer_verified_by: claim.treasurer_verified_by || myLabel,
+              treasurer_verified_at: claim.treasurer_verified_at || nowIso,
+              final_approved_by: myLabel,
+              final_approved_at: nowIso,
+            }
           : {}),
         ...(uploadedProof
           ? {
@@ -432,7 +445,17 @@ export default function AuditReviewModal({
               </div>
             </div>
 
-            {needsTwoStage && (
+            {isOwnerClaim ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 space-y-1.5 text-xs">
+                <div className="flex items-center gap-1.5 font-extrabold text-emerald-950">
+                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                  <span>Owner&apos;s Claim — Direct Treasurer Approval</span>
+                </div>
+                <p className="text-emerald-800 leading-relaxed">
+                  Since the club Owner cannot approve their own claim, once a Treasurer (Admin) approves this claim, it is immediately marked as Approved.
+                </p>
+              </div>
+            ) : needsTwoStage && (
               <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3.5 space-y-2.5 text-xs">
                 <div className="flex items-center gap-1.5 font-extrabold text-indigo-950">
                   <ShieldCheck className="w-4 h-4 text-indigo-700" />
@@ -593,7 +616,40 @@ export default function AuditReviewModal({
                         </div>
                       );
 
-                      // ---- Normal claims (at or below threshold): single approval ----
+                      // ---- Prevent self-approval on all own claims (except completing an already Treasurer-verified claim) ----
+                      if (isOwnClaim) {
+                        if (stage1Done && verifiedBy !== myLabel) {
+                          return (
+                            <div className="grid grid-cols-2 gap-2.5">
+                              {waitingNote(
+                                `Already verified by Treasurer (${verifiedBy}). Click below to finalize your claim.`
+                              )}
+                              <button
+                                type="button"
+                                disabled={processing !== null}
+                                onClick={() => handleDecision('Approved')}
+                                className="col-span-2 inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                              >
+                                {processing === 'Approved' ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="w-4 h-4" />
+                                )}
+                                <span>Finalize Approval (Verified by Treasurer)</span>
+                              </button>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="grid grid-cols-2 gap-2.5">
+                            {waitingNote(
+                              'You cannot approve your own claim. A Treasurer (Admin) must review and approve it.'
+                            )}
+                          </div>
+                        );
+                      }
+
+                      // ---- Normal claims or Owner claims: single approval by Treasurer (Admin) ----
                       if (!needsTwoStage) {
                         return (
                           <div className="grid grid-cols-2 gap-2.5">
@@ -615,14 +671,7 @@ export default function AuditReviewModal({
                         );
                       }
 
-                      // ---- High-value claims: Stage 1 (Treasurer) then Stage 2 (Owner) ----
-                      if (isOwnClaim) {
-                        return (
-                          <div className="grid grid-cols-2 gap-2.5">
-                            {waitingNote('You cannot verify or approve your own claim. Another admin must review it.')}
-                          </div>
-                        );
-                      }
+                      // ---- High-value non-Owner claims: Stage 1 (Treasurer) then Stage 2 (Owner) ----
                       if (!stage1Done) {
                         if (isOwner) {
                           return (

@@ -45,6 +45,7 @@ export default function QrScannerModal({
   const lockRef = useRef(false);
   const [eqScan, setEqScan] = useState<{ item: EquipmentItem; unit?: number } | null>(null);
   const [eqQty, setEqQty] = useState('1');
+  const [eqStartDate, setEqStartDate] = useState(localDateStr());
   const [eqReturnDate, setEqReturnDate] = useState(addDaysStr(localDateStr(), 7));
   const [eqPurpose, setEqPurpose] = useState('');
   const [eqBusy, setEqBusy] = useState(false);
@@ -52,10 +53,24 @@ export default function QrScannerModal({
 
   useEffect(() => { itemsRef.current = equipmentItems; }, [equipmentItems]);
   useEffect(() => {
-    if (!isOpen) { lockRef.current = false; setEqScan(null); setEqError(null); }
+    if (!isOpen) {
+      const today = localDateStr();
+      lockRef.current = false;
+      setEqScan(null);
+      setEqStartDate(today);
+      setEqReturnDate(addDaysStr(today, 7));
+      setEqError(null);
+    }
   }, [isOpen]);
 
-  const closeEqPanel = () => { setEqScan(null); setEqError(null); lockRef.current = false; };
+  const closeEqPanel = () => {
+    const today = localDateStr();
+    setEqScan(null);
+    setEqStartDate(today);
+    setEqReturnDate(addDaysStr(today, 7));
+    setEqError(null);
+    lockRef.current = false;
+  };
 
   useEffect(() => {
     if (!isOpen || typeof window === 'undefined') return;
@@ -243,6 +258,13 @@ export default function QrScannerModal({
   };
 
   const eqToday = localDateStr();
+  const diffDays = (startStr: string, endStr: string): number => {
+    const s = new Date(`${startStr}T00:00:00`).getTime();
+    const e = new Date(`${endStr}T00:00:00`).getTime();
+    return Number.isFinite(s) && Number.isFinite(e) ? Math.max(0, Math.round((e - s) / 86400000)) : 0;
+  };
+  const eqEffectiveEnd = eqReturnDate >= eqStartDate ? eqReturnDate : eqStartDate;
+  const eqDurationDays = diffDays(eqStartDate, eqEffectiveEnd);
   const eqActiveLoans = eqScan
     ? equipmentLoans.filter(
         (l) =>
@@ -257,7 +279,7 @@ export default function QrScannerModal({
     ? equipmentLoans.filter((l) => l.item_id === eqScan.item.id && approvalOf(l) === 'Pending' && l.user_id === profile.id)
     : [];
   const eqAvail = eqScan
-    ? availableForRange(eqScan.item, equipmentLoans, eqToday, eqReturnDate >= eqToday ? eqReturnDate : eqToday, eqToday)
+    ? availableForRange(eqScan.item, equipmentLoans, eqStartDate, eqEffectiveEnd, eqToday)
     : 0;
 
   const handleEqBorrow = async (e: React.FormEvent) => {
@@ -271,8 +293,8 @@ export default function QrScannerModal({
         loans: equipmentLoans,
         profile,
         quantity: Math.max(1, parseInt(eqQty) || 1),
-        startDate: eqToday,
-        endDate: eqReturnDate,
+        startDate: eqStartDate,
+        endDate: eqEffectiveEnd,
         purpose: eqPurpose.trim() || 'Borrowed via QR scan',
       });
       if (!res.ok) { setEqError(res.error || 'Could not save.'); return; }
@@ -384,14 +406,71 @@ export default function QrScannerModal({
                   <span>{eqScan.item.requires_approval ? 'Request this item' : 'Borrow this item now'}</span>
                   <span className={`text-[11px] font-bold ${eqAvail > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{eqAvail} free</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-3 gap-2">
                   <div>
                     <label className="block font-bold text-emerald-900 mb-1">Quantity</label>
-                    <input type="number" min="1" max={Math.max(1, eqAvail)} value={eqQty} onChange={(e) => setEqQty(e.target.value)} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-bold" required />
+                    <input type="number" min="1" max={Math.max(1, eqAvail)} value={eqQty} onChange={(e) => setEqQty(e.target.value)} className="w-full rounded-xl border border-emerald-300 bg-white px-2.5 py-2 font-bold" required />
                   </div>
                   <div>
-                    <label className="block font-bold text-emerald-900 mb-1">Return by</label>
-                    <input type="date" min={eqToday} value={eqReturnDate} onChange={(e) => setEqReturnDate(e.target.value)} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2" required />
+                    <label className="block font-bold text-emerald-900 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      min={eqToday}
+                      value={eqStartDate}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (!v) return;
+                        const span = diffDays(eqStartDate, eqEffectiveEnd);
+                        setEqStartDate(v);
+                        setEqReturnDate(addDaysStr(v, span));
+                      }}
+                      className="w-full rounded-xl border border-emerald-300 bg-white px-2 py-2"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-emerald-900 mb-1">Return By</label>
+                    <input type="date" min={eqStartDate} value={eqEffectiveEnd} onChange={(e) => setEqReturnDate(e.target.value)} className="w-full rounded-xl border border-emerald-300 bg-white px-2 py-2" required />
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-white/90 border border-emerald-200 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-emerald-900">Duration (days):</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={365}
+                      value={eqDurationDays}
+                      onChange={(e) => {
+                        const n = Math.max(0, Math.min(365, parseInt(e.target.value || '0', 10) || 0));
+                        setEqReturnDate(addDaysStr(eqStartDate, n));
+                      }}
+                      className="w-16 rounded-lg border border-emerald-300 bg-white px-2 py-1 text-center font-extrabold text-emerald-950"
+                      aria-label="QR borrow duration in days"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      { label: 'Same Day', days: 0 },
+                      { label: '1d', days: 1 },
+                      { label: '3d', days: 3 },
+                      { label: '7d', days: 7 },
+                      { label: '14d', days: 14 },
+                      { label: '30d', days: 30 },
+                    ].map((p) => (
+                      <button
+                        key={p.days}
+                        type="button"
+                        onClick={() => setEqReturnDate(addDaysStr(eqStartDate, p.days))}
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-bold border cursor-pointer ${
+                          eqDurationDays === p.days
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
                 <input type="text" value={eqPurpose} onChange={(e) => setEqPurpose(e.target.value)} placeholder="Purpose (e.g., Training)" className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2" />
