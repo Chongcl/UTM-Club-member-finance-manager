@@ -14,7 +14,6 @@ import {
   syncAvailabilityToday,
   equipmentQrPayload,
   qrImageUrl,
-  MIGRATION_HINT,
 } from '@/lib/equipment';
 import { formatWhatsAppPhone } from '@/lib/whatsapp';
 import {
@@ -231,7 +230,14 @@ export default function EquipmentSection({
             available_quantity: base.available_quantity,
             location: base.location,
           }));
-          if (error) throw error;
+          if (error) {
+            ({ error } = await write({
+              item_name: base.item_name,
+              total_quantity: base.total_quantity,
+              remarks: base.notes,
+            }));
+            if (error) throw error;
+          }
         }
       }
 
@@ -252,7 +258,13 @@ export default function EquipmentSection({
         onRefresh(editingItem ? `Updated "${base.item_name}"!` : `Added "${base.item_name}"!`);
       }
     } catch (err: unknown) {
-      setItemError(err instanceof Error ? err.message : 'Failed to save equipment.');
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'object' && err !== null && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : 'Failed to save equipment.';
+      setItemError(msg);
     } finally {
       setSavingItem(false);
     }
@@ -319,13 +331,24 @@ export default function EquipmentSection({
     loans.map((l) => (l.id === loanId ? { ...l, ...patch } : l));
 
   const handleReturnLoan = async (loan: EquipmentLoan) => {
-    await supabase
+    const nowIso = new Date().toISOString();
+    const { error } = await supabase
       .from('equipment_loans')
-      .update({ status: 'Returned', returned_at: new Date().toISOString() })
+      .update({ status: 'Returned', returned_at: nowIso })
       .eq('id', loan.id);
+    if (error) {
+      const { error: fbErr } = await supabase
+        .from('equipment_loans')
+        .update({ status: 'Returned' })
+        .eq('id', loan.id);
+      if (fbErr) {
+        onRefresh(`Could not mark returned: ${fbErr.message}`);
+        return;
+      }
+    }
     const item = items.find((i) => i.id === loan.item_id);
     if (item) {
-      await syncAvailabilityToday(item, loansWithout(loan.id, { status: 'Returned', returned_at: new Date().toISOString() }));
+      await syncAvailabilityToday(item, loansWithout(loan.id, { status: 'Returned', returned_at: nowIso }));
     }
     void logActivity(
       profile,
@@ -342,16 +365,31 @@ export default function EquipmentSection({
       .from('equipment_loans')
       .update({
         approval_status: decision,
+        status: decision === 'Approved' ? 'Borrowed' : 'Returned',
         approved_by: `${profile.full_name} (${profile.matric_no})`,
         approved_at: new Date().toISOString(),
       })
       .eq('id', loan.id);
     if (error) {
-      onRefresh(MIGRATION_HINT);
-      return;
+      const { error: fbErr } = await supabase
+        .from('equipment_loans')
+        .update({ status: decision === 'Approved' ? 'Borrowed' : 'Returned' })
+        .eq('id', loan.id);
+      if (fbErr) {
+        onRefresh(`Could not update request: ${fbErr.message}`);
+        return;
+      }
     }
     const item = items.find((i) => i.id === loan.item_id);
-    if (item) await syncAvailabilityToday(item, loansWithout(loan.id, { approval_status: decision }));
+    if (item) {
+      await syncAvailabilityToday(
+        item,
+        loansWithout(loan.id, {
+          approval_status: decision,
+          status: decision === 'Approved' ? 'Borrowed' : 'Returned',
+        })
+      );
+    }
     void logActivity(
       profile,
       'Equipment',
@@ -370,8 +408,11 @@ export default function EquipmentSection({
   const handleCancelBooking = async (loan: EquipmentLoan) => {
     const { error } = await supabase.from('equipment_loans').update({ approval_status: 'Cancelled' }).eq('id', loan.id);
     if (error) {
-      onRefresh(MIGRATION_HINT);
-      return;
+      const { error: delErr } = await supabase.from('equipment_loans').delete().eq('id', loan.id);
+      if (delErr) {
+        onRefresh(`Could not cancel booking: ${delErr.message}`);
+        return;
+      }
     }
     const item = items.find((i) => i.id === loan.item_id);
     if (item) await syncAvailabilityToday(item, loansWithout(loan.id, { approval_status: 'Cancelled' }));

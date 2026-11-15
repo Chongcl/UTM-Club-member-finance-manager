@@ -21,6 +21,19 @@ interface ClaimFormModalProps {
   onSuccess: (message: string) => void;
 }
 
+function extractErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    const msg = String((err as { message: unknown }).message || '').trim();
+    const details =
+      'details' in err && (err as { details: unknown }).details
+        ? ` (${String((err as { details: unknown }).details)})`
+        : '';
+    if (msg) return `${msg}${details}`;
+  }
+  return 'Submission failed. Please check your details and try again.';
+}
+
 export default function ClaimFormModal({
   isOpen,
   onClose,
@@ -58,6 +71,10 @@ export default function ClaimFormModal({
       setUploadedReceiptUrl(null);
       return;
     }
+    setErrorMsg(null);
+    if (budgets.length > 0 && !budgets.some((b) => b.id === selectedEventOption) && !customEventName) {
+      setSelectedEventOption(budgets[0].id);
+    }
     let savedBank = {
       bank_name: profile.bank_name || '',
       bank_account_no: profile.bank_account_no || '',
@@ -86,7 +103,7 @@ export default function ClaimFormModal({
     setBankAccountHolder(savedBank.bank_account_holder);
     setClaimantQrUrl(savedBank.bank_qr_url);
     setClaimantQrFile(null);
-  }, [isOpen, profile]);
+  }, [isOpen, profile, budgets, selectedEventOption, customEventName]);
 
   if (!isOpen) return null;
 
@@ -107,17 +124,21 @@ export default function ClaimFormModal({
     e.preventDefault();
     setErrorMsg(null);
     if (!file) {
-      setErrorMsg('Please attach your receipt or PDF invoice.');
+      setErrorMsg('Please attach or scan your receipt or PDF invoice first.');
       return;
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
       setErrorMsg('File size must be under 50 MB.');
       return;
     }
+    if (!title.trim()) {
+      setErrorMsg('Please enter an Expense Title.');
+      return;
+    }
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      setErrorMsg('Please enter a valid amount.');
+      setErrorMsg('Please enter a valid Amount (RM) greater than 0.');
       return;
     }
 
@@ -177,55 +198,79 @@ export default function ClaimFormModal({
       const chosenBudget = budgets.find((b) => b.id === selectedEventOption);
       const eventLabel = isOther
         ? customEventName.trim() || 'General Club Expense'
-        : chosenBudget?.event_name || '';
+        : chosenBudget?.event_name || 'General Club Expense';
 
       const baseDescription = `[Event: ${eventLabel}] ${description.trim()}${
         paymentSummary ? ` | Reimburse To: ${paymentSummary}` : ''
       }`;
 
+      const cleanMerchant = merchantName.trim() || 'Merchant';
+      const scannedSummary = scannedData
+        ? `Scanned (${scannedData.confidence}%): RM ${scannedData.amount?.toFixed(2) ?? '-'} | ${scannedData.merchant || '-'} | ${scannedData.date || '-'}`
+        : `Receipt attached (${file.name})`;
+
       const corePayload = {
         user_id: profile.id,
         claimant_name: profile.full_name,
         matric_no: profile.matric_no,
-        phone_number: profile.phone_number,
+        phone_number: profile.phone_number || '',
         budget_id: isOther ? null : selectedEventOption,
         title: title.trim(),
         category,
         amount: numericAmount,
         expense_date: expenseDate,
-        merchant_name: merchantName.trim(),
+        merchant_name: cleanMerchant,
         description: baseDescription,
         receipt_url: receiptUrl,
         receipt_file_name: file.name,
-        ai_extracted_amount: scannedData?.amount ?? null,
-        ai_extracted_merchant: scannedData?.merchant || null,
-        ai_extracted_date: scannedData?.date ?? null,
-        ai_confidence: scannedData?.confidence ?? null,
         status: 'Pending',
       };
 
-      const { data: inserted, error: insertErr } = await supabase
-        .from('claims')
-        .insert({
+      const candidates: Record<string, unknown>[] = [
+        // Tier 1: Full modern schema
+        {
           ...corePayload,
+          ai_extracted_amount: scannedData?.amount ?? null,
+          ai_extracted_merchant: scannedData?.merchant || null,
+          ai_extracted_date: scannedData?.date ?? null,
+          ai_confidence: scannedData?.confidence ?? null,
           payment_info: paymentSummary,
           claimant_qr_url: finalClaimantQr,
-        })
-        .select('id')
-        .maybeSingle();
+        },
+        // Tier 2: Original claims schema
+        {
+          ...corePayload,
+          custom_event_name: isOther ? eventLabel : '',
+          ai_ocr_summary: scannedSummary,
+        },
+        // Tier 3: Minimal universal schema
+        corePayload,
+      ];
 
-      if (insertErr) {
-        const { data: fbInserted, error: fallbackErr } = await supabase
+      let insertedId: string | null = null;
+      let lastErr: unknown = null;
+      let saved = false;
+
+      for (const payload of candidates) {
+        const { data: insData, error: insErr } = await supabase
           .from('claims')
-          .insert(corePayload)
+          .insert(payload)
           .select('id')
           .maybeSingle();
-        if (fallbackErr) throw fallbackErr;
-        if (fbInserted?.id && finalClaimantQr && typeof window !== 'undefined') {
-          localStorage.setItem(`clubsync_claimant_qr_${fbInserted.id}`, finalClaimantQr);
+        if (!insErr) {
+          saved = true;
+          insertedId = insData?.id ? String(insData.id) : null;
+          break;
         }
-      } else if (inserted?.id && finalClaimantQr && typeof window !== 'undefined') {
-        localStorage.setItem(`clubsync_claimant_qr_${inserted.id}`, finalClaimantQr);
+        lastErr = insErr;
+      }
+
+      if (!saved) {
+        throw lastErr || new Error('Could not save claim to the database.');
+      }
+
+      if (insertedId && finalClaimantQr && typeof window !== 'undefined') {
+        localStorage.setItem(`clubsync_claimant_qr_${insertedId}`, finalClaimantQr);
       }
 
       void logActivity(
@@ -234,10 +279,21 @@ export default function ClaimFormModal({
         'Claim submitted',
         `${profile.full_name} (${profile.matric_no}) submitted claim "${title.trim()}" for RM ${numericAmount.toFixed(2)} (${eventLabel})`
       );
-      onSuccess('Claim submitted!');
+
+      const submittedTitle = title.trim();
+      setTitle('');
+      setCustomEventName('');
+      setMerchantName('');
+      setAmount('');
+      setDescription('');
+      setFile(null);
+      setUploadedReceiptUrl(null);
+      setScannedData(null);
+
+      onSuccess(`✓ Claim "${submittedTitle}" (RM ${numericAmount.toFixed(2)}) submitted successfully!`);
       onClose();
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Submission failed.');
+      setErrorMsg(extractErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -264,8 +320,15 @@ export default function ClaimFormModal({
 
         <form
           onSubmit={handleSubmit}
+          noValidate
           className="p-6 space-y-4 max-h-[82vh] overflow-y-auto"
         >
+          {errorMsg && (
+            <div className="flex items-center gap-2 text-xs bg-red-50 text-red-700 px-3.5 py-2.5 rounded-xl border border-red-200 font-semibold">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
           <ReceiptDropzone
             selectedFile={file}
             userId={profile.id}
@@ -311,7 +374,7 @@ export default function ClaimFormModal({
             {selectedEventOption === 'OTHER' && (
               <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-emerald-900 mb-1">
-                  Custom Event / Purpose Name *
+                  Custom Event / Purpose Name (Optional)
                 </label>
                 <input
                   type="text"
@@ -319,7 +382,6 @@ export default function ClaimFormModal({
                   onChange={(e) => setCustomEventName(e.target.value)}
                   placeholder="e.g., Committee Meeting Refreshments / Equipment Repair"
                   className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm"
-                  required
                 />
               </div>
             )}
@@ -371,14 +433,14 @@ export default function ClaimFormModal({
 
             <div>
               <label className="block text-xs font-bold text-emerald-900 mb-1">
-                Shop / Merchant *
+                Shop / Merchant
               </label>
               <input
                 type="text"
                 value={merchantName}
                 onChange={(e) => setMerchantName(e.target.value)}
+                placeholder="Optional (defaults to Merchant)"
                 className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm"
-                required
               />
             </div>
 

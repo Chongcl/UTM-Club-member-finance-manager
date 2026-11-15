@@ -38,6 +38,7 @@ import EventOperationsModal from '@/components/EventOperationsModal';
 import QrScannerModal from '@/components/QrScannerModal';
 import LedgerSection, { LedgerEntryItem } from '@/components/LedgerSection';
 import ActivityLogSection from '@/components/ActivityLogSection';
+import { normalizeEquipmentItem, normalizeEquipmentLoan } from '@/lib/equipment';
 import {
   Calendar,
   MapPin,
@@ -363,8 +364,17 @@ export default function Page() {
       }
     }
     if (lRes.data) setLedgerEntries(lRes.data as LedgerEntryItem[]);
-    if (eqIRes.data) setEquipmentItems(eqIRes.data as EquipmentItem[]);
-    if (eqLRes.data) setEquipmentLoans(eqLRes.data as EquipmentLoan[]);
+    const normalizedLoans = eqLRes.data
+      ? (eqLRes.data as Record<string, unknown>[]).map(normalizeEquipmentLoan)
+      : [];
+    if (eqLRes.data) setEquipmentLoans(normalizedLoans);
+    if (eqIRes.data) {
+      setEquipmentItems(
+        (eqIRes.data as Record<string, unknown>[]).map((raw) =>
+          normalizeEquipmentItem(raw, normalizedLoans)
+        )
+      );
+    }
     if (annRes.data) setAnnouncements(annRes.data as Announcement[]);
     if (pRes.data) setPolls(pRes.data as Poll[]);
     if (pvRes.data) setPollVotes(pvRes.data as PollVote[]);

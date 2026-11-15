@@ -54,7 +54,11 @@ export default function AuditReviewModal({
 
   useEffect(() => {
     if (claim) {
-      setRemarks(claim.review_remarks || '');
+      setRemarks(
+        claim.review_remarks ||
+          (claim as unknown as { treasurer_remarks?: string }).treasurer_remarks ||
+          ''
+      );
       setPayoutFile(null);
       setErrorMsg(null);
       setFullImageOpen(false);
@@ -160,12 +164,13 @@ export default function AuditReviewModal({
       const uploadedProof = await uploadProofFileIfPresent();
       const nowIso = new Date().toISOString();
 
+      const remarkText =
+        remarks.trim() || (decision === 'Approved' ? 'Verified & Reimbursed' : 'Rejected');
+
       const coreUpdate: Record<string, unknown> = {
         status: decision,
         reviewed_by: myLabel,
-        review_remarks:
-          remarks.trim() ||
-          (decision === 'Approved' ? 'Verified & Reimbursed' : 'Rejected'),
+        review_remarks: remarkText,
         reviewed_at: nowIso,
       };
 
@@ -183,17 +188,33 @@ export default function AuditReviewModal({
           : {}),
       };
 
-      const { error } = await supabase
-        .from('claims')
-        .update(fullUpdate)
-        .eq('id', claim.id);
-      if (error) {
-        const { error: fallbackErr } = await supabase
-          .from('claims')
-          .update(coreUpdate)
-          .eq('id', claim.id);
-        if (fallbackErr) throw fallbackErr;
+      const updateCandidates: Record<string, unknown>[] = [
+        fullUpdate,
+        coreUpdate,
+        {
+          status: decision,
+          treasurer_remarks: remarkText,
+          reviewed_by: myLabel,
+          reviewed_at: nowIso,
+        },
+        {
+          status: decision,
+          reviewed_by: myLabel,
+          reviewed_at: nowIso,
+        },
+      ];
+
+      let lastErr: unknown = null;
+      let updated = false;
+      for (const payload of updateCandidates) {
+        const { error } = await supabase.from('claims').update(payload).eq('id', claim.id);
+        if (!error) {
+          updated = true;
+          break;
+        }
+        lastErr = error;
       }
+      if (!updated) throw lastErr;
 
       if (decision === 'Approved' && claim.status !== 'Approved' && budget) {
         const newSpent = Number(budget.spent_amount) + Number(claim.amount);
@@ -218,7 +239,13 @@ export default function AuditReviewModal({
       onUpdated(`Claim ${decision.toLowerCase()}!`);
       onClose();
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      const msg =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'object' && err !== null && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : 'Something went wrong. Please try again.';
+      setErrorMsg(msg);
     } finally {
       setProcessing(null);
     }

@@ -291,9 +291,23 @@ export default function QrScannerModal({
   const handleEqReturn = async (loan: EquipmentLoan) => {
     if (!eqScan) return;
     setEqBusy(true);
+    setEqError(null);
     try {
       const nowIso = new Date().toISOString();
-      await supabase.from('equipment_loans').update({ status: 'Returned', returned_at: nowIso }).eq('id', loan.id);
+      const { error } = await supabase
+        .from('equipment_loans')
+        .update({ status: 'Returned', returned_at: nowIso })
+        .eq('id', loan.id);
+      if (error) {
+        const { error: fbErr } = await supabase
+          .from('equipment_loans')
+          .update({ status: 'Returned' })
+          .eq('id', loan.id);
+        if (fbErr) {
+          setEqError(fbErr.message || 'Could not mark equipment returned.');
+          return;
+        }
+      }
       await syncAvailabilityToday(
         eqScan.item,
         equipmentLoans.map((l) => (l.id === loan.id ? { ...l, status: 'Returned' as const, returned_at: nowIso } : l))

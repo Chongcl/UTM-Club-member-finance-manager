@@ -29,9 +29,71 @@ export function enumerateDays(start: string, end: string, maxDays = 400): string
 
 export type LoanApproval = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
 
-/** Old rows (before the approval feature) have no approval_status → treat as Approved. */
+/** Normalize equipment_loans rows across both original (equipment_id/remarks) and modern (item_id/purpose) schemas. */
+export function normalizeEquipmentLoan(raw: Record<string, unknown>): EquipmentLoan {
+  const rawStatus = String(raw.status || 'Borrowed');
+  const approvalStatus = raw.approval_status
+    ? (String(raw.approval_status) as EquipmentLoan['approval_status'])
+    : rawStatus === 'Pending'
+    ? 'Pending'
+    : 'Approved';
+
+  return {
+    id: String(raw.id || ''),
+    item_id: String(raw.item_id || raw.equipment_id || ''),
+    item_name: String(raw.item_name || raw.equipment_name || ''),
+    user_id: String(raw.user_id || ''),
+    borrower_name: String(raw.borrower_name || ''),
+    matric_no: String(raw.matric_no || ''),
+    phone_number: String(raw.phone_number || ''),
+    quantity: Number(raw.quantity ?? 1),
+    purpose: String(raw.purpose ?? raw.remarks ?? ''),
+    borrow_date: String(raw.borrow_date || ''),
+    return_date: String(raw.return_date || ''),
+    status: (rawStatus as EquipmentLoan['status']) || 'Borrowed',
+    returned_at: raw.returned_at ? String(raw.returned_at) : null,
+    approval_status: approvalStatus,
+    approved_by: raw.approved_by ? String(raw.approved_by) : null,
+    approved_at: raw.approved_at ? String(raw.approved_at) : null,
+    created_at: String(raw.created_at || ''),
+  };
+}
+
+/** Normalize equipment_items rows across both original (remarks) and modern (notes/available_quantity) schemas. */
+export function normalizeEquipmentItem(
+  raw: Record<string, unknown>,
+  loans?: EquipmentLoan[]
+): EquipmentItem {
+  const id = String(raw.id || '');
+  const total = Number(raw.total_quantity ?? 1);
+  let avail: number;
+  if (raw.available_quantity !== undefined && raw.available_quantity !== null) {
+    avail = Number(raw.available_quantity);
+  } else if (loans) {
+    const today = localDateStr();
+    avail = Math.max(0, total - unitsInUseOnDay(loans, id, today, today));
+  } else {
+    avail = total;
+  }
+
+  return {
+    id,
+    item_name: String(raw.item_name || raw.equipment_name || ''),
+    category: String(raw.category || 'Sports / Chess Sets'),
+    total_quantity: total,
+    available_quantity: avail,
+    location: String(raw.location || 'Club Storage Room'),
+    notes: String(raw.notes ?? raw.remarks ?? ''),
+    requires_approval: Boolean(raw.requires_approval),
+    created_at: String(raw.created_at || ''),
+  };
+}
+
+/** Old rows (before the approval feature) have no approval_status → treat as Approved unless status is Pending. */
 export function approvalOf(loan: EquipmentLoan): LoanApproval {
-  return (loan.approval_status as LoanApproval) || 'Approved';
+  if (loan.approval_status) return loan.approval_status as LoanApproval;
+  if ((loan.status as string) === 'Pending') return 'Pending';
+  return 'Approved';
 }
 
 /** Does this loan block stock on the given calendar day? */
@@ -133,28 +195,71 @@ export async function submitLoanRequest({
     return { ...base, error: `Only ${avail} unit(s) are free for the whole period ${startDate} → ${endDate}.` };
   }
 
-  const core = {
+  const cleanPurpose = purpose.trim() || 'Club Activity';
+  const statusForLegacy = approval === 'Pending' ? 'Pending' : 'Borrowed';
+
+  const modernCore = {
     item_id: item.id,
     item_name: item.item_name,
     user_id: profile.id,
     borrower_name: profile.full_name,
     matric_no: profile.matric_no,
-    phone_number: profile.phone_number,
+    phone_number: profile.phone_number || '',
     quantity,
-    purpose: purpose.trim() || 'Club Activity',
+    purpose: cleanPurpose,
     borrow_date: startDate,
     return_date: endDate,
     status: 'Borrowed',
   };
 
-  const { error } = await supabase.from('equipment_loans').insert({ ...core, approval_status: approval });
-  if (error) {
-    // Column missing → only safe to fall back for a plain, instant, same-day borrow.
-    if (item.requires_approval || isFuture) {
-      return { ...base, error: MIGRATION_HINT };
+  const candidates: Record<string, unknown>[] = [
+    // 1. Modern full schema
+    { ...modernCore, approval_status: approval },
+    // 2. Modern core schema without approval_status
+    { ...modernCore, status: statusForLegacy },
+    // 3. Original Supabase schema (equipment_id, equipment_name, application_date, remarks)
+    {
+      equipment_id: item.id,
+      equipment_name: item.item_name,
+      user_id: profile.id,
+      borrower_name: profile.full_name,
+      matric_no: profile.matric_no,
+      phone_number: profile.phone_number || '',
+      quantity,
+      application_date: today,
+      borrow_date: startDate,
+      return_date: endDate,
+      status: statusForLegacy,
+      remarks: cleanPurpose,
+    },
+    // 4. Minimal original schema fallback
+    {
+      equipment_id: item.id,
+      equipment_name: item.item_name,
+      user_id: profile.id,
+      borrower_name: profile.full_name,
+      matric_no: profile.matric_no,
+      phone_number: profile.phone_number || '',
+      quantity,
+      borrow_date: startDate,
+      return_date: endDate,
+      status: 'Borrowed',
+    },
+  ];
+
+  let lastError: string | null = null;
+  let inserted = false;
+  for (const payload of candidates) {
+    const { error } = await supabase.from('equipment_loans').insert(payload);
+    if (!error) {
+      inserted = true;
+      break;
     }
-    const { error: fb } = await supabase.from('equipment_loans').insert(core);
-    if (fb) return { ...base, error: fb.message };
+    lastError = error.message;
+  }
+
+  if (!inserted) {
+    return { ...base, error: lastError || 'Could not save borrow record.' };
   }
 
   if (!isFuture && approval === 'Approved') {
