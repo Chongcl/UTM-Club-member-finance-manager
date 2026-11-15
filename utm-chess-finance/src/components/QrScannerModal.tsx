@@ -1,12 +1,21 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment } from '@/lib/supabase';
-import { X, Camera, CheckCircle2, AlertTriangle, Upload, QrCode, ShieldCheck, XCircle } from 'lucide-react';
+import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, EquipmentItem, EquipmentLoan, logActivity } from '@/lib/supabase';
+import {
+  localDateStr,
+  addDaysStr,
+  approvalOf,
+  availableForRange,
+  submitLoanRequest,
+  syncAvailabilityToday,
+} from '@/lib/equipment';
+import { X, Camera, CheckCircle2, AlertTriangle, Upload, QrCode, ShieldCheck, XCircle, Package, RotateCcw, ArrowUpRight, Loader2, MapPin } from 'lucide-react';
 
 interface QrScannerModalProps {
   isOpen: boolean; onClose: () => void; budgets: Budget[]; rsvps: EventRsvp[];
   feePayments?: ActivityFeePayment[]; profile: UserProfile; isAdmin?: boolean; onSuccess: (msg: string) => void;
+  equipmentItems?: EquipmentItem[]; equipmentLoans?: EquipmentLoan[];
 }
 
 interface GatePassResult {
@@ -22,6 +31,7 @@ declare global {
 
 export default function QrScannerModal({
   isOpen, onClose, budgets, rsvps, feePayments = [], profile, isAdmin = false, onSuccess,
+  equipmentItems = [], equipmentLoans = [],
 }: QrScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -29,6 +39,23 @@ export default function QrScannerModal({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [gatePass, setGatePass] = useState<GatePassResult | null>(null);
+
+  // On-the-spot equipment borrow / return (QR sticker on the box or clock)
+  const itemsRef = useRef<EquipmentItem[]>(equipmentItems);
+  const lockRef = useRef(false);
+  const [eqScan, setEqScan] = useState<{ item: EquipmentItem; unit?: number } | null>(null);
+  const [eqQty, setEqQty] = useState('1');
+  const [eqReturnDate, setEqReturnDate] = useState(addDaysStr(localDateStr(), 7));
+  const [eqPurpose, setEqPurpose] = useState('');
+  const [eqBusy, setEqBusy] = useState(false);
+  const [eqError, setEqError] = useState<string | null>(null);
+
+  useEffect(() => { itemsRef.current = equipmentItems; }, [equipmentItems]);
+  useEffect(() => {
+    if (!isOpen) { lockRef.current = false; setEqScan(null); setEqError(null); }
+  }, [isOpen]);
+
+  const closeEqPanel = () => { setEqScan(null); setEqError(null); lockRef.current = false; };
 
   useEffect(() => {
     if (!isOpen || typeof window === 'undefined') return;
@@ -43,6 +70,22 @@ export default function QrScannerModal({
   const verifyAndRecordQrPayload = useCallback(async (rawText: string) => {
     setErrorMsg(null);
     const trimmed = rawText.trim();
+
+    if (trimmed.includes('CLUBSYNC_EQ::v1::')) {
+      const eqPayload = trimmed.slice(trimmed.indexOf('CLUBSYNC_EQ::v1::'));
+      const eqParts = eqPayload.split('::');
+      const itemId = eqParts[2]?.trim();
+      const unitNo = eqParts[3] ? parseInt(eqParts[3], 10) : undefined;
+      const found = itemsRef.current.find((i) => i.id === itemId);
+      if (!found) { setErrorMsg('Equipment not found. This sticker may belong to an item that was removed.'); return; }
+      lockRef.current = true;
+      setEqQty('1');
+      setEqPurpose('');
+      setEqError(null);
+      setEqReturnDate(addDaysStr(localDateStr(), 7));
+      setEqScan({ item: found, unit: Number.isFinite(unitNo) ? unitNo : undefined });
+      return;
+    }
 
     if (trimmed.includes('CLUBSYNC_PASS::v1::')) {
       const passPayload = trimmed.slice(trimmed.indexOf('CLUBSYNC_PASS::v1::'));
@@ -157,7 +200,7 @@ export default function QrScannerModal({
       const tick = () => {
         if (!active) return;
         const v = videoRef.current; const c = canvasRef.current;
-        if (v && c && v.readyState === v.HAVE_ENOUGH_DATA && window.jsQR) {
+        if (!lockRef.current && v && c && v.readyState === v.HAVE_ENOUGH_DATA && window.jsQR) {
           c.width = v.videoWidth; c.height = v.videoHeight;
           const ctx = c.getContext('2d');
           if (ctx) {
@@ -199,6 +242,79 @@ export default function QrScannerModal({
     img.src = URL.createObjectURL(file);
   };
 
+  const eqToday = localDateStr();
+  const eqActiveLoans = eqScan
+    ? equipmentLoans.filter(
+        (l) =>
+          l.item_id === eqScan.item.id &&
+          l.status !== 'Returned' &&
+          approvalOf(l) === 'Approved' &&
+          l.borrow_date <= eqToday &&
+          (isAdmin || l.user_id === profile.id)
+      )
+    : [];
+  const eqPendingMine = eqScan
+    ? equipmentLoans.filter((l) => l.item_id === eqScan.item.id && approvalOf(l) === 'Pending' && l.user_id === profile.id)
+    : [];
+  const eqAvail = eqScan
+    ? availableForRange(eqScan.item, equipmentLoans, eqToday, eqReturnDate >= eqToday ? eqReturnDate : eqToday, eqToday)
+    : 0;
+
+  const handleEqBorrow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!eqScan) return;
+    setEqBusy(true);
+    setEqError(null);
+    try {
+      const res = await submitLoanRequest({
+        item: eqScan.item,
+        loans: equipmentLoans,
+        profile,
+        quantity: Math.max(1, parseInt(eqQty) || 1),
+        startDate: eqToday,
+        endDate: eqReturnDate,
+        purpose: eqPurpose.trim() || 'Borrowed via QR scan',
+      });
+      if (!res.ok) { setEqError(res.error || 'Could not save.'); return; }
+      const msg = res.approval === 'Pending'
+        ? `Request sent for ${res.quantity}x ${eqScan.item.item_name} — waiting for admin approval.`
+        : `Borrowed ${res.quantity}x ${eqScan.item.item_name}!`;
+      setSuccessMsg(msg);
+      onSuccess(msg);
+      closeEqPanel();
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } finally {
+      setEqBusy(false);
+    }
+  };
+
+  const handleEqReturn = async (loan: EquipmentLoan) => {
+    if (!eqScan) return;
+    setEqBusy(true);
+    try {
+      const nowIso = new Date().toISOString();
+      await supabase.from('equipment_loans').update({ status: 'Returned', returned_at: nowIso }).eq('id', loan.id);
+      await syncAvailabilityToday(
+        eqScan.item,
+        equipmentLoans.map((l) => (l.id === loan.id ? { ...l, status: 'Returned' as const, returned_at: nowIso } : l))
+      );
+      void logActivity(
+        profile,
+        'Equipment',
+        'Equipment returned',
+        `${loan.quantity}x ${loan.item_name} returned by ${loan.borrower_name} (${loan.matric_no}) via QR scan` +
+          (loan.user_id !== profile.id ? ` — marked by ${profile.full_name}` : '')
+      );
+      const msg = `Returned ${loan.quantity}x ${loan.item_name}!`;
+      setSuccessMsg(msg);
+      onSuccess(msg);
+      closeEqPanel();
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } finally {
+      setEqBusy(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -213,7 +329,68 @@ export default function QrScannerModal({
         </div>
 
         <div className="p-6 space-y-4 text-center">
-          {gatePass ? (
+          {eqScan ? (
+            <div className="rounded-3xl border-2 border-emerald-600 bg-emerald-50/60 p-4 text-left space-y-3 text-xs">
+              <div className="flex items-start gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0"><Package className="w-5 h-5" /></div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-extrabold uppercase text-emerald-700">Equipment scanned</div>
+                  <h4 className="text-base font-extrabold text-slate-900 leading-tight">{eqScan.item.item_name}</h4>
+                  <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                    <MapPin className="w-3 h-3" />{eqScan.item.location || 'Club Storage'}{eqScan.unit ? ` • Unit ${eqScan.unit}` : ''}
+                  </div>
+                </div>
+              </div>
+
+              {eqActiveLoans.length > 0 && (
+                <div className="space-y-2">
+                  <div className="font-extrabold text-slate-800">{isAdmin ? 'Currently borrowed' : 'You are holding this'}</div>
+                  {eqActiveLoans.map((l) => (
+                    <div key={l.id} className="flex items-center justify-between gap-2 bg-white rounded-xl border border-slate-200 px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900">{l.quantity}x {isAdmin ? `• ${l.borrower_name}` : ''}</div>
+                        <div className="text-[11px] text-slate-500">Due {l.return_date}</div>
+                      </div>
+                      <button type="button" disabled={eqBusy} onClick={() => handleEqReturn(l)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer shrink-0">
+                        {eqBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}<span>Return</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {eqPendingMine.length > 0 && (
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 font-semibold">
+                  You already have {eqPendingMine.reduce((s, l) => s + Number(l.quantity || 0), 0)} unit(s) awaiting admin approval for this item.
+                </div>
+              )}
+
+              <form onSubmit={handleEqBorrow} className="space-y-2.5 pt-1 border-t border-emerald-200">
+                <div className="font-extrabold text-slate-800 pt-2 flex items-center justify-between">
+                  <span>{eqScan.item.requires_approval ? 'Request this item' : 'Borrow this item now'}</span>
+                  <span className={`text-[11px] font-bold ${eqAvail > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{eqAvail} free</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block font-bold text-emerald-900 mb-1">Quantity</label>
+                    <input type="number" min="1" max={Math.max(1, eqAvail)} value={eqQty} onChange={(e) => setEqQty(e.target.value)} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-bold" required />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-emerald-900 mb-1">Return by</label>
+                    <input type="date" min={eqToday} value={eqReturnDate} onChange={(e) => setEqReturnDate(e.target.value)} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2" required />
+                  </div>
+                </div>
+                <input type="text" value={eqPurpose} onChange={(e) => setEqPurpose(e.target.value)} placeholder="Purpose (e.g., Training)" className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2" />
+                {eqError && <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">{eqError}</div>}
+                <button type="submit" disabled={eqBusy || eqAvail <= 0} className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-300 text-white font-bold cursor-pointer">
+                  {eqBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpRight className="w-4 h-4" />}
+                  <span>{eqAvail <= 0 ? 'Out of stock' : eqScan.item.requires_approval ? 'Send Request' : 'Confirm Borrow'}</span>
+                </button>
+              </form>
+
+              <button type="button" onClick={closeEqPanel} className="w-full py-2.5 rounded-xl bg-slate-950 hover:bg-slate-900 text-white font-bold cursor-pointer">Scan Next</button>
+            </div>
+          ) : gatePass ? (
             <div className={`p-5 rounded-3xl border-2 text-left space-y-3 ${gatePass.allowed ? 'bg-emerald-50 border-emerald-600 text-emerald-950' : 'bg-rose-50 border-rose-600 text-rose-950'}`}>
               <div className="flex items-center gap-2.5">
                 {gatePass.allowed ? <ShieldCheck className="w-8 h-8 text-emerald-600 shrink-0" /> : <XCircle className="w-8 h-8 text-rose-600 shrink-0" />}
@@ -232,19 +409,18 @@ export default function QrScannerModal({
               <p className="text-xs font-bold">{gatePass.reason}</p>
               <button type="button" onClick={() => setGatePass(null)} className="w-full py-2.5 rounded-xl bg-slate-950 hover:bg-slate-900 text-white text-xs font-bold cursor-pointer">Scan Next</button>
             </div>
-          ) : (
-            <>
-              <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-square max-h-[250px] mx-auto flex items-center justify-center border-2 border-emerald-500">
-                <video ref={videoRef} className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`} muted />
-                <canvas ref={canvasRef} className="hidden" />
-                {!cameraActive && <div className="p-6 text-slate-300 text-xs"><Camera className="w-8 h-8 text-emerald-400 mx-auto mb-2" />Point camera at QR Code</div>}
-              </div>
-              <label className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer">
-                <Upload className="w-4 h-4" /><span>Upload / Capture QR Image</span>
-                <input type="file" accept="image/*" capture="environment" onChange={handleImageFileScan} className="hidden" />
-              </label>
-            </>
-          )}
+          ) : null}
+          <div className={gatePass || eqScan ? 'hidden' : 'space-y-4'}>
+            <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-square max-h-[250px] mx-auto flex items-center justify-center border-2 border-emerald-500">
+              <video ref={videoRef} className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`} muted />
+              <canvas ref={canvasRef} className="hidden" />
+              {!cameraActive && <div className="p-6 text-slate-300 text-xs"><Camera className="w-8 h-8 text-emerald-400 mx-auto mb-2" />Point camera at QR Code</div>}
+            </div>
+            <label className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer">
+              <Upload className="w-4 h-4" /><span>Upload / Capture QR Image</span>
+              <input type="file" accept="image/*" capture="environment" onChange={handleImageFileScan} className="hidden" />
+            </label>
+          </div>
           {successMsg && <div className="p-3 rounded-xl bg-emerald-600 text-white text-xs font-bold"><CheckCircle2 className="w-4 h-4 inline mr-1" />{successMsg}</div>}
           {errorMsg && <div className="p-3 rounded-xl bg-rose-50 text-rose-700 text-xs font-semibold"><AlertTriangle className="w-4 h-4 inline mr-1" />{errorMsg}</div>}
         </div>

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, Claim, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES, exportMultiSheetExcel, downloadFileFromUrl } from '@/lib/supabase';
-import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle, Loader2, Car, UserCheck, FileSpreadsheet, Eye, EyeOff, Settings } from 'lucide-react';
+import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, Claim, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES, exportMultiSheetExcel, downloadFileFromUrl, logActivity } from '@/lib/supabase';
+import { waLink, formatPickupTime } from '@/lib/whatsapp';
+import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle, Loader2, Car, UserCheck, FileSpreadsheet, Eye, EyeOff, Settings, MessageCircle, Clock, MapPin, Megaphone } from 'lucide-react';
 
 interface EventOperationsModalProps {
   event: Budget | null; initialTab: 'fee' | 'transport' | 'qr' | 'pass'; profile: UserProfile;
@@ -35,6 +36,8 @@ export default function EventOperationsModal({
   const [carDetails, setCarDetails] = useState('');
   const [seatsAvailable, setSeatsAvailable] = useState('4');
   const [tripsCount, setTripsCount] = useState('1');
+  const [pickupTime, setPickupTime] = useState('');
+  const [pickupPoint, setPickupPoint] = useState('');
   const [savingTransport, setSavingTransport] = useState(false);
   const [transportSavedSuccess, setTransportSavedSuccess] = useState(false);
   const [qrToken, setQrToken] = useState('');
@@ -88,6 +91,8 @@ export default function EventOperationsModal({
     setCarDetails(cur?.car_details || '');
     setSeatsAvailable(String(cur?.seats_available ?? 4));
     setTripsCount(String(cur?.trips_count ?? 1));
+    setPickupTime(cur?.pickup_time || '');
+    setPickupPoint(cur?.pickup_point || '');
     setDormitoryInput(cur?.dormitory || profile.dormitory || '');
   }, [event, initialTab, isAdmin, rsvps, profile.id, profile.dormitory, paymentQrUrl, paymentBankInfo]);
 
@@ -106,6 +111,24 @@ export default function EventOperationsModal({
   const reqFee = Number(event.registration_fee || 0);
   const requiresFee = reqFee > 0;
   const isCurrentUserDriver = Boolean(myRsvp?.is_driver) || surveyChoice === 'DRIVER';
+  const myAssignedDriver = myRsvp?.assigned_driver_name
+    ? eventDrivers.find((d) => d.student_name === myRsvp.assigned_driver_name) || null
+    : null;
+  const myPassengers = passengers.filter((p) => p.assigned_driver_name === profile.full_name);
+
+  const buildDriverBroadcastText = (driverName: string, car: string, timeStr?: string | null, pointStr?: string | null, paxList: EventRsvp[] = []) => {
+    const t = formatPickupTime(timeStr) || timeStr || 'TBA';
+    const pt = pointStr || 'TBA';
+    const names = paxList.map((p) => `• ${p.student_name} (${p.dormitory || 'Campus'})`).join('\n') || '• (No passengers assigned yet)';
+    return (
+      `🚗 *Carpool Pickup — ${event.event_name}*\n` +
+      `Driver: ${driverName} (${car || 'Car'})\n` +
+      `🕒 Pickup Time: *${t}*\n` +
+      `📍 Meeting Point: *${pt}*\n\n` +
+      `Passengers:\n${names}\n\n` +
+      `Please be at the meeting point 5 mins early!`
+    );
+  };
 
   const isMemberEligibleForPass = (rsvp?: EventRsvp) => {
     if (!rsvp || rsvp.attendance !== 'Attending') return false;
@@ -128,6 +151,12 @@ export default function EventOperationsModal({
     const nextVal = !isMemberEligibleForPass(rsvp);
     setLocalPassOverrides((prev) => ({ ...prev, [rsvp.id]: nextVal }));
     await supabase.from('event_rsvps').update({ pass_approved: nextVal }).eq('id', rsvp.id);
+    void logActivity(
+      profile,
+      'Attendance',
+      nextVal ? 'Entry pass granted' : 'Entry pass locked',
+      `${profile.full_name} ${nextVal ? 'granted' : 'locked'} entry pass for ${rsvp.student_name} (${rsvp.matric_no}) in "${event.event_name}"`
+    );
     onRefresh(`${nextVal ? 'Granted' : 'Locked'} pass for ${rsvp.student_name}.`);
   };
 
@@ -305,6 +334,12 @@ export default function EventOperationsModal({
         });
         setFeeFile(null);
         if (hasEntryPass) setTab('pass');
+        void logActivity(
+          profile,
+          'Fees',
+          'Activity fee paid',
+          `${profile.full_name} (${profile.matric_no}) paid RM ${numAmt.toFixed(2)} fee for "${event.event_name}"`
+        );
         onRefresh('Fee payment submitted!');
       }
     } finally {
@@ -319,7 +354,7 @@ export default function EventOperationsModal({
     try {
       const isDriving = surveyChoice === 'DRIVER';
       const nextTransport = surveyChoice === 'OWN' || surveyChoice === 'DRIVER' ? 'None' : surveyChoice;
-      await supabase.from('event_rsvps').upsert({
+      const coreRow = {
         budget_id: event.id, user_id: profile.id, student_name: profile.full_name,
         matric_no: profile.matric_no, phone_number: profile.phone_number, member_type: profile.member_type || 'Member',
         dormitory: dormitoryInput.trim() || profile.dormitory || '', attendance: 'Attending',
@@ -329,7 +364,27 @@ export default function EventOperationsModal({
         assigned_driver_name: nextTransport === 'None' ? '' : myRsvp?.assigned_driver_name || '',
         pass_approved: myRsvp?.pass_approved ?? false,
         updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from('event_rsvps').upsert({
+        ...coreRow,
+        pickup_time: isDriving ? pickupTime.trim() || null : null,
+        pickup_point: isDriving ? pickupPoint.trim() || null : null,
       }, { onConflict: 'budget_id,user_id' });
+      if (error) {
+        await supabase.from('event_rsvps').upsert(coreRow, { onConflict: 'budget_id,user_id' });
+      }
+      void logActivity(
+        profile,
+        'Carpool',
+        isDriving ? 'Registered as driver' : 'Transport updated',
+        isDriving
+          ? `${profile.full_name} (${profile.matric_no}) registered as driver (${carDetails.trim() || 'Car'}, ${seatsAvailable} seats${
+              pickupTime.trim() || pickupPoint.trim()
+                ? `, pickup ${formatPickupTime(pickupTime) || ''} ${pickupPoint.trim() ? `@ ${pickupPoint.trim()}` : ''}`
+                : ''
+            }) for "${event.event_name}"`
+          : `${profile.full_name} (${profile.matric_no}) updated transport to ${nextTransport === 'None' ? 'Own Transport' : nextTransport} for "${event.event_name}"`
+      );
       setTransportSavedSuccess(true);
       onRefresh('✓ Carpool & Transport updated!');
       setTimeout(() => {
@@ -342,6 +397,14 @@ export default function EventOperationsModal({
 
   const handleDriverClaimPassenger = async (passenger: EventRsvp, driverName: string) => {
     await supabase.from('event_rsvps').update({ assigned_driver_name: driverName }).eq('id', passenger.id);
+    void logActivity(
+      profile,
+      'Carpool',
+      driverName ? 'Passenger assigned' : 'Passenger released',
+      driverName
+        ? `${driverName} assigned to pick up ${passenger.student_name} (${passenger.matric_no}) for "${event.event_name}"`
+        : `${profile.full_name} released passenger ${passenger.student_name} (${passenger.matric_no}) for "${event.event_name}"`
+    );
     onRefresh(driverName ? `${driverName} assigned to pick up ${passenger.student_name}!` : `Released ${passenger.student_name}.`);
   };
 
@@ -677,18 +740,82 @@ export default function EventOperationsModal({
 
           {tab === 'transport' && (
             <div className="space-y-5">
+              {myAssignedDriver && !isCurrentUserDriver && (
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-extrabold uppercase tracking-wide text-emerald-700 flex items-center gap-1">
+                      <Car className="w-3.5 h-3.5" /> Your Assigned Carpool Driver
+                    </div>
+                    <div className="text-sm font-extrabold text-slate-900">
+                      {myAssignedDriver.student_name}{' '}
+                      <span className="text-xs font-semibold text-slate-600">
+                        ({myAssignedDriver.car_details || 'Vehicle'} • {myAssignedDriver.phone_number})
+                      </span>
+                    </div>
+                    {(myAssignedDriver.pickup_time || myAssignedDriver.pickup_point) ? (
+                      <div className="text-xs font-bold text-emerald-950 flex flex-wrap items-center gap-3 pt-0.5">
+                        {myAssignedDriver.pickup_time && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-white border border-emerald-200">
+                            <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Pickup: {formatPickupTime(myAssignedDriver.pickup_time)}</span>
+                          </span>
+                        )}
+                        {myAssignedDriver.pickup_point && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-white border border-emerald-200">
+                            <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Meet at: {myAssignedDriver.pickup_point}</span>
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-slate-500">Pickup time &amp; meeting point not set by driver yet.</div>
+                    )}
+                  </div>
+                  <a
+                    href={waLink(
+                      myAssignedDriver.phone_number,
+                      `Hi ${myAssignedDriver.student_name}! I'm ${profile.full_name} (${profile.dormitory || 'UTM'}), assigned to your car for ${event.event_name}.${
+                        myAssignedDriver.pickup_time || myAssignedDriver.pickup_point
+                          ? ` See you at ${formatPickupTime(myAssignedDriver.pickup_time) || 'pickup time'} (${myAssignedDriver.pickup_point || 'meeting point'})!`
+                          : ''
+                      }`
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-xs cursor-pointer"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>WhatsApp My Driver</span>
+                  </a>
+                </div>
+              )}
+
               <div className="flex flex-wrap justify-between items-center gap-2 bg-slate-50 p-3.5 rounded-2xl border">
                 <span className="font-bold text-slate-800">Passengers Needing Ride: {passengers.length} • Drivers Available: {eventDrivers.length}</span>
                 <div className="flex gap-1.5">
-                  <button type="button" onClick={() => { const lines = eventDrivers.map((d, i) => `Car ${i + 1}: ${d.student_name} (${d.car_details || 'Car'}) -> ` + (passengers.filter((p) => p.assigned_driver_name === d.student_name).map((p) => `${p.student_name} (${p.dormitory || 'Campus'})`).join(', ') || 'No passengers yet')); navigator.clipboard.writeText(lines.join('\n')); onRefresh('Copied WhatsApp carpool list!'); }} className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"><Copy className="w-3 h-3 inline mr-1" />Copy List</button>
+                  <button type="button" onClick={() => { const lines = eventDrivers.map((d, i) => { const pax = passengers.filter((p) => p.assigned_driver_name === d.student_name).map((p) => `${p.student_name} (${p.dormitory || 'Campus'})`).join(', ') || 'No passengers yet'; const meet = d.pickup_time || d.pickup_point ? ` [Pickup: ${formatPickupTime(d.pickup_time) || 'TBA'} @ ${d.pickup_point || 'TBA'}]` : ''; return `Car ${i + 1}: ${d.student_name} (${d.car_details || 'Car'})${meet} -> ${pax}`; }); navigator.clipboard.writeText(lines.join('\n')); onRefresh('Copied WhatsApp carpool list!'); }} className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"><Copy className="w-3 h-3 inline mr-1" />Copy List</button>
                   <button type="button" onClick={() => exportCsv(`${event.event_name}_Carpool.csv`, ['Passenger', 'Matric', 'Phone', 'Dorm', 'Trip', 'Driver'], passengers.map((p) => [p.student_name, p.matric_no, p.phone_number, p.dormitory, p.transport_type, p.assigned_driver_name || 'Unassigned']))} className="px-3 py-1.5 rounded-xl bg-white border font-bold cursor-pointer">Export CSV</button>
                 </div>
               </div>
 
               <form onSubmit={handleSaveTransportForm} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="font-extrabold text-slate-900">1. Update My Transport / Driver Status</h4>
-                  {myRsvp?.assigned_driver_name && <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">Assigned Driver: {myRsvp.assigned_driver_name}</span>}
+                  {myRsvp?.assigned_driver_name && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">
+                      <span>Assigned Driver: {myRsvp.assigned_driver_name}</span>
+                      {myAssignedDriver && (
+                        <a
+                          href={waLink(myAssignedDriver.phone_number, `Hi ${myAssignedDriver.student_name}, I'm ${profile.full_name} in your carpool for ${event.event_name}.`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-extrabold"
+                        >
+                          <MessageCircle className="w-2.5 h-2.5" /> Chat
+                        </a>
+                      )}
+                    </span>
+                  )}
                 </div>
                 <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 -mb-1">Transport Option</label>
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -715,24 +842,48 @@ export default function EventOperationsModal({
                         <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 mb-1">Number of Trips *</label>
                         <input type="number" min="1" value={tripsCount} onChange={(e) => setTripsCount(e.target.value)} placeholder="e.g., 1" className="w-full rounded-xl border bg-white px-3 py-2 font-bold" required />
                       </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 mb-1">Pickup Time</label>
+                        <input type="time" value={pickupTime} onChange={(e) => setPickupTime(e.target.value)} className="w-full rounded-xl border bg-white px-3 py-2 font-bold" />
+                      </div>
+                      <div className="sm:col-span-4">
+                        <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 mb-1">Meeting Point / Landmark (Shown to Passengers)</label>
+                        <input type="text" value={pickupPoint} onChange={(e) => setPickupPoint(e.target.value)} placeholder="e.g., 7:30 PM at KTDI Arked Meranti Bus Stop" className="w-full rounded-xl border bg-white px-3 py-2 font-bold" />
+                      </div>
                     </>
                   )}
                 </div>
-                <div className="flex items-center justify-end gap-3 pt-1">
-                  {transportSavedSuccess && (
-                    <span className="text-emerald-700 font-extrabold flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Saved! Closing...</span>
-                    </span>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={savingTransport}
-                    className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold shadow-sm transition active:scale-95 cursor-pointer"
-                  >
-                    {savingTransport ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                    <span>{savingTransport ? 'Saving & Updating...' : 'Confirm & Save Carpool'}</span>
-                  </button>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  {surveyChoice === 'DRIVER' ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <a
+                        href={waLink('', buildDriverBroadcastText(profile.full_name, carDetails, pickupTime, pickupPoint, myPassengers))}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 font-extrabold text-[11px] cursor-pointer"
+                        title="Push pickup time & meeting point announcement to WhatsApp"
+                      >
+                        <Megaphone className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Broadcast Pickup to WhatsApp ({myPassengers.length})</span>
+                      </a>
+                    </div>
+                  ) : <div />}
+                  <div className="flex items-center gap-3">
+                    {transportSavedSuccess && (
+                      <span className="text-emerald-700 font-extrabold flex items-center gap-1">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Saved! Closing...</span>
+                      </span>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={savingTransport}
+                      className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold shadow-sm transition active:scale-95 cursor-pointer"
+                    >
+                      {savingTransport ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                      <span>{savingTransport ? 'Saving & Updating...' : 'Confirm & Save Carpool'}</span>
+                    </button>
+                  </div>
                 </div>
               </form>
 
@@ -745,17 +896,52 @@ export default function EventOperationsModal({
                     ) : (
                       <div className="divide-y">
                         {eventDrivers.map((d) => {
-                          const assignedCount = passengers.filter((p) => p.assigned_driver_name === d.student_name).length;
+                          const driverPax = passengers.filter((p) => p.assigned_driver_name === d.student_name);
+                          const assignedCount = driverPax.length;
                           const maxSeats = Number(d.seats_available) || 4;
                           return (
-                            <div key={d.id} className="p-3 flex items-center justify-between gap-2">
-                              <div>
-                                <div className="font-bold text-slate-900">{d.student_name}</div>
-                                <div className="text-[11px] text-slate-500">{d.car_details || 'Vehicle'} • <span className="font-mono">{d.phone_number}</span></div>
+                            <div key={d.id} className="p-3 space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <div className="font-bold text-slate-900">{d.student_name}</div>
+                                  <div className="text-[11px] text-slate-500">{d.car_details || 'Vehicle'} • <span className="font-mono">{d.phone_number}</span></div>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <a
+                                    href={waLink(d.phone_number, `Hi ${d.student_name}, regarding carpool for ${event.event_name}:`)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px]"
+                                    title="Open 1-Click WhatsApp chat with driver"
+                                  >
+                                    <MessageCircle className="w-3 h-3" />
+                                    <span>WhatsApp</span>
+                                  </a>
+                                  <span className={`px-2.5 py-1 rounded-full font-extrabold text-[11px] ${assignedCount >= maxSeats ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
+                                    {assignedCount}/{maxSeats} seats
+                                  </span>
+                                </div>
                               </div>
-                              <span className={`px-2.5 py-1 rounded-full font-extrabold text-[11px] ${assignedCount >= maxSeats ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
-                                {assignedCount}/{maxSeats} seats
-                              </span>
+                              {(d.pickup_time || d.pickup_point) && (
+                                <div className="flex flex-wrap items-center justify-between gap-1.5 text-[11px] bg-emerald-50/80 border border-emerald-200/80 rounded-xl px-2.5 py-1.5 text-emerald-950">
+                                  <span className="font-semibold">
+                                    {d.pickup_time ? `🕒 ${formatPickupTime(d.pickup_time)}` : ''}
+                                    {d.pickup_time && d.pickup_point ? ' • ' : ''}
+                                    {d.pickup_point ? `📍 ${d.pickup_point}` : ''}
+                                  </span>
+                                  {(d.user_id === profile.id || isAdmin) && (
+                                    <a
+                                      href={waLink('', buildDriverBroadcastText(d.student_name, d.car_details, d.pickup_time, d.pickup_point, driverPax))}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 text-white font-bold text-[10px]"
+                                      title="Broadcast pickup details to WhatsApp"
+                                    >
+                                      <Megaphone className="w-2.5 h-2.5" /> Broadcast
+                                    </a>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -785,11 +971,34 @@ export default function EventOperationsModal({
                         ) : (
                           passengers.map((p) => {
                             const isPickedByMe = p.assigned_driver_name === profile.full_name;
+                            const assignedDrv = p.assigned_driver_name
+                              ? eventDrivers.find((d) => d.student_name === p.assigned_driver_name)
+                              : undefined;
+                            const myMeetNote =
+                              pickupTime || pickupPoint
+                                ? ` Pickup: ${formatPickupTime(pickupTime) || 'TBA'} at ${pickupPoint || p.dormitory || 'your dorm'}.`
+                                : '';
                             return (
                               <tr key={p.id}>
                                 <td className="py-2 px-3">
                                   <div className="font-bold text-slate-900">{p.student_name}</div>
-                                  <div className="font-mono text-[10px] text-slate-500">{p.phone_number}</div>
+                                  <div className="font-mono text-[10px] text-slate-500 flex items-center gap-1.5">
+                                    <span>{p.phone_number}</span>
+                                    {(isCurrentUserDriver || isAdmin) && p.phone_number && (
+                                      <a
+                                        href={waLink(
+                                          p.phone_number,
+                                          `Hi ${p.student_name}! I'm ${profile.full_name}, your carpool driver for ${event.event_name}.${myMeetNote}`
+                                        )}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-sans font-bold text-[9px]"
+                                        title="Open WhatsApp chat with passenger"
+                                      >
+                                        <MessageCircle className="w-2.5 h-2.5" /> WA
+                                      </a>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="py-2 px-3 font-semibold text-emerald-900">{p.dormitory || '-'}</td>
                                 <td className="py-2 px-3"><span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[10px]">{p.transport_type}</span></td>
@@ -826,9 +1035,22 @@ export default function EventOperationsModal({
                                       </button>
                                     )
                                   ) : p.assigned_driver_name ? (
-                                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">
-                                      ✓ {p.assigned_driver_name}
-                                    </span>
+                                    <div className="inline-flex items-center gap-1 justify-end">
+                                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                                        ✓ {p.assigned_driver_name}
+                                      </span>
+                                      {assignedDrv?.phone_number && (
+                                        <a
+                                          href={waLink(assignedDrv.phone_number, `Hi ${assignedDrv.student_name}, regarding carpool for ${event.event_name}:`)}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px]"
+                                          title="WhatsApp Assigned Driver"
+                                        >
+                                          <MessageCircle className="w-2.5 h-2.5" /> WA
+                                        </a>
+                                      )}
+                                    </div>
                                   ) : (
                                     <span className="text-amber-700 font-semibold text-[11px]">Waiting for driver</span>
                                   )}

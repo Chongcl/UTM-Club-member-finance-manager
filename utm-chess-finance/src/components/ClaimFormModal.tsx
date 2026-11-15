@@ -7,6 +7,7 @@ import {
   UserProfile,
   DEFAULT_DEPARTMENTS,
   MAX_FILE_SIZE_BYTES,
+  logActivity,
 } from '@/lib/supabase';
 import ReceiptDropzone, { ScannedReceiptData } from './ReceiptDropzone';
 import { X, CheckCircle2, AlertCircle, Loader2, Sparkles, Landmark, Eye, EyeOff } from 'lucide-react';
@@ -87,11 +88,13 @@ export default function ClaimFormModal({
 
   const handleScanComplete = (data: ScannedReceiptData) => {
     setScannedData(data);
-    setAmount(data.amount.toFixed(2));
-    setMerchantName(data.merchant);
-    setExpenseDate(data.date);
-    setCategory(data.suggestedCategory);
-    if (!title) setTitle(`${data.merchant} Purchase`);
+    if (data.amount !== null) setAmount(data.amount.toFixed(2));
+    if (data.merchant) setMerchantName(data.merchant);
+    if (data.date) setExpenseDate(data.date);
+    if (data.suggestedCategory && departments.includes(data.suggestedCategory)) {
+      setCategory(data.suggestedCategory);
+    }
+    if (!title && data.merchant) setTitle(`${data.merchant} Purchase`);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -178,7 +181,7 @@ export default function ClaimFormModal({
         receipt_url: urlData.publicUrl,
         receipt_file_name: file.name,
         ai_extracted_amount: scannedData?.amount ?? null,
-        ai_extracted_merchant: scannedData?.merchant ?? null,
+        ai_extracted_merchant: scannedData?.merchant || null,
         ai_extracted_date: scannedData?.date ?? null,
         ai_confidence: scannedData?.confidence ?? null,
         status: 'Pending',
@@ -208,6 +211,12 @@ export default function ClaimFormModal({
         localStorage.setItem(`clubsync_claimant_qr_${inserted.id}`, finalClaimantQr);
       }
 
+      void logActivity(
+        profile,
+        'Claims',
+        'Claim submitted',
+        `${profile.full_name} (${profile.matric_no}) submitted claim "${title.trim()}" for RM ${numericAmount.toFixed(2)} (${eventLabel})`
+      );
       onSuccess('Claim submitted!');
       onClose();
     } catch (err: unknown) {
@@ -253,7 +262,7 @@ export default function ClaimFormModal({
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-center justify-between text-xs text-emerald-900">
               <span className="font-semibold flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-emerald-700" />
-                Auto-filled from receipt ({scannedData.confidence}% match)
+                Auto-filled from receipt ({scannedData.confidence}% confidence) — please double-check before submitting
               </span>
             </div>
           )}

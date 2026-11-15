@@ -23,6 +23,9 @@ import {
   MAX_FILE_SIZE_BYTES,
   isEntryPassMode,
   exportMultiSheetExcel,
+  ActivityLogEntry,
+  DEFAULT_CLAIM_APPROVAL_THRESHOLD,
+  logActivity,
 } from '@/lib/supabase';
 import Navbar, { NavTab } from '@/components/Navbar';
 import CinematicHub from '@/components/CinematicHub';
@@ -34,6 +37,7 @@ import BudgetModal, { EditableActivity } from '@/components/BudgetModal';
 import EventOperationsModal from '@/components/EventOperationsModal';
 import QrScannerModal from '@/components/QrScannerModal';
 import LedgerSection, { LedgerEntryItem } from '@/components/LedgerSection';
+import ActivityLogSection from '@/components/ActivityLogSection';
 import {
   Calendar,
   MapPin,
@@ -204,6 +208,9 @@ export default function Page() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [polls, setPolls] = useState<Poll[]>([]);
   const [pollVotes, setPollVotes] = useState<PollVote[]>([]);
+  const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>([]);
+  const [claimThreshold, setClaimThreshold] = useState<number>(DEFAULT_CLAIM_APPROVAL_THRESHOLD);
+  const [claimThresholdInput, setClaimThresholdInput] = useState<string>(String(DEFAULT_CLAIM_APPROVAL_THRESHOLD));
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
@@ -325,7 +332,7 @@ export default function Page() {
   }, []);
 
   const fetchAllData = useCallback(async () => {
-    const [bRes, cRes, rRes, fRes, mRes, lRes, sRes, eqIRes, eqLRes, annRes, pRes, pvRes] = await Promise.all([
+    const [bRes, cRes, rRes, fRes, mRes, lRes, sRes, eqIRes, eqLRes, annRes, pRes, pvRes, logRes] = await Promise.all([
       supabase.from('budgets').select('*').order('event_date', { ascending: true }),
       supabase.from('claims').select('*').order('created_at', { ascending: false }),
       supabase.from('event_rsvps').select('*'),
@@ -338,6 +345,7 @@ export default function Page() {
       supabase.from('announcements').select('*').order('created_at', { ascending: false }),
       supabase.from('polls').select('*').order('created_at', { ascending: false }),
       supabase.from('poll_votes').select('*'),
+      supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(250),
     ]);
     if (bRes.data) setBudgets(bRes.data as Budget[]);
     if (cRes.data) setClaims(cRes.data as Claim[]);
@@ -360,7 +368,13 @@ export default function Page() {
     if (annRes.data) setAnnouncements(annRes.data as Announcement[]);
     if (pRes.data) setPolls(pRes.data as Poll[]);
     if (pvRes.data) setPollVotes(pvRes.data as PollVote[]);
+    if (logRes.data) setActivityLogs(logRes.data as ActivityLogEntry[]);
     if (sRes.data) {
+      const thresh = Number(sRes.data.claim_approval_threshold ?? DEFAULT_CLAIM_APPROVAL_THRESHOLD);
+      if (!isNaN(thresh) && thresh > 0) {
+        setClaimThreshold(thresh);
+        setClaimThresholdInput(String(thresh));
+      }
       const cName = String(sRes.data.club_name || 'ClubSync');
       const bYear = String(sRes.data.current_batch || '2026/2027');
       const aPin = String(sRes.data.admin_pin || 'EXEC-2026');
@@ -626,7 +640,7 @@ export default function Page() {
     if (!profile) return;
     setRoleMode(target);
     localStorage.setItem(`clubsync_mode_${profile.id}`, target);
-    if (target === 'member' && (activeTab === 'ledger' || activeTab === 'members')) setActiveTab('activities');
+    if (target === 'member' && (activeTab === 'ledger' || activeTab === 'members' || activeTab === 'logs')) setActiveTab('activities');
     showToast(`Switched to ${target.toUpperCase()} Mode`);
   };
 
@@ -1385,7 +1399,11 @@ export default function Page() {
                                   : 'bg-amber-100 text-amber-900'
                               }`}
                             >
-                              {c.status}
+                              {c.status === 'Pending' && Number(c.amount) > claimThreshold
+                                ? c.treasurer_verified_by
+                                  ? 'Stage 2/2: Awaiting Owner'
+                                  : 'Stage 1/2: Awaiting Treasurer'
+                                : c.status}
                             </span>
                             {c.payout_proof_url && (
                               <div>
@@ -1533,26 +1551,41 @@ export default function Page() {
                       </div>
                     </div>
                     {isOwner && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block font-bold mb-1">Admin Passcode</label>
-                          <input
-                            type="text"
-                            value={newAdminPinInput}
-                            onChange={(e) => setNewAdminPinInput(e.target.value)}
-                            className="w-full rounded-xl border px-3 py-2 font-mono font-bold"
-                          />
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block font-bold mb-1">Admin Passcode</label>
+                            <input
+                              type="text"
+                              value={newAdminPinInput}
+                              onChange={(e) => setNewAdminPinInput(e.target.value)}
+                              className="w-full rounded-xl border px-3 py-2 font-mono font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold mb-1">Owner Passcode</label>
+                            <input
+                              type="text"
+                              value={newOwnerPinInput}
+                              onChange={(e) => setNewOwnerPinInput(e.target.value)}
+                              className="w-full rounded-xl border px-3 py-2 font-mono font-bold"
+                            />
+                          </div>
                         </div>
                         <div>
-                          <label className="block font-bold mb-1">Owner Passcode</label>
+                          <label className="block font-bold mb-1">
+                            2-Stage Claim Approval Threshold (RM) — Claims above this require Treasurer + Owner approval
+                          </label>
                           <input
-                            type="text"
-                            value={newOwnerPinInput}
-                            onChange={(e) => setNewOwnerPinInput(e.target.value)}
-                            className="w-full rounded-xl border px-3 py-2 font-mono font-bold"
+                            type="number"
+                            min="1"
+                            step="10"
+                            value={claimThresholdInput}
+                            onChange={(e) => setClaimThresholdInput(e.target.value)}
+                            className="w-full rounded-xl border px-3 py-2 font-bold"
                           />
                         </div>
-                      </div>
+                      </>
                     )}
                     {(isOwner || effectivePermissions.can_manage_members || effectivePermissions.can_manage_claims_fees) && (
                       <button
@@ -1586,13 +1619,22 @@ export default function Page() {
                             corePayload.admin_pin = newAdminPinInput.trim();
                             corePayload.owner_pin = newOwnerPinInput.trim();
                           }
-                          const fullPayload = {
+                          const nextThresh = Math.max(1, parseFloat(claimThresholdInput) || DEFAULT_CLAIM_APPROVAL_THRESHOLD);
+                          const fullPayload: Record<string, unknown> = {
                             ...corePayload,
                             payment_qr_url: finalPayQr,
                             payment_bank_info: paymentBankInfo.trim(),
+                            ...(isOwner ? { claim_approval_threshold: nextThresh } : {}),
                           };
                           const { error } = await supabase.from('club_settings').upsert(fullPayload);
                           if (error) await supabase.from('club_settings').upsert(corePayload);
+                          setClaimThreshold(nextThresh);
+                          void logActivity(
+                            profile,
+                            'Settings',
+                            'Club settings updated',
+                            `${profile.full_name} (${profile.matric_no}) updated club settings (2-stage claim threshold: RM ${nextThresh.toFixed(0)})`
+                          );
                           fetchAllData();
                           showToast('Settings & Club Payment QR saved');
                         }}
@@ -1766,6 +1808,12 @@ export default function Page() {
                                             .from('users')
                                             .update({ role: next, admin_permissions: DEFAULT_ADMIN_PERMISSIONS })
                                             .eq('id', m.id);
+                                          void logActivity(
+                                            profile,
+                                            'Members',
+                                            isThisAdmin ? 'Revoked Admin role' : 'Granted Admin role',
+                                            `${profile.full_name} ${isThisAdmin ? 'revoked Admin status from' : 'granted Admin status to'} ${m.full_name} (${m.matric_no})`
+                                          );
                                           fetchAllData();
                                           showToast('Role updated');
                                         },
@@ -1792,6 +1840,12 @@ export default function Page() {
                                             .update({ role: 'owner', admin_permissions: FULL_OWNER_PERMISSIONS })
                                             .eq('id', m.id);
                                           await supabase.from('club_settings').update({ owner_user_id: m.id }).eq('id', 1);
+                                          void logActivity(
+                                            profile,
+                                            'Members',
+                                            'Ownership transferred',
+                                            `${profile.full_name} transferred Club Ownership to ${m.full_name} (${m.matric_no})`
+                                          );
                                           setRoleMode('admin');
                                           localStorage.setItem(`clubsync_mode_${profile.id}`, 'admin');
                                           fetchAllData();
@@ -1818,6 +1872,12 @@ export default function Page() {
                                         danger: true,
                                         onConfirm: async () => {
                                           await supabase.from('users').delete().eq('id', m.id);
+                                          void logActivity(
+                                            profile,
+                                            'Members',
+                                            'Member removed',
+                                            `${profile.full_name} removed ${m.full_name} (${m.matric_no}) from the roster`
+                                          );
                                           fetchAllData();
                                           showToast(`Removed ${m.full_name}`);
                                         },
@@ -1838,6 +1898,16 @@ export default function Page() {
                 </div>
               </section>
             </div>
+          )}
+
+          {activeTab === 'logs' && isAdminOrOwner && (
+            <ActivityLogSection
+              logs={activityLogs}
+              onRefresh={(m: string) => {
+                fetchAllData();
+                showToast(m);
+              }}
+            />
           )}
         </main>
       </div>
@@ -2067,6 +2137,8 @@ export default function Page() {
         feePayments={feePayments}
         profile={profile}
         isAdmin={isAdminOrOwner}
+        equipmentItems={equipmentItems}
+        equipmentLoans={equipmentLoans}
         onSuccess={(m: string) => {
           showToast(m);
           fetchAllData();
@@ -2104,7 +2176,9 @@ export default function Page() {
       <AuditReviewModal
         claim={selectedClaim}
         budget={budgets.find((b) => b.id === selectedClaim?.budget_id)}
-        profile={{ ...profile, role: isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? 'treasurer' : 'member' }}
+        profile={{ ...profile, role: isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? (isOwner ? 'owner' : 'treasurer') : 'member' }}
+        isOwner={isOwner}
+        approvalThreshold={claimThreshold}
         onClose={() => setSelectedClaim(null)}
         onUpdated={(m: string) => {
           showToast(m);

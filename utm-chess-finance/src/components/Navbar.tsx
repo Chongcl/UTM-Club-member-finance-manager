@@ -2,9 +2,9 @@
 
 import React, { useState } from 'react';
 import { UserProfile } from '@/lib/supabase';
-import { Menu, X, Calendar, Receipt, UserCheck, Wallet, Users, PlusCircle, Lock, Unlock, KeyRound, LogOut, Layers, Loader2, Package, QrCode, Crown, Moon, Sun, Palette, FileText } from 'lucide-react';
+import { Menu, X, Calendar, Receipt, UserCheck, Wallet, Users, PlusCircle, Lock, Unlock, KeyRound, LogOut, Layers, Loader2, Package, QrCode, Crown, Moon, Sun, Palette, FileText, ShieldCheck } from 'lucide-react';
 
-export type NavTab = 'activities' | 'equipment' | 'claims' | 'profile' | 'ledger' | 'members';
+export type NavTab = 'activities' | 'equipment' | 'claims' | 'profile' | 'ledger' | 'members' | 'logs';
 
 interface NavbarProps {
   profile: UserProfile; clubName: string; logoUrl?: string; activeTab: NavTab; onSelectTab: (tab: NavTab) => void;
@@ -110,6 +110,7 @@ export default function Navbar({
                 <nav className="space-y-1 pt-2 border-t border-slate-200/20 text-xs font-bold">
                   <button type="button" onClick={() => handleNav('ledger')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'ledger' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Wallet className="w-4 h-4" /><span>Club Finance &amp; Savings</span></button>
                   <button type="button" onClick={() => handleNav('members')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'members' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Users className="w-4 h-4" /><span>Members &amp; Batch Clearance</span></button>
+                  <button type="button" onClick={() => handleNav('logs')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'logs' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><ShieldCheck className="w-4 h-4" /><span>Security &amp; Activity Log</span></button>
                   {canCustomizeTheme && onOpenThemeStudio && <button type="button" onClick={() => { setDrawerOpen(false); onOpenThemeStudio(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-amber-500 hover:bg-amber-500/10 cursor-pointer"><Palette className="w-4 h-4" /><span>Logo &amp; Background Studio</span></button>}
                   {onOpenNewActivity && <button type="button" onClick={() => { setDrawerOpen(false); onOpenNewActivity(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 cursor-pointer">+ New Activity</button>}
                   {onOpenNewFinance && <button type="button" onClick={() => { setDrawerOpen(false); onOpenNewFinance(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-amber-400/20 text-amber-500 cursor-pointer">+ Add Finance Record</button>}

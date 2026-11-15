@@ -10,6 +10,7 @@ import {
   ActivityFeePayment,
   MAX_FILE_SIZE_BYTES,
   exportMultiSheetExcel,
+  logActivity,
 } from '@/lib/supabase';
 import {
   Wallet,
@@ -271,6 +272,12 @@ export default function LedgerSection({
           attachment_name: attachmentName,
         };
         await saveLedgerPayloadWithFallback(payload);
+        void logActivity(
+          profile,
+          'Finance',
+          'Updated Club Savings',
+          `${profile.full_name} (${profile.matric_no}) updated Club Savings from RM ${currentSavingsBalance.toFixed(2)} to RM ${num.toFixed(2)}`
+        );
         setShowModal(false);
         onRefresh(`Updated Current Club Savings to RM ${num.toFixed(2)}!`);
         return;
@@ -303,9 +310,21 @@ export default function LedgerSection({
 
       if (editingEntry) {
         await saveLedgerPayloadWithFallback(payload, editingEntry.id);
+        void logActivity(
+          profile,
+          'Finance',
+          'Ledger record edited',
+          `${profile.full_name} (${profile.matric_no}) edited ${entryType === 'IN' ? 'Money In' : 'Expense Out'} "${title.trim()}" (RM ${num.toFixed(2)})`
+        );
         onRefresh(`Updated "${title.trim()}"!`);
       } else {
         await saveLedgerPayloadWithFallback(payload);
+        void logActivity(
+          profile,
+          'Finance',
+          entryType === 'IN' ? 'Added Money In' : 'Recorded Expense Out',
+          `${profile.full_name} (${profile.matric_no}) recorded ${entryType === 'IN' ? 'Money In' : 'Expense Out'} "${title.trim()}" of RM ${num.toFixed(2)} (${finalEventName})`
+        );
         onRefresh(
           `${entryType === 'IN' ? 'Added Money In' : 'Recorded Expense Out'}: RM ${num.toFixed(2)}!`
         );
@@ -321,6 +340,12 @@ export default function LedgerSection({
   const handleDeleteEntry = async (entry: LedgerEntryItem) => {
     if (!canEdit) return;
     await supabase.from('ledger_entries').delete().eq('id', entry.id);
+    void logActivity(
+      profile,
+      'Finance',
+      'Ledger record deleted',
+      `${profile.full_name} (${profile.matric_no}) deleted ${entry.entry_type === 'IN' ? 'Money In' : 'Expense Out'} "${entry.title}" (RM ${Number(entry.amount).toFixed(2)})`
+    );
     onRefresh(`Deleted "${entry.title}".`);
   };
 

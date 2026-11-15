@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { supabase, Claim, Budget, UserProfile, MAX_FILE_SIZE_BYTES } from '@/lib/supabase';
+import { supabase, Claim, Budget, UserProfile, MAX_FILE_SIZE_BYTES, logActivity } from '@/lib/supabase';
 import {
   X,
   CheckCircle2,
@@ -15,12 +15,19 @@ import {
   Landmark,
   Copy,
   UploadCloud,
+  ShieldCheck,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface AuditReviewModalProps {
   claim: Claim | null;
   budget: Budget | undefined;
   profile: UserProfile;
+  /** True only for the club Owner (President / Advisor) acting in Owner mode. */
+  isOwner?: boolean;
+  /** Claims above this RM amount need Treasurer verification + Owner approval. */
+  approvalThreshold?: number;
   onClose: () => void;
   onUpdated: (message: string) => void;
 }
@@ -29,12 +36,15 @@ export default function AuditReviewModal({
   claim,
   budget,
   profile,
+  isOwner = false,
+  approvalThreshold = 200,
   onClose,
   onUpdated,
 }: AuditReviewModalProps) {
   const [remarks, setRemarks] = useState('');
   const [payoutFile, setPayoutFile] = useState<File | null>(null);
-  const [processing, setProcessing] = useState<'Approved' | 'Rejected' | 'ProofOnly' | null>(
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [processing, setProcessing] = useState<'Approved' | 'Rejected' | 'ProofOnly' | 'Verified' | null>(
     null
   );
 
@@ -42,12 +52,19 @@ export default function AuditReviewModal({
     if (claim) {
       setRemarks(claim.review_remarks || '');
       setPayoutFile(null);
+      setErrorMsg(null);
     }
   }, [claim]);
 
   if (!claim) return null;
 
   const isTreasurer = profile.role === 'treasurer' || profile.role === 'owner';
+  const myLabel = `${profile.full_name} (${profile.matric_no})`;
+  const needsTwoStage = Number(claim.amount) > approvalThreshold;
+  const verifiedBy = claim.treasurer_verified_by || '';
+  const stage1Done = Boolean(verifiedBy);
+  const isOwnClaim = claim.user_id === profile.id;
+  const finalBy = claim.final_approved_by || '';
   const isPdf =
     claim.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
     claim.receipt_url?.toLowerCase().endsWith('.pdf');
@@ -98,7 +115,40 @@ export default function AuditReviewModal({
     return { url: publicUrl, name: payoutFile.name };
   };
 
+  const handleVerifyStage1 = async () => {
+    setErrorMsg(null);
+    setProcessing('Verified');
+    try {
+      const nowIso = new Date().toISOString();
+      const { error } = await supabase
+        .from('claims')
+        .update({
+          treasurer_verified_by: myLabel,
+          treasurer_verified_at: nowIso,
+          review_remarks: remarks.trim() || 'Verified by Treasurer — awaiting President/Advisor approval',
+        })
+        .eq('id', claim.id);
+      if (error) {
+        setErrorMsg(
+          'Could not save the verification. The database needs the latest update — ask the owner to run the new SQL migration in Supabase.'
+        );
+        return;
+      }
+      void logActivity(
+        profile,
+        'Claims',
+        'Claim verified (Stage 1)',
+        `${myLabel} verified claim "${claim.title}" of RM ${Number(claim.amount).toFixed(2)} by ${claim.claimant_name}. Awaiting President/Advisor approval.`
+      );
+      onUpdated('Stage 1 done — sent to President / Advisor for final approval.');
+      onClose();
+    } finally {
+      setProcessing(null);
+    }
+  };
+
   const handleDecision = async (decision: 'Approved' | 'Rejected') => {
+    setErrorMsg(null);
     setProcessing(decision);
     try {
       const uploadedProof = await uploadProofFileIfPresent();
@@ -106,7 +156,7 @@ export default function AuditReviewModal({
 
       const coreUpdate: Record<string, unknown> = {
         status: decision,
-        reviewed_by: `${profile.full_name} (${profile.matric_no})`,
+        reviewed_by: myLabel,
         review_remarks:
           remarks.trim() ||
           (decision === 'Approved' ? 'Verified & Reimbursed' : 'Rejected'),
@@ -115,6 +165,9 @@ export default function AuditReviewModal({
 
       const fullUpdate: Record<string, unknown> = {
         ...coreUpdate,
+        ...(decision === 'Approved' && needsTwoStage
+          ? { final_approved_by: myLabel, final_approved_at: nowIso }
+          : {}),
         ...(uploadedProof
           ? {
               payout_proof_url: uploadedProof.url,
@@ -143,8 +196,23 @@ export default function AuditReviewModal({
           .update({ spent_amount: newSpent })
           .eq('id', budget.id);
       }
+      void logActivity(
+        profile,
+        'Claims',
+        decision === 'Approved'
+          ? needsTwoStage
+            ? 'Claim final-approved (Stage 2)'
+            : 'Claim approved'
+          : 'Claim rejected',
+        `${myLabel} ${decision === 'Approved' ? 'approved' : 'rejected'} claim "${claim.title}" of RM ${Number(
+          claim.amount
+        ).toFixed(2)} by ${claim.claimant_name} (${claim.matric_no})` +
+          (remarks.trim() ? ` — "${remarks.trim()}"` : '')
+      );
       onUpdated(`Claim ${decision.toLowerCase()}!`);
       onClose();
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setProcessing(null);
     }
@@ -271,6 +339,59 @@ export default function AuditReviewModal({
               </div>
             </div>
 
+            {needsTwoStage && (
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3.5 space-y-2.5 text-xs">
+                <div className="flex items-center gap-1.5 font-extrabold text-indigo-950">
+                  <ShieldCheck className="w-4 h-4 text-indigo-700" />
+                  <span>High-value claim — 2-stage approval (above RM {approvalThreshold.toFixed(0)})</span>
+                </div>
+                <ol className="space-y-2">
+                  <li className="flex items-start gap-2">
+                    {stage1Done ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : claim.status === 'Rejected' ? (
+                      <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                    ) : (
+                      <Clock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <div className="font-bold text-slate-900">1. Treasurer verification</div>
+                      <div className="text-slate-600">
+                        {stage1Done
+                          ? `Verified by ${verifiedBy}${
+                              claim.treasurer_verified_at
+                                ? ` • ${new Date(claim.treasurer_verified_at).toLocaleString()}`
+                                : ''
+                            }`
+                          : 'Waiting for a Treasurer / Admin to check the receipt'}
+                      </div>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    {claim.status === 'Approved' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : claim.status === 'Rejected' ? (
+                      <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                    ) : (
+                      <Clock className={`w-4 h-4 shrink-0 mt-0.5 ${stage1Done ? 'text-amber-500' : 'text-slate-300'}`} />
+                    )}
+                    <div>
+                      <div className="font-bold text-slate-900">2. President / Advisor approval</div>
+                      <div className="text-slate-600">
+                        {claim.status === 'Approved'
+                          ? `Approved by ${finalBy || claim.reviewed_by || 'Owner'}`
+                          : claim.status === 'Rejected'
+                          ? `Rejected by ${claim.reviewed_by || 'reviewer'}`
+                          : stage1Done
+                          ? 'Waiting for the Owner (President / Advisor) to approve'
+                          : 'Unlocks after Treasurer verification'}
+                      </div>
+                    </div>
+                  </li>
+                </ol>
+              </div>
+            )}
+
             {extractedBankInfo && (
               <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs">
                 <div>
@@ -354,30 +475,122 @@ export default function AuditReviewModal({
                       placeholder="Review remarks / payment reference..."
                       className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-xs"
                     />
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <button
-                        type="button"
-                        disabled={processing !== null}
-                        onClick={() => handleDecision('Rejected')}
-                        className="inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 cursor-pointer"
-                      >
-                        <XCircle className="w-4 h-4" />
-                        <span>Reject</span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={processing !== null}
-                        onClick={() => handleDecision('Approved')}
-                        className="inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
-                      >
-                        {processing === 'Approved' ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="w-4 h-4" />
-                        )}
-                        <span>Approve &amp; Save Proof</span>
-                      </button>
-                    </div>
+                    {errorMsg && (
+                      <div className="flex items-start gap-1.5 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                        <span>{errorMsg}</span>
+                      </div>
+                    )}
+                    {(() => {
+                      const rejectBtn = (
+                        <button
+                          type="button"
+                          disabled={processing !== null}
+                          onClick={() => handleDecision('Rejected')}
+                          className="inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 cursor-pointer"
+                        >
+                          <XCircle className="w-4 h-4" />
+                          <span>Reject</span>
+                        </button>
+                      );
+                      const waitingNote = (text: string) => (
+                        <div className="col-span-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold flex items-start gap-1.5">
+                          <Clock className="w-4 h-4 shrink-0" />
+                          <span>{text}</span>
+                        </div>
+                      );
+
+                      // ---- Normal claims (at or below threshold): single approval ----
+                      if (!needsTwoStage) {
+                        return (
+                          <div className="grid grid-cols-2 gap-2.5">
+                            {rejectBtn}
+                            <button
+                              type="button"
+                              disabled={processing !== null}
+                              onClick={() => handleDecision('Approved')}
+                              className="inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                            >
+                              {processing === 'Approved' ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="w-4 h-4" />
+                              )}
+                              <span>Approve &amp; Save Proof</span>
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      // ---- High-value claims: Stage 1 (Treasurer) then Stage 2 (Owner) ----
+                      if (isOwnClaim) {
+                        return (
+                          <div className="grid grid-cols-2 gap-2.5">
+                            {waitingNote('You cannot verify or approve your own claim. Another admin must review it.')}
+                          </div>
+                        );
+                      }
+                      if (!stage1Done) {
+                        if (isOwner) {
+                          return (
+                            <div className="grid grid-cols-2 gap-2.5">
+                              {waitingNote(
+                                'Waiting for a Treasurer / Admin to verify this claim first. You will approve it in Stage 2.'
+                              )}
+                              {rejectBtn}
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="grid grid-cols-2 gap-2.5">
+                            {rejectBtn}
+                            <button
+                              type="button"
+                              disabled={processing !== null}
+                              onClick={handleVerifyStage1}
+                              className="inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer"
+                            >
+                              {processing === 'Verified' ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <ShieldCheck className="w-4 h-4" />
+                              )}
+                              <span>Verify (Stage 1)</span>
+                            </button>
+                          </div>
+                        );
+                      }
+                      if (isOwner && verifiedBy !== myLabel) {
+                        return (
+                          <div className="grid grid-cols-2 gap-2.5">
+                            {rejectBtn}
+                            <button
+                              type="button"
+                              disabled={processing !== null}
+                              onClick={() => handleDecision('Approved')}
+                              className="inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                            >
+                              {processing === 'Approved' ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="w-4 h-4" />
+                              )}
+                              <span>Final Approve &amp; Save Proof</span>
+                            </button>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="grid grid-cols-2 gap-2.5">
+                          {waitingNote(
+                            verifiedBy === myLabel
+                              ? 'You verified this claim. The Owner (President / Advisor) must now give final approval.'
+                              : 'Verified. Waiting for the Owner (President / Advisor) to give final approval.'
+                          )}
+                          {rejectBtn}
+                        </div>
+                      );
+                    })()}
                   </>
                 ) : (
                   payoutFile && (

@@ -143,6 +143,8 @@ export interface EventRsvp {
   seats_available: number;
   trips_count: number;
   assigned_driver_name: string;
+  pickup_time?: string | null;
+  pickup_point?: string | null;
   qr_checked_in?: boolean;
   qr_checked_in_at?: string | null;
   pass_approved?: boolean;
@@ -193,8 +195,14 @@ export interface Claim {
   reviewed_by: string | null;
   review_remarks: string | null;
   reviewed_at: string | null;
+  treasurer_verified_by?: string | null;
+  treasurer_verified_at?: string | null;
+  final_approved_by?: string | null;
+  final_approved_at?: string | null;
   created_at: string;
 }
+
+export const DEFAULT_CLAIM_APPROVAL_THRESHOLD = 200;
 
 export interface EquipmentItem {
   id: string;
@@ -204,6 +212,7 @@ export interface EquipmentItem {
   available_quantity: number;
   location: string;
   notes: string;
+  requires_approval?: boolean;
   created_at: string;
 }
 
@@ -221,7 +230,67 @@ export interface EquipmentLoan {
   return_date: string;
   status: 'Borrowed' | 'Returned' | 'Overdue';
   returned_at: string | null;
+  approval_status?: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
   created_at: string;
+}
+
+export interface ActivityLogEntry {
+  id: string;
+  actor_id: string | null;
+  actor_name: string;
+  actor_matric: string | null;
+  actor_role: string | null;
+  action: string;
+  category: string;
+  details: string;
+  created_at: string;
+}
+
+export type ActivityLogCategory =
+  | 'Finance'
+  | 'Claims'
+  | 'Fees'
+  | 'Equipment'
+  | 'Activities'
+  | 'Members'
+  | 'Carpool'
+  | 'Attendance'
+  | 'Settings';
+
+interface LogActor {
+  id: string;
+  full_name: string;
+  matric_no?: string;
+  role?: string;
+}
+
+/**
+ * Append-only audit trail. Fire-and-forget: a logging failure (e.g. table not
+ * created yet) must never block the user's real action.
+ */
+export async function logActivity(
+  actor: LogActor | null | undefined,
+  category: ActivityLogCategory,
+  action: string,
+  details: string
+): Promise<void> {
+  if (!actor) return;
+  try {
+    const roleLabel = actor.role === 'owner' ? 'Owner' : actor.role === 'treasurer' ? 'Admin' : 'Member';
+    await supabase.from('activity_logs').insert({
+      actor_id: actor.id,
+      actor_name: actor.full_name,
+      actor_matric: actor.matric_no || null,
+      actor_role: roleLabel,
+      category,
+      action,
+      details,
+    });
+  } catch {
+    /* never block the UI */
+  }
 }
 
 export interface Announcement {

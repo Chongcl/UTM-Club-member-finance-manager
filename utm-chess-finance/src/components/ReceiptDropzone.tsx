@@ -2,14 +2,16 @@
 
 import React, { useState } from 'react';
 import { MAX_FILE_SIZE_BYTES } from '@/lib/supabase';
+import { parseMalaysianReceipt } from '@/lib/receiptParser';
 import { UploadCloud, FileText, X, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 
 export interface ScannedReceiptData {
-  amount: number;
+  amount: number | null;
   merchant: string;
-  date: string;
+  date: string | null;
   suggestedCategory: string;
   confidence: number;
+  rawText?: string;
 }
 
 export interface ReceiptDropzoneProps {
@@ -17,6 +19,42 @@ export interface ReceiptDropzoneProps {
   file?: File | null;
   onFileSelect: (file: File | null) => void;
   onScanComplete?: (data: ScannedReceiptData) => void;
+}
+
+/** Downscale + grayscale + stretch contrast: faster OCR and far better accuracy on phone photos. */
+async function prepareImageForOcr(file: File): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxSide = 2000;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    let min = 255;
+    let max = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const g = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+      d[i] = d[i + 1] = d[i + 2] = g;
+      if (g < min) min = g;
+      if (g > max) max = g;
+    }
+    const range = Math.max(1, max - min);
+    for (let i = 0; i < d.length; i += 4) {
+      const v = ((d[i] - min) / range) * 255;
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    ctx.putImageData(img, 0, 0);
+    return await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b || file), 'image/png'));
+  } catch {
+    return file;
+  }
 }
 
 export default function ReceiptDropzone({
@@ -27,6 +65,7 @@ export default function ReceiptDropzone({
 }: ReceiptDropzoneProps) {
   const [internalFile, setInternalFile] = useState<File | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const activeFile = selectedFile !== undefined ? selectedFile : file !== undefined ? file : internalFile;
@@ -41,20 +80,73 @@ export default function ReceiptDropzone({
     onFileSelect(f);
   };
 
-  const handleSimulateScan = () => {
+  const handleScan = async () => {
     if (!activeFile || !onScanComplete) return;
+    setErrorMsg(null);
+
+    const isPdf = activeFile.type === 'application/pdf' || activeFile.name.toLowerCase().endsWith('.pdf');
+    if (isPdf) {
+      setErrorMsg('PDF invoices cannot be auto-read. Upload a photo or screenshot (JPG / PNG) to auto-fill, or type the details in manually.');
+      return;
+    }
+
     setScanning(true);
-    setTimeout(() => {
-      const baseName = activeFile.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+    setProgress(0);
+    interface OcrWorker {
+      recognize: (img: Blob) => Promise<{ data: { text: string; confidence: number } }>;
+      terminate: () => Promise<unknown>;
+    }
+    let worker: OcrWorker | null = null;
+    try {
+      const { createWorker } = await import('tesseract.js');
+      worker = (await createWorker('eng', 1, {
+        logger: (m: { status: string; progress: number }) => {
+          if (m.status === 'recognizing text') setProgress(Math.round(m.progress * 100));
+        },
+      })) as unknown as OcrWorker;
+
+      const prepared = await prepareImageForOcr(activeFile);
+      const { data } = await worker.recognize(prepared);
+      const parsed = parseMalaysianReceipt(data.text, data.confidence);
+
+      if (parsed.amount === null && !parsed.merchant && !parsed.date) {
+        setErrorMsg('Could not read anything useful from this image. Try a clearer, well-lit, flat photo — or fill in the details manually.');
+        return;
+      }
+
       onScanComplete({
-        amount: 25.0,
-        merchant: baseName.length > 2 ? baseName : 'Campus Supplier',
-        date: new Date().toISOString().split('T')[0],
-        suggestedCategory: 'Program & Event Unit',
-        confidence: 94,
+        amount: parsed.amount,
+        merchant: parsed.merchant,
+        date: parsed.date,
+        suggestedCategory: '',
+        confidence: parsed.confidence,
+        rawText: data.text,
       });
+
+      const missing: string[] = [];
+      if (parsed.amount === null) missing.push('amount');
+      if (!parsed.merchant) missing.push('merchant');
+      if (!parsed.date) missing.push('date');
+      if (missing.length > 0) {
+        setErrorMsg(`Couldn't find the ${missing.join(', ')}. Please fill ${missing.length > 1 ? 'those' : 'that'} in manually.`);
+      }
+    } catch (err) {
+      setErrorMsg(
+        err instanceof Error
+          ? `Receipt scan failed (${err.message}). Check your internet connection, or fill in the details manually.`
+          : 'Receipt scan failed. Please fill in the details manually.'
+      );
+    } finally {
+      if (worker) {
+        try {
+          await worker.terminate();
+        } catch {
+          /* ignore */
+        }
+      }
       setScanning(false);
-    }, 600);
+      setProgress(0);
+    }
   };
 
   return (
@@ -86,11 +178,12 @@ export default function ReceiptDropzone({
               <button
                 type="button"
                 disabled={scanning}
-                onClick={handleSimulateScan}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer"
+                onClick={handleScan}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-70 text-white font-bold text-[11px] cursor-pointer"
+                title="Reads amount, date and merchant from the receipt image (runs in your browser)"
               >
                 {scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                <span>{scanning ? 'Scanning...' : 'Auto-Fill Receipt'}</span>
+                <span>{scanning ? `Reading receipt… ${progress}%` : 'Scan Receipt (OCR)'}</span>
               </button>
             )}
             <button
