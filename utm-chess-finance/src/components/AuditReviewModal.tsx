@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { supabase, Claim, Budget, UserProfile, MAX_FILE_SIZE_BYTES, logActivity } from '@/lib/supabase';
+import { supabase, Claim, Budget, UserProfile, MAX_FILE_SIZE_BYTES, downloadFileFromUrl, logActivity } from '@/lib/supabase';
 import {
   X,
   CheckCircle2,
@@ -18,6 +18,9 @@ import {
   ShieldCheck,
   Clock,
   AlertTriangle,
+  Download,
+  ZoomIn,
+  Sparkles,
 } from 'lucide-react';
 
 interface AuditReviewModalProps {
@@ -44,6 +47,7 @@ export default function AuditReviewModal({
   const [remarks, setRemarks] = useState('');
   const [payoutFile, setPayoutFile] = useState<File | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [fullImageOpen, setFullImageOpen] = useState(false);
   const [processing, setProcessing] = useState<'Approved' | 'Rejected' | 'ProofOnly' | 'Verified' | null>(
     null
   );
@@ -53,6 +57,7 @@ export default function AuditReviewModal({
       setRemarks(claim.review_remarks || '');
       setPayoutFile(null);
       setErrorMsg(null);
+      setFullImageOpen(false);
     }
   }, [claim]);
 
@@ -67,7 +72,8 @@ export default function AuditReviewModal({
   const finalBy = claim.final_approved_by || '';
   const isPdf =
     claim.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
-    claim.receipt_url?.toLowerCase().endsWith('.pdf');
+    claim.receipt_url?.toLowerCase().split('?')[0].endsWith('.pdf') ||
+    claim.receipt_url?.startsWith('data:application/pdf');
 
   // Extract reimbursement bank info from claim.payment_info or description
   const extractedBankInfo =
@@ -262,19 +268,43 @@ export default function AuditReviewModal({
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[82vh] overflow-y-auto">
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-bold text-emerald-900 uppercase">
                 Claimant Receipt / Invoice
               </span>
-              <a
-                href={claim.receipt_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:underline"
-              >
-                <span>Open Full File</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+              <div className="flex items-center gap-2">
+                {!isPdf && claim.receipt_url && (
+                  <button
+                    type="button"
+                    onClick={() => setFullImageOpen(true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-xs font-bold text-emerald-800 cursor-pointer"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                    <span>Zoom Full</span>
+                  </button>
+                )}
+                {claim.receipt_url && (
+                  <button
+                    type="button"
+                    onClick={() => void downloadFileFromUrl(claim.receipt_url, claim.receipt_file_name || 'receipt.jpg')}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>{isPdf ? 'Download PDF' : 'Download JPG'}</span>
+                  </button>
+                )}
+                {claim.receipt_url && !claim.receipt_url.startsWith('data:') && (
+                  <a
+                    href={claim.receipt_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:underline"
+                  >
+                    <span>Open Full File</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
             </div>
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 overflow-hidden flex items-center justify-center min-h-[260px]">
               {isPdf ? (
@@ -293,13 +323,49 @@ export default function AuditReviewModal({
                   </a>
                 </div>
               ) : (
-                <img
-                  src={claim.receipt_url}
-                  alt={claim.title}
-                  className="max-h-[300px] w-auto object-contain"
-                />
+                <button
+                  type="button"
+                  onClick={() => setFullImageOpen(true)}
+                  className="w-full flex items-center justify-center p-2 cursor-zoom-in group relative"
+                  title="Click to inspect full resolution receipt photo"
+                >
+                  <img
+                    src={claim.receipt_url}
+                    alt={claim.title}
+                    className="max-h-[300px] w-auto object-contain rounded-lg"
+                  />
+                </button>
               )}
             </div>
+
+            {(claim.ai_extracted_amount !== null || claim.ai_extracted_merchant || claim.ai_extracted_date) && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-[11px] text-emerald-950 space-y-1">
+                <div className="font-extrabold flex items-center gap-1 text-emerald-800">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>
+                    Scanned Receipt Key Info
+                    {claim.ai_confidence ? ` (${claim.ai_confidence}% match)` : ''}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-slate-700">
+                  {claim.ai_extracted_amount !== null && (
+                    <span>
+                      Amount: <strong className="text-slate-900">RM {Number(claim.ai_extracted_amount).toFixed(2)}</strong>
+                    </span>
+                  )}
+                  {claim.ai_extracted_merchant && (
+                    <span>
+                      Merchant: <strong className="text-slate-900">{claim.ai_extracted_merchant}</strong>
+                    </span>
+                  )}
+                  {claim.ai_extracted_date && (
+                    <span>
+                      Date: <strong className="text-slate-900">{claim.ai_extracted_date}</strong>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {proofUrl && (
               <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-center justify-between gap-2">
@@ -611,6 +677,47 @@ export default function AuditReviewModal({
           </div>
         </div>
       </div>
+
+      {fullImageOpen && !isPdf && claim.receipt_url && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
+          onClick={() => setFullImageOpen(false)}
+        >
+          <div
+            className="max-w-5xl w-full flex flex-col items-center gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between text-white px-2">
+              <div className="text-xs font-bold truncate">
+                {claim.receipt_file_name || claim.title}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => void downloadFileFromUrl(claim.receipt_url, claim.receipt_file_name || 'receipt.jpg')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download JPG</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFullImageOpen(false)}
+                  className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center cursor-pointer"
+                  aria-label="Close full image"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <img
+              src={claim.receipt_url}
+              alt={claim.title}
+              className="max-h-[84vh] w-auto max-w-full object-contain rounded-2xl bg-white shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

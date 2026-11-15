@@ -48,12 +48,16 @@ export default function ClaimFormModal({
   const [claimantQrUrl, setClaimantQrUrl] = useState('');
   const [claimantQrFile, setClaimantQrFile] = useState<File | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [uploadedReceiptUrl, setUploadedReceiptUrl] = useState<string | null>(null);
   const [scannedData, setScannedData] = useState<ScannedReceiptData | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setUploadedReceiptUrl(null);
+      return;
+    }
     let savedBank = {
       bank_name: profile.bank_name || '',
       bank_account_no: profile.bank_account_no || '',
@@ -94,7 +98,9 @@ export default function ClaimFormModal({
     if (data.suggestedCategory && departments.includes(data.suggestedCategory)) {
       setCategory(data.suggestedCategory);
     }
-    if (!title && data.merchant) setTitle(`${data.merchant} Purchase`);
+    if (!title) {
+      setTitle(data.merchant ? `${data.merchant} Purchase` : `Receipt Claim (${data.date || expenseDate})`);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -144,17 +150,28 @@ export default function ClaimFormModal({
         );
       }
 
-      const fileExt = file.name.split('.').pop() || 'pdf';
-      const safePath = `claims/${profile.id}/${Date.now()}.${fileExt}`;
+      let receiptUrl = uploadedReceiptUrl || '';
+      if (!receiptUrl) {
+        const fileExt = file.name.split('.').pop() || 'jpg';
+        const safePath = `claims/${profile.id}/${Date.now()}.${fileExt}`;
 
-      const { error: uploadErr } = await supabase.storage
-        .from('receipts')
-        .upload(safePath, file, { upsert: false });
-      if (uploadErr) throw uploadErr;
-
-      const { data: urlData } = supabase.storage
-        .from('receipts')
-        .getPublicUrl(safePath);
+        const { error: uploadErr } = await supabase.storage
+          .from('receipts')
+          .upload(safePath, file, { upsert: false });
+        if (!uploadErr) {
+          const { data: urlData } = supabase.storage
+            .from('receipts')
+            .getPublicUrl(safePath);
+          receiptUrl = urlData.publicUrl;
+        } else {
+          receiptUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(uploadErr);
+            reader.readAsDataURL(file);
+          });
+        }
+      }
 
       const isOther = selectedEventOption === 'OTHER';
       const chosenBudget = budgets.find((b) => b.id === selectedEventOption);
@@ -178,7 +195,7 @@ export default function ClaimFormModal({
         expense_date: expenseDate,
         merchant_name: merchantName.trim(),
         description: baseDescription,
-        receipt_url: urlData.publicUrl,
+        receipt_url: receiptUrl,
         receipt_file_name: file.name,
         ai_extracted_amount: scannedData?.amount ?? null,
         ai_extracted_merchant: scannedData?.merchant || null,
@@ -251,10 +268,15 @@ export default function ClaimFormModal({
         >
           <ReceiptDropzone
             selectedFile={file}
+            userId={profile.id}
             onFileSelect={(f) => {
               setFile(f);
-              if (!f) setScannedData(null);
+              if (!f) {
+                setScannedData(null);
+                setUploadedReceiptUrl(null);
+              }
             }}
+            onUploadedUrl={setUploadedReceiptUrl}
             onScanComplete={handleScanComplete}
           />
 

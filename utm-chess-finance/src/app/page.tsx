@@ -1377,10 +1377,32 @@ export default function Page() {
                         (c.description?.includes('Reimburse To:')
                           ? c.description.split('Reimburse To:')[1]?.trim()
                           : '');
+                      const isReceiptPdf =
+                        c.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
+                        c.receipt_url?.toLowerCase().split('?')[0].endsWith('.pdf') ||
+                        c.receipt_url?.startsWith('data:application/pdf');
                       return (
                         <tr key={c.id}>
                           <td className="py-3 px-4 font-bold">
-                            {c.title} <span className="text-emerald-700 block font-normal">{c.category}</span>
+                            <div className="flex items-center gap-2.5">
+                              {c.receipt_url && !isReceiptPdf && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedClaim(c)}
+                                  className="w-9 h-9 rounded-lg border border-emerald-200 bg-emerald-50/40 overflow-hidden shrink-0 cursor-pointer hover:border-emerald-400"
+                                  title="View full receipt photo"
+                                >
+                                  <img
+                                    src={c.receipt_url}
+                                    alt={c.title}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </button>
+                              )}
+                              <div>
+                                {c.title} <span className="text-emerald-700 block font-normal">{c.category}</span>
+                              </div>
+                            </div>
                           </td>
                           <td className="py-3 px-4">
                             <div className="font-semibold">
