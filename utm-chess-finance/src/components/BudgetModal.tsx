@@ -1,8 +1,37 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, DEFAULT_DEPARTMENTS, TicketQrMode, PassApprovalRule, EventRsvp, ActivityFeePayment, isEntryPassMode } from '@/lib/supabase';
-import { X, Calendar, Loader2, CheckCircle2, Car, CreditCard, QrCode, RefreshCw, ShieldCheck, ExternalLink, Sparkles, Ticket, Settings, Users } from 'lucide-react';
+import {
+  supabase,
+  DEFAULT_DEPARTMENTS,
+  TicketQrMode,
+  PassApprovalRule,
+  EventRsvp,
+  ActivityFeePayment,
+  UserProfile,
+  ActivityLogEntry,
+  isEntryPassMode,
+} from '@/lib/supabase';
+import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
+import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
+import {
+  X,
+  Calendar,
+  Loader2,
+  CheckCircle2,
+  Car,
+  CreditCard,
+  QrCode,
+  RefreshCw,
+  ShieldCheck,
+  ExternalLink,
+  Sparkles,
+  Ticket,
+  Settings,
+  Users,
+  Trash2,
+  History,
+} from 'lucide-react';
 
 export interface EditableActivity {
   id?: string; event_name: string; category: string; event_date?: string; event_time?: string;
@@ -14,13 +43,15 @@ export interface EditableActivity {
 interface BudgetModalProps {
   isOpen: boolean; onClose: () => void; onSuccess: (message: string) => void;
   initialData?: EditableActivity | null; departments?: string[]; rsvps?: EventRsvp[]; feePayments?: ActivityFeePayment[];
+  profile?: UserProfile | null; logs?: ActivityLogEntry[];
 }
 
 export default function BudgetModal({
-  isOpen, onClose, onSuccess, initialData, departments = DEFAULT_DEPARTMENTS, rsvps = [], feePayments = [],
+  isOpen, onClose, onSuccess, initialData, departments = DEFAULT_DEPARTMENTS, rsvps = [], feePayments = [], profile = null, logs = [],
 }: BudgetModalProps) {
   const isEditing = Boolean(initialData?.id);
   const [openSection, setOpenSection] = useState<'none' | 'settings' | 'passes' | 'fees' | 'carpool'>('none');
+  const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
 
   const [eventName, setEventName] = useState('');
   const [category, setCategory] = useState<string>(departments[0] || 'Member');
@@ -129,6 +160,28 @@ export default function BudgetModal({
         }
         const { error } = await supabase.from('budgets').update({ ...basePayload, ticket_qr_mode: modeValue }).eq('id', eventId);
         if (error) await supabase.from('budgets').update(basePayload).eq('id', eventId);
+        if (profile && initialData) {
+          const changes = computeFieldChanges([
+            { field: 'Activity Name', before: initialData.event_name, after: basePayload.event_name },
+            { field: 'Department', before: initialData.category, after: basePayload.category },
+            { field: 'Date', before: initialData.event_date || '', after: basePayload.event_date },
+            { field: 'Time', before: initialData.event_time || '', after: basePayload.event_time },
+            { field: 'Venue', before: initialData.location || '', after: basePayload.location },
+            { field: 'Fee (RM)', before: Number(initialData.registration_fee ?? 0).toFixed(2), after: reqFeeNum.toFixed(2) },
+            { field: 'Driver Allowance', before: Number(initialData.driver_allowance_per_trip ?? 5).toFixed(2), after: allowanceNum.toFixed(2) },
+            { field: 'Carpool Open', before: initialData.driver_recruitment_open ?? true, after: driverRecruitmentOpen },
+            { field: 'Status', before: initialData.status || 'Active', after: status },
+            { field: 'Description', before: initialData.description, after: basePayload.description },
+          ]);
+          void recordEditHistory({
+            actor: profile,
+            category: 'Activities',
+            table: 'budgets',
+            recordId: eventId,
+            recordTitle: basePayload.event_name,
+            changes,
+          });
+        }
         onSuccess(`Saved "${eventName.trim()}"!`);
       } else {
         const { data: created, error } = await supabase.from('budgets').insert({ ...basePayload, ticket_qr_mode: modeValue, allocated_amount: 0, spent_amount: 0 }).select('*').single();
@@ -345,8 +398,71 @@ export default function BudgetModal({
                           <td className="py-2 px-3">{p.status}</td>
                           <td className="py-2 px-3 text-right space-x-1">
                             <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 rounded bg-slate-100"><ExternalLink className="w-3 h-3 inline" /></a>
-                            <button type="button" onClick={async () => { await supabase.from('activity_fee_payments').update({ status: 'Verified' }).eq('id', p.id); onSuccess('Verified!'); }} className="px-2 py-1 rounded bg-emerald-600 text-white font-bold cursor-pointer">Verify</button>
-                            <button type="button" onClick={async () => { await supabase.from('activity_fee_payments').update({ status: 'Rejected' }).eq('id', p.id); onSuccess('Rejected.'); }} className="px-2 py-1 rounded bg-rose-50 text-rose-700 font-bold cursor-pointer">Reject</button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await supabase.from('activity_fee_payments').update({ status: 'Verified' }).eq('id', p.id);
+                                if (profile) {
+                                  void recordEditHistory({
+                                    actor: profile,
+                                    category: 'Fees',
+                                    table: 'activity_fee_payments',
+                                    recordId: p.id,
+                                    recordTitle: `${p.student_name} fee`,
+                                    changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Verified' }]),
+                                  });
+                                }
+                                onSuccess('Verified!');
+                              }}
+                              className="px-2 py-1 rounded bg-emerald-600 text-white font-bold cursor-pointer"
+                            >
+                              Verify
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await supabase.from('activity_fee_payments').update({ status: 'Rejected' }).eq('id', p.id);
+                                if (profile) {
+                                  void recordEditHistory({
+                                    actor: profile,
+                                    category: 'Fees',
+                                    table: 'activity_fee_payments',
+                                    recordId: p.id,
+                                    recordTitle: `${p.student_name} fee`,
+                                    changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Rejected' }]),
+                                  });
+                                }
+                                onSuccess('Rejected.');
+                              }}
+                              className="px-2 py-1 rounded bg-rose-50 text-rose-700 font-bold cursor-pointer"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setHistoryTarget({ table: 'activity_fee_payments', recordId: p.id, title: `${p.student_name} Fee` })}
+                              className="p-1 rounded bg-slate-100 text-slate-700 cursor-pointer"
+                              title="History"
+                            >
+                              <History className="w-3 h-3 inline" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await softDeleteRecord({
+                                  actor: profile,
+                                  category: 'Fees',
+                                  table: 'activity_fee_payments',
+                                  recordId: p.id,
+                                  recordTitle: `${p.student_name} — RM ${Number(p.amount_paid).toFixed(2)}`,
+                                });
+                                onSuccess('Removed fee record from web (kept in Supabase).');
+                              }}
+                              className="p-1 rounded bg-rose-50 text-rose-600 cursor-pointer"
+                              title="Delete from web (kept in Supabase)"
+                            >
+                              <Trash2 className="w-3 h-3 inline" />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -404,6 +520,11 @@ export default function BudgetModal({
           </div>
         </form>
       </div>
+      <RecordHistoryModal
+        target={historyTarget}
+        logs={logs}
+        onClose={() => setHistoryTarget(null)}
+      />
     </div>
   );
 }

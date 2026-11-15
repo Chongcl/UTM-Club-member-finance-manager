@@ -1,23 +1,79 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, Claim, AdminPermissions, PassApprovalRule, isEntryPassMode, MAX_FILE_SIZE_BYTES, exportMultiSheetExcel, downloadFileFromUrl, logActivity } from '@/lib/supabase';
+import {
+  supabase,
+  Budget,
+  UserProfile,
+  EventRsvp,
+  ActivityFeePayment,
+  Claim,
+  AdminPermissions,
+  PassApprovalRule,
+  ActivityLogEntry,
+  isEntryPassMode,
+  MAX_FILE_SIZE_BYTES,
+  exportMultiSheetExcel,
+  downloadFileFromUrl,
+  logActivity,
+} from '@/lib/supabase';
+import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
+import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import { waLink, formatPickupTime } from '@/lib/whatsapp';
-import { X, CheckCircle2, ExternalLink, Download, Copy, RefreshCw, Ticket, ShieldCheck, Lock, Camera, QrCode, UploadCloud, FileText, AlertCircle, Loader2, Car, UserCheck, FileSpreadsheet, Eye, EyeOff, Settings, MessageCircle, Clock, MapPin, Megaphone } from 'lucide-react';
+import {
+  X,
+  CheckCircle2,
+  ExternalLink,
+  Download,
+  Copy,
+  RefreshCw,
+  Ticket,
+  ShieldCheck,
+  Lock,
+  Camera,
+  QrCode,
+  UploadCloud,
+  FileText,
+  AlertCircle,
+  Loader2,
+  Car,
+  UserCheck,
+  FileSpreadsheet,
+  Eye,
+  EyeOff,
+  Settings,
+  MessageCircle,
+  Clock,
+  MapPin,
+  Megaphone,
+  Edit3,
+  Trash2,
+  History,
+} from 'lucide-react';
 
 interface EventOperationsModalProps {
   event: Budget | null; initialTab: 'fee' | 'transport' | 'qr' | 'pass'; profile: UserProfile;
   isAdmin: boolean; permissions: AdminPermissions; rsvps: EventRsvp[]; feePayments: ActivityFeePayment[];
-  claims?: Claim[]; paymentQrUrl?: string; paymentBankInfo?: string;
+  claims?: Claim[]; logs?: ActivityLogEntry[]; paymentQrUrl?: string; paymentBankInfo?: string;
   onClose: () => void; onOpenScanner?: () => void; onRefresh: (msg: string) => void;
 }
 
 type TransportSurveyChoice = 'OWN' | 'One-Way' | 'Return Trip' | 'Round Trip' | 'DRIVER';
 
 export default function EventOperationsModal({
-  event, initialTab, profile, isAdmin, permissions, rsvps, feePayments, claims = [], paymentQrUrl = '', paymentBankInfo = '', onClose, onOpenScanner, onRefresh,
+  event, initialTab, profile, isAdmin, permissions, rsvps, feePayments, claims = [], logs = [], paymentQrUrl = '', paymentBankInfo = '', onClose, onOpenScanner, onRefresh,
 }: EventOperationsModalProps) {
   const [tab, setTab] = useState<'fee' | 'transport' | 'qr' | 'pass'>(initialTab);
+  const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
+  const [editingFee, setEditingFee] = useState<ActivityFeePayment | null>(null);
+  const [editFeeName, setEditFeeName] = useState('');
+  const [editFeeMatric, setEditFeeMatric] = useState('');
+  const [editFeePhone, setEditFeePhone] = useState('');
+  const [editFeeAmount, setEditFeeAmount] = useState('');
+  const [editFeeStatus, setEditFeeStatus] = useState<'Verified' | 'Pending' | 'Rejected'>('Verified');
+  const [editFeeFile, setEditFeeFile] = useState<File | null>(null);
+  const [savingEditFee, setSavingEditFee] = useState(false);
+  const [editFeeError, setEditFeeError] = useState<string | null>(null);
   const [amountPaid, setAmountPaid] = useState('0');
   const [feeFile, setFeeFile] = useState<File | null>(null);
   const [feeError, setFeeError] = useState<string | null>(null);
@@ -347,6 +403,98 @@ export default function EventOperationsModal({
     }
   };
 
+  const openEditFeeModal = (p: ActivityFeePayment) => {
+    setEditingFee(p);
+    setEditFeeName(p.student_name || '');
+    setEditFeeMatric(p.matric_no || '');
+    setEditFeePhone(p.phone_number || '');
+    setEditFeeAmount(String(p.amount_paid ?? 0));
+    setEditFeeStatus(p.status || 'Verified');
+    setEditFeeFile(null);
+    setEditFeeError(null);
+  };
+
+  const handleSaveEditFee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingFee) return;
+    setEditFeeError(null);
+    const nextAmt = parseFloat(editFeeAmount);
+    if (isNaN(nextAmt) || nextAmt <= 0) {
+      setEditFeeError('Please enter a valid fee amount greater than 0.');
+      return;
+    }
+
+    setSavingEditFee(true);
+    try {
+      let nextReceiptUrl = editingFee.receipt_url;
+      let nextReceiptName = editingFee.receipt_file_name;
+      if (editFeeFile) {
+        if (editFeeFile.size > MAX_FILE_SIZE_BYTES) {
+          setEditFeeError('File size must be under 50 MB.');
+          return;
+        }
+        const ext = editFeeFile.name.split('.').pop() || 'jpg';
+        const path = `fees/${event.id}/${editingFee.user_id}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from('receipts').upload(path, editFeeFile);
+        if (!upErr) {
+          nextReceiptUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
+          nextReceiptName = editFeeFile.name;
+        }
+      }
+
+      const nextStatus = isAdmin ? editFeeStatus : editingFee.status;
+      const { error } = await supabase
+        .from('activity_fee_payments')
+        .update({
+          student_name: editFeeName.trim() || editingFee.student_name,
+          matric_no: editFeeMatric.trim() || editingFee.matric_no,
+          phone_number: editFeePhone.trim(),
+          amount_paid: nextAmt,
+          status: nextStatus,
+          receipt_url: nextReceiptUrl,
+          receipt_file_name: nextReceiptName,
+        })
+        .eq('id', editingFee.id);
+      if (error) {
+        setEditFeeError(error.message || 'Could not update fee payment.');
+        return;
+      }
+
+      const changes = computeFieldChanges([
+        { field: 'Student Name', before: editingFee.student_name, after: editFeeName.trim() || editingFee.student_name },
+        { field: 'Matric No', before: editingFee.matric_no, after: editFeeMatric.trim() || editingFee.matric_no },
+        { field: 'Phone', before: editingFee.phone_number, after: editFeePhone.trim() },
+        { field: 'Amount Paid (RM)', before: Number(editingFee.amount_paid).toFixed(2), after: nextAmt.toFixed(2) },
+        { field: 'Status', before: editingFee.status, after: nextStatus },
+        ...(editFeeFile ? [{ field: 'Receipt', before: editingFee.receipt_file_name, after: nextReceiptName }] : []),
+      ]);
+      void recordEditHistory({
+        actor: profile,
+        category: 'Fees',
+        table: 'activity_fee_payments',
+        recordId: editingFee.id,
+        recordTitle: `${editFeeName.trim() || editingFee.student_name} — ${event.event_name}`,
+        changes,
+      });
+
+      setEditingFee(null);
+      onRefresh(`Updated fee record for ${editFeeName.trim() || editingFee.student_name}!`);
+    } finally {
+      setSavingEditFee(false);
+    }
+  };
+
+  const handleSoftDeleteFee = async (p: ActivityFeePayment) => {
+    await softDeleteRecord({
+      actor: profile,
+      category: 'Fees',
+      table: 'activity_fee_payments',
+      recordId: p.id,
+      recordTitle: `${p.student_name} (${event.event_name}) — RM ${Number(p.amount_paid).toFixed(2)}`,
+    });
+    onRefresh(`Removed fee record from web view (kept in Supabase).`);
+  };
+
   const handleSaveTransportForm = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingTransport(true);
@@ -385,6 +533,23 @@ export default function EventOperationsModal({
             }) for "${event.event_name}"`
           : `${profile.full_name} (${profile.matric_no}) updated transport to ${nextTransport === 'None' ? 'Own Transport' : nextTransport} for "${event.event_name}"`
       );
+      if (myRsvp && !myRsvp.id.startsWith('temp-')) {
+        const changes = computeFieldChanges([
+          { field: 'Transport', before: myRsvp.is_driver ? 'Driver' : myRsvp.transport_type, after: isDriving ? 'Driver' : nextTransport },
+          { field: 'Dormitory', before: myRsvp.dormitory, after: coreRow.dormitory },
+          { field: 'Car Details', before: myRsvp.car_details, after: coreRow.car_details },
+          { field: 'Pickup Time', before: myRsvp.pickup_time || '', after: isDriving ? pickupTime.trim() : '' },
+          { field: 'Meeting Point', before: myRsvp.pickup_point || '', after: isDriving ? pickupPoint.trim() : '' },
+        ]);
+        void recordEditHistory({
+          actor: profile,
+          category: 'Carpool',
+          table: 'event_rsvps',
+          recordId: myRsvp.id,
+          recordTitle: `${profile.full_name} (${event.event_name})`,
+          changes,
+        });
+      }
       setTransportSavedSuccess(true);
       onRefresh('✓ Carpool & Transport updated!');
       setTimeout(() => {
@@ -724,12 +889,58 @@ export default function EventOperationsModal({
                 <h3 className="text-sm font-extrabold">{isAdmin ? `All Fee Submissions (${visibleFeePayments.length})` : `My Fee Receipt (${visibleFeePayments.length})`}</h3>
                 <div className="border rounded-2xl overflow-hidden">
                   <table className="w-full text-left border-collapse">
-                    <thead><tr className="bg-slate-50 border-b"><th className="py-2 px-3">Student</th><th className="py-2 px-3">Amount</th><th className="py-2 px-3">Status</th><th className="py-2 px-3 text-right">Receipt</th></tr></thead>
+                    <thead><tr className="bg-slate-50 border-b"><th className="py-2 px-3">Student</th><th className="py-2 px-3">Amount</th><th className="py-2 px-3">Status</th><th className="py-2 px-3 text-right">Actions</th></tr></thead>
                     <tbody className="divide-y">
                       {visibleFeePayments.length === 0 ? (
                         <tr><td colSpan={4} className="py-6 text-center text-slate-400">No payment submission yet.</td></tr>
                       ) : (
-                        visibleFeePayments.map((p) => (<tr key={p.id}><td className="py-2 px-3 font-bold">{p.student_name}</td><td className="py-2 px-3 font-extrabold text-emerald-700">RM {Number(p.amount_paid).toFixed(2)}</td><td className="py-2 px-3"><span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">{p.status}</span></td><td className="py-2 px-3 text-right"><a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold"><ExternalLink className="w-3.5 h-3.5 inline" /></a></td></tr>))
+                        visibleFeePayments.map((p) => (
+                          <tr key={p.id}>
+                            <td className="py-2 px-3">
+                              <div className="font-bold">{p.student_name}</div>
+                              <div className="text-[10px] text-slate-400 font-mono">{p.matric_no}</div>
+                            </td>
+                            <td className="py-2 px-3 font-extrabold text-emerald-700">RM {Number(p.amount_paid).toFixed(2)}</td>
+                            <td className="py-2 px-3"><span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">{p.status}</span></td>
+                            <td className="py-2 px-3 text-right">
+                              <div className="inline-flex items-center gap-1 justify-end">
+                                {p.receipt_url && (
+                                  <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-slate-100 text-emerald-700 hover:bg-slate-200" title="View Receipt">
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setHistoryTarget({ table: 'activity_fee_payments', recordId: p.id, title: `${p.student_name} Fee` })}
+                                  className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
+                                  title="View Edit History"
+                                >
+                                  <History className="w-3.5 h-3.5" />
+                                </button>
+                                {(isAdmin || p.user_id === profile.id) && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditFeeModal(p)}
+                                      className="p-1.5 rounded-lg bg-slate-100 text-slate-800 hover:bg-emerald-50 cursor-pointer"
+                                      title="Edit Fee Payment"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSoftDeleteFee(p)}
+                                      className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                      title="Delete from web (kept in Supabase)"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
                       )}
                     </tbody>
                   </table>
@@ -920,6 +1131,33 @@ export default function EventOperationsModal({
                                   <span className={`px-2.5 py-1 rounded-full font-extrabold text-[11px] ${assignedCount >= maxSeats ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
                                     {assignedCount}/{maxSeats} seats
                                   </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setHistoryTarget({ table: 'event_rsvps', recordId: d.id, title: `${d.student_name} (Driver)` })}
+                                    className="p-1 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
+                                    title="View History"
+                                  >
+                                    <History className="w-3 h-3" />
+                                  </button>
+                                  {(isAdmin || d.user_id === profile.id) && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        await softDeleteRecord({
+                                          actor: profile,
+                                          category: 'Carpool',
+                                          table: 'event_rsvps',
+                                          recordId: d.id,
+                                          recordTitle: `${d.student_name} (${event.event_name})`,
+                                        });
+                                        onRefresh('Removed carpool entry from web view (kept in Supabase).');
+                                      }}
+                                      className="p-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                      title="Delete from web (kept in Supabase)"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                               {(d.pickup_time || d.pickup_point) && (
@@ -1054,6 +1292,35 @@ export default function EventOperationsModal({
                                   ) : (
                                     <span className="text-amber-700 font-semibold text-[11px]">Waiting for driver</span>
                                   )}
+                                  <div className="inline-flex items-center gap-1 ml-1.5 align-middle">
+                                    <button
+                                      type="button"
+                                      onClick={() => setHistoryTarget({ table: 'event_rsvps', recordId: p.id, title: `${p.student_name} (Carpool)` })}
+                                      className="p-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
+                                      title="View History"
+                                    >
+                                      <History className="w-3 h-3" />
+                                    </button>
+                                    {(isAdmin || p.user_id === profile.id) && (
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          await softDeleteRecord({
+                                            actor: profile,
+                                            category: 'Carpool',
+                                            table: 'event_rsvps',
+                                            recordId: p.id,
+                                            recordTitle: `${p.student_name} (${event.event_name})`,
+                                          });
+                                          onRefresh('Removed carpool entry from web view (kept in Supabase).');
+                                        }}
+                                        className="p-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                        title="Delete from web (kept in Supabase)"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -1068,6 +1335,69 @@ export default function EventOperationsModal({
           )}
         </div>
       </div>
+
+      {editingFee && (
+        <div className="fixed inset-0 z-[55] flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-emerald-200">
+            <div className="bg-emerald-800 text-white px-5 py-3.5 flex items-center justify-between">
+              <h3 className="text-sm font-bold">Edit Fee Payment</h3>
+              <button type="button" onClick={() => setEditingFee(null)} className="text-emerald-200 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveEditFee} className="p-5 space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Student Name *</label>
+                  <input type="text" value={editFeeName} onChange={(e) => setEditFeeName(e.target.value)} className="w-full rounded-xl border px-3 py-2 font-bold" required />
+                </div>
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Matric No *</label>
+                  <input type="text" value={editFeeMatric} onChange={(e) => setEditFeeMatric(e.target.value)} className="w-full rounded-xl border px-3 py-2 font-mono" required />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Phone</label>
+                  <input type="text" value={editFeePhone} onChange={(e) => setEditFeePhone(e.target.value)} className="w-full rounded-xl border px-3 py-2 font-mono" />
+                </div>
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Amount Paid (RM) *</label>
+                  <input type="number" step="0.01" value={editFeeAmount} onChange={(e) => setEditFeeAmount(e.target.value)} className="w-full rounded-xl border px-3 py-2 font-bold" required />
+                </div>
+              </div>
+              {isAdmin && (
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Verification Status</label>
+                  <select value={editFeeStatus} onChange={(e) => setEditFeeStatus(e.target.value as 'Verified' | 'Pending' | 'Rejected')} className="w-full rounded-xl border bg-white px-3 py-2 font-bold">
+                    <option value="Verified">Verified</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="block font-bold text-emerald-900 mb-1">Replace Receipt File (Optional)</label>
+                <input type="file" accept="image/*,application/pdf" onChange={(e) => setEditFeeFile(e.target.files?.[0] || null)} className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:font-bold file:bg-emerald-600 file:text-white cursor-pointer" />
+              </div>
+              {editFeeError && <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 font-semibold">{editFeeError}</div>}
+              <div className="flex justify-end gap-2 pt-2 border-t">
+                <button type="button" onClick={() => setEditingFee(null)} className="px-4 py-2 rounded-xl font-semibold text-slate-600 cursor-pointer">Cancel</button>
+                <button type="submit" disabled={savingEditFee} className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer">
+                  {savingEditFee && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>Save Fee Changes</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <RecordHistoryModal
+        target={historyTarget}
+        logs={logs}
+        onClose={() => setHistoryTarget(null)}
+      />
     </div>
   );
 }

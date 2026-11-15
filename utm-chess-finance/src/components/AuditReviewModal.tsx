@@ -1,7 +1,23 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { supabase, Claim, Budget, UserProfile, MAX_FILE_SIZE_BYTES, downloadFileFromUrl, logActivity } from '@/lib/supabase';
+import {
+  supabase,
+  Claim,
+  Budget,
+  UserProfile,
+  ActivityLogEntry,
+  DEFAULT_DEPARTMENTS,
+  MAX_FILE_SIZE_BYTES,
+  downloadFileFromUrl,
+  logActivity,
+} from '@/lib/supabase';
+import {
+  computeFieldChanges,
+  recordEditHistory,
+  softDeleteRecord,
+  getRecordHistory,
+} from '@/lib/history';
 import {
   X,
   CheckCircle2,
@@ -21,11 +37,18 @@ import {
   Download,
   ZoomIn,
   Sparkles,
+  Edit3,
+  Trash2,
+  History,
+  ArrowRight,
 } from 'lucide-react';
 
 interface AuditReviewModalProps {
   claim: Claim | null;
   budget: Budget | undefined;
+  budgets?: Budget[];
+  departments?: string[];
+  logs?: ActivityLogEntry[];
   profile: UserProfile;
   /** True only for the club Owner (President / Advisor) acting in Owner mode. */
   isOwner?: boolean;
@@ -40,6 +63,9 @@ interface AuditReviewModalProps {
 export default function AuditReviewModal({
   claim,
   budget,
+  budgets = [],
+  departments = DEFAULT_DEPARTMENTS,
+  logs = [],
   profile,
   isOwner = false,
   isClaimantOwner = false,
@@ -55,6 +81,22 @@ export default function AuditReviewModal({
     null
   );
 
+  // Edit & soft-delete state
+  const [isEditingClaim, setIsEditingClaim] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editExpenseDate, setEditExpenseDate] = useState('');
+  const [editMerchant, setEditMerchant] = useState('');
+  const [editBudgetId, setEditBudgetId] = useState<string>('GENERAL');
+  const [editPaymentInfo, setEditPaymentInfo] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editStatus, setEditStatus] = useState<'Pending' | 'Approved' | 'Rejected'>('Pending');
+  const [editReceiptFile, setEditReceiptFile] = useState<File | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [confirmDeleteClaim, setConfirmDeleteClaim] = useState(false);
+  const [deletingClaim, setDeletingClaim] = useState(false);
+
   useEffect(() => {
     if (claim) {
       setRemarks(
@@ -65,8 +107,20 @@ export default function AuditReviewModal({
       setPayoutFile(null);
       setErrorMsg(null);
       setFullImageOpen(false);
+      setIsEditingClaim(false);
+      setConfirmDeleteClaim(false);
+      setEditTitle(claim.title || '');
+      setEditCategory(claim.category || departments[0] || 'Member');
+      setEditAmount(String(claim.amount ?? ''));
+      setEditExpenseDate(claim.expense_date || '');
+      setEditMerchant(claim.merchant_name || '');
+      setEditBudgetId(claim.budget_id || 'GENERAL');
+      setEditPaymentInfo(claim.payment_info || '');
+      setEditDescription(claim.description || '');
+      setEditStatus(claim.status || 'Pending');
+      setEditReceiptFile(null);
     }
-  }, [claim]);
+  }, [claim, departments]);
 
   if (!claim) return null;
 
@@ -75,6 +129,8 @@ export default function AuditReviewModal({
   const verifiedBy = claim.treasurer_verified_by || '';
   const stage1Done = Boolean(verifiedBy);
   const isOwnClaim = claim.user_id === profile.id;
+  const canEditOrDelete = isTreasurer || isOwnClaim;
+  const claimHistory = getRecordHistory('claims', claim.id, logs);
   const isOwnerClaim = Boolean(
     isClaimantOwner || (isOwnClaim && (isOwner || profile.role === 'owner'))
   );
@@ -157,6 +213,16 @@ export default function AuditReviewModal({
         'Claim verified (Stage 1)',
         `${myLabel} verified claim "${claim.title}" of RM ${Number(claim.amount).toFixed(2)} by ${claim.claimant_name}. Awaiting President/Advisor approval.`
       );
+      void recordEditHistory({
+        actor: profile,
+        category: 'Claims',
+        table: 'claims',
+        recordId: claim.id,
+        recordTitle: claim.title,
+        changes: computeFieldChanges([
+          { field: 'Stage 1 Verification', before: claim.treasurer_verified_by || '(pending)', after: myLabel },
+        ]),
+      });
       onUpdated('Stage 1 done — sent to President / Advisor for final approval.');
       onClose();
     } finally {
@@ -249,6 +315,17 @@ export default function AuditReviewModal({
         ).toFixed(2)} by ${claim.claimant_name} (${claim.matric_no})` +
           (remarks.trim() ? ` — "${remarks.trim()}"` : '')
       );
+      void recordEditHistory({
+        actor: profile,
+        category: 'Claims',
+        table: 'claims',
+        recordId: claim.id,
+        recordTitle: claim.title,
+        changes: computeFieldChanges([
+          { field: 'Status', before: claim.status, after: decision },
+          { field: 'Review Remarks', before: claim.review_remarks || '', after: remarkText },
+        ]),
+      });
       onUpdated(`Claim ${decision.toLowerCase()}!`);
       onClose();
     } catch (err: unknown) {
@@ -287,25 +364,360 @@ export default function AuditReviewModal({
     }
   };
 
+  const handleSaveClaimEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canEditOrDelete) return;
+    setErrorMsg(null);
+    const nextAmt = parseFloat(editAmount);
+    if (!editTitle.trim() || isNaN(nextAmt) || nextAmt <= 0) {
+      setErrorMsg('Please provide a valid title and RM amount.');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      let nextReceiptUrl = claim.receipt_url;
+      let nextReceiptName = claim.receipt_file_name;
+      if (editReceiptFile) {
+        if (editReceiptFile.size > MAX_FILE_SIZE_BYTES) {
+          setErrorMsg('Receipt file must be under 50 MB.');
+          return;
+        }
+        const ext = editReceiptFile.name.split('.').pop() || 'jpg';
+        const path = `claims/${claim.user_id}/${Date.now()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from('receipts').upload(path, editReceiptFile);
+        if (!upErr) {
+          nextReceiptUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
+          nextReceiptName = editReceiptFile.name;
+        } else {
+          nextReceiptUrl = await new Promise<string>((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(String(r.result || ''));
+            r.onerror = () => reject(upErr);
+            r.readAsDataURL(editReceiptFile);
+          });
+          nextReceiptName = editReceiptFile.name;
+        }
+      }
+
+      const nextBudgetId = editBudgetId === 'GENERAL' ? null : editBudgetId;
+      const effectiveStatus = isTreasurer ? editStatus : claim.status;
+
+      const coreUpdate: Record<string, unknown> = {
+        title: editTitle.trim(),
+        category: editCategory.trim() || claim.category,
+        amount: nextAmt,
+        expense_date: editExpenseDate || claim.expense_date,
+        merchant_name: editMerchant.trim() || claim.merchant_name,
+        budget_id: nextBudgetId,
+        description: editDescription.trim(),
+        receipt_url: nextReceiptUrl,
+        receipt_file_name: nextReceiptName,
+        status: effectiveStatus,
+      };
+      const fullUpdate: Record<string, unknown> = {
+        ...coreUpdate,
+        payment_info: editPaymentInfo.trim(),
+      };
+
+      let saved = false;
+      let lastErr: unknown = null;
+      for (const payload of [fullUpdate, coreUpdate]) {
+        const { error } = await supabase.from('claims').update(payload).eq('id', claim.id);
+        if (!error) {
+          saved = true;
+          break;
+        }
+        lastErr = error;
+      }
+      if (!saved) throw lastErr;
+
+      // Keep budget spent_amount synchronized if amount or status changed for Approved claims
+      if (budget && claim.status === 'Approved' && effectiveStatus === 'Approved' && nextAmt !== Number(claim.amount)) {
+        const diff = nextAmt - Number(claim.amount);
+        await supabase
+          .from('budgets')
+          .update({ spent_amount: Math.max(0, Number(budget.spent_amount) + diff) })
+          .eq('id', budget.id);
+      } else if (budget && claim.status === 'Approved' && effectiveStatus !== 'Approved') {
+        await supabase
+          .from('budgets')
+          .update({ spent_amount: Math.max(0, Number(budget.spent_amount) - Number(claim.amount)) })
+          .eq('id', budget.id);
+      } else if (budget && claim.status !== 'Approved' && effectiveStatus === 'Approved') {
+        await supabase
+          .from('budgets')
+          .update({ spent_amount: Number(budget.spent_amount) + nextAmt })
+          .eq('id', budget.id);
+      }
+
+      const oldEventName = budgets.find((b) => b.id === claim.budget_id)?.event_name || claim.custom_event_name || 'General Club Expense';
+      const newEventName = budgets.find((b) => b.id === nextBudgetId)?.event_name || 'General Club Expense';
+
+      const changes = computeFieldChanges([
+        { field: 'Title', before: claim.title, after: editTitle.trim() },
+        { field: 'Department', before: claim.category, after: editCategory.trim() || claim.category },
+        { field: 'Amount (RM)', before: Number(claim.amount).toFixed(2), after: nextAmt.toFixed(2) },
+        { field: 'Expense Date', before: claim.expense_date, after: editExpenseDate || claim.expense_date },
+        { field: 'Merchant', before: claim.merchant_name, after: editMerchant.trim() || claim.merchant_name },
+        { field: 'Activity / Event', before: oldEventName, after: newEventName },
+        { field: 'Bank / DuitNow', before: claim.payment_info || '', after: editPaymentInfo.trim() },
+        { field: 'Description', before: claim.description || '', after: editDescription.trim() },
+        { field: 'Status', before: claim.status, after: effectiveStatus },
+        ...(editReceiptFile ? [{ field: 'Receipt File', before: claim.receipt_file_name, after: nextReceiptName }] : []),
+      ]);
+
+      void recordEditHistory({
+        actor: profile,
+        category: 'Claims',
+        table: 'claims',
+        recordId: claim.id,
+        recordTitle: editTitle.trim(),
+        changes,
+      });
+
+      setIsEditingClaim(false);
+      onUpdated(`Updated claim "${editTitle.trim()}"!`);
+      onClose();
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Could not update claim.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleSoftDeleteClaim = async () => {
+    if (!canEditOrDelete) return;
+    setDeletingClaim(true);
+    try {
+      if (claim.status === 'Approved' && budget) {
+        await supabase
+          .from('budgets')
+          .update({ spent_amount: Math.max(0, Number(budget.spent_amount) - Number(claim.amount)) })
+          .eq('id', budget.id);
+      }
+      await softDeleteRecord({
+        actor: profile,
+        category: 'Claims',
+        table: 'claims',
+        recordId: claim.id,
+        recordTitle: claim.title,
+        extraSummary: `RM ${Number(claim.amount).toFixed(2)} by ${claim.claimant_name}`,
+      });
+      onUpdated(`Removed claim "${claim.title}" from web view (record kept in Supabase).`);
+      onClose();
+    } finally {
+      setDeletingClaim(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 backdrop-blur-xs p-4 overflow-y-auto">
       <div className="bg-white rounded-3xl shadow-2xl border border-emerald-200 max-w-3xl w-full overflow-hidden my-8">
-        <div className="bg-emerald-800 text-white px-6 py-4 flex items-center justify-between">
-          <div>
+        <div className="bg-emerald-800 text-white px-6 py-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <span className="text-[11px] uppercase tracking-wider text-amber-300 font-bold">
               Claim Details &amp; Reimbursement Proof
             </span>
-            <h2 className="text-base font-bold mt-0.5">{claim.title}</h2>
+            <h2 className="text-base font-bold mt-0.5 truncate">{claim.title}</h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-emerald-200 hover:text-white cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {canEditOrDelete && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingClaim((v) => !v)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer ${
+                    isEditingClaim ? 'bg-amber-400 text-slate-950' : 'bg-white/15 hover:bg-white/25 text-white'
+                  }`}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>{isEditingClaim ? 'Close Edit' : 'Edit'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteClaim((v) => !v)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white text-xs font-bold cursor-pointer"
+                  title="Delete from web (kept in Supabase)"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-emerald-200 hover:text-white cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
+        {confirmDeleteClaim && (
+          <div className="bg-rose-50 border-b border-rose-200 px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="text-rose-900 font-semibold">
+              Remove &ldquo;{claim.title}&rdquo; from web view? (The row remains stored in Supabase unless manually deleted there.)
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteClaim(false)}
+                className="px-3 py-1 rounded-lg bg-white border border-slate-200 font-bold text-slate-700 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingClaim}
+                onClick={handleSoftDeleteClaim}
+                className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer"
+              >
+                {deletingClaim ? 'Removing...' : 'Confirm Remove from Web'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isEditingClaim ? (
+          <form onSubmit={handleSaveClaimEdit} className="p-6 space-y-3 text-xs max-h-[82vh] overflow-y-auto">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-emerald-900 mb-1">Claim Title *</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full rounded-xl border border-emerald-300 px-3 py-2 font-bold"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-emerald-900 mb-1">Amount (RM) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                  className="w-full rounded-xl border border-emerald-300 px-3 py-2 font-bold"
+                  required
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block font-bold text-emerald-900 mb-1">Expense Date</label>
+                <input
+                  type="date"
+                  value={editExpenseDate}
+                  onChange={(e) => setEditExpenseDate(e.target.value)}
+                  className="w-full rounded-xl border border-emerald-300 px-3 py-2"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-emerald-900 mb-1">Merchant</label>
+                <input
+                  type="text"
+                  value={editMerchant}
+                  onChange={(e) => setEditMerchant(e.target.value)}
+                  className="w-full rounded-xl border border-emerald-300 px-3 py-2"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-emerald-900 mb-1">Department</label>
+                <select
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value)}
+                  className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
+                >
+                  {departments.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-bold text-emerald-900 mb-1">Related Activity / Event</label>
+                <select
+                  value={editBudgetId}
+                  onChange={(e) => setEditBudgetId(e.target.value)}
+                  className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2"
+                >
+                  <option value="GENERAL">General Club Expense</option>
+                  {budgets.map((b) => (
+                    <option key={b.id} value={b.id}>{b.event_name}</option>
+                  ))}
+                </select>
+              </div>
+              {isTreasurer && (
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Claim Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as 'Pending' | 'Approved' | 'Rejected')}
+                    className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-bold"
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="block font-bold text-emerald-900 mb-1">Bank / DuitNow / TNG Info</label>
+              <input
+                type="text"
+                value={editPaymentInfo}
+                onChange={(e) => setEditPaymentInfo(e.target.value)}
+                placeholder="Bank Name • Account No (Holder)"
+                className="w-full rounded-xl border border-emerald-300 px-3 py-2 font-mono"
+              />
+            </div>
+            <div>
+              <label className="block font-bold text-emerald-900 mb-1">Description / Notes</label>
+              <textarea
+                rows={2}
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                className="w-full rounded-xl border border-emerald-300 px-3 py-2"
+              />
+            </div>
+            <div>
+              <label className="block font-bold text-emerald-900 mb-1">Replace Receipt File (Optional)</label>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setEditReceiptFile(e.target.files?.[0] || null)}
+                className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+              />
+            </div>
+            {errorMsg && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">
+                {errorMsg}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setIsEditingClaim(false)}
+                className="px-4 py-2 rounded-xl font-semibold text-slate-600 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingEdit}
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+              >
+                {savingEdit && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>Save Claim Changes</span>
+              </button>
+            </div>
+          </form>
+        ) : (
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[82vh] overflow-y-auto">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -750,8 +1162,51 @@ export default function AuditReviewModal({
                 )}
               </div>
             )}
+
+            {/* Edit & Audit History for this Claim */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2 text-xs">
+              <div className="flex items-center justify-between font-extrabold text-slate-800">
+                <span className="flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>Edit History ({claimHistory.length})</span>
+                </span>
+              </div>
+              {claimHistory.length === 0 ? (
+                <p className="text-[11px] text-slate-400">No edits recorded yet.</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {claimHistory.map((ev) => (
+                    <div key={ev.id} className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1">
+                      <div className="flex justify-between gap-2 text-[11px]">
+                        <span className="font-bold text-slate-900">
+                          {ev.actorName} ({ev.action})
+                        </span>
+                        <span className="font-mono text-slate-400">
+                          {new Date(ev.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                      {ev.changes.length > 0 ? (
+                        <div className="space-y-1">
+                          {ev.changes.map((c, idx) => (
+                            <div key={idx} className="flex flex-wrap items-center gap-1 text-[10px]">
+                              <span className="font-bold text-slate-700">{c.field}:</span>
+                              <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 line-through">{c.before}</span>
+                              <ArrowRight className="w-2.5 h-2.5 text-slate-400" />
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold">{c.after}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-600">{ev.summary}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+        )}
       </div>
 
       {fullImageOpen && !isPdf && claim.receipt_url && (

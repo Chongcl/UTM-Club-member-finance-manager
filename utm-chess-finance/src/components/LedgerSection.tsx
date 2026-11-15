@@ -8,10 +8,13 @@ import {
   EventRsvp,
   Claim,
   ActivityFeePayment,
+  ActivityLogEntry,
   MAX_FILE_SIZE_BYTES,
   exportMultiSheetExcel,
   logActivity,
 } from '@/lib/supabase';
+import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
+import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import {
   Wallet,
   TrendingUp,
@@ -26,6 +29,7 @@ import {
   Trash2,
   RefreshCw,
   FileSpreadsheet,
+  History,
 } from 'lucide-react';
 
 export interface LedgerEntryItem {
@@ -50,6 +54,7 @@ interface LedgerSectionProps {
   rsvps?: EventRsvp[];
   claims: Claim[];
   feePayments?: ActivityFeePayment[];
+  logs?: ActivityLogEntry[];
   profile: UserProfile;
   canEdit?: boolean;
   externalOpenModal?: boolean;
@@ -84,6 +89,7 @@ export default function LedgerSection({
   rsvps = [],
   claims,
   feePayments = [],
+  logs = [],
   profile,
   canEdit = true,
   externalOpenModal = false,
@@ -91,6 +97,11 @@ export default function LedgerSection({
   onSelectClaim,
   onRefresh,
 }: LedgerSectionProps) {
+  const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
+  const [editingFeeItem, setEditingFeeItem] = useState<ActivityFeePayment | null>(null);
+  const [editFeeAmount, setEditFeeAmount] = useState('');
+  const [editFeeStatus, setEditFeeStatus] = useState<'Verified' | 'Pending' | 'Rejected'>('Verified');
+  const [savingFeeEdit, setSavingFeeEdit] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<'IN' | 'OUT' | 'SET_SAVINGS'>('IN');
   const [editingEntry, setEditingEntry] = useState<LedgerEntryItem | null>(null);
@@ -310,12 +321,22 @@ export default function LedgerSection({
 
       if (editingEntry) {
         await saveLedgerPayloadWithFallback(payload, editingEntry.id);
-        void logActivity(
-          profile,
-          'Finance',
-          'Ledger record edited',
-          `${profile.full_name} (${profile.matric_no}) edited ${entryType === 'IN' ? 'Money In' : 'Expense Out'} "${title.trim()}" (RM ${num.toFixed(2)})`
-        );
+        const changes = computeFieldChanges([
+          { field: 'Title', before: editingEntry.title, after: payload.title },
+          { field: 'Category', before: editingEntry.category, after: payload.category },
+          { field: 'Event / Scope', before: editingEntry.event_name || '', after: payload.event_name },
+          { field: 'Amount (RM)', before: Number(editingEntry.amount).toFixed(2), after: num.toFixed(2) },
+          { field: 'Date', before: editingEntry.entry_date, after: payload.entry_date },
+          { field: 'Notes', before: editingEntry.notes || '', after: payload.notes },
+        ]);
+        void recordEditHistory({
+          actor: profile,
+          category: 'Finance',
+          table: 'ledger_entries',
+          recordId: editingEntry.id,
+          recordTitle: payload.title,
+          changes,
+        });
         onRefresh(`Updated "${title.trim()}"!`);
       } else {
         await saveLedgerPayloadWithFallback(payload);
@@ -339,14 +360,45 @@ export default function LedgerSection({
 
   const handleDeleteEntry = async (entry: LedgerEntryItem) => {
     if (!canEdit) return;
-    await supabase.from('ledger_entries').delete().eq('id', entry.id);
-    void logActivity(
-      profile,
-      'Finance',
-      'Ledger record deleted',
-      `${profile.full_name} (${profile.matric_no}) deleted ${entry.entry_type === 'IN' ? 'Money In' : 'Expense Out'} "${entry.title}" (RM ${Number(entry.amount).toFixed(2)})`
-    );
-    onRefresh(`Deleted "${entry.title}".`);
+    await softDeleteRecord({
+      actor: profile,
+      category: 'Finance',
+      table: 'ledger_entries',
+      recordId: entry.id,
+      recordTitle: entry.title,
+      extraSummary: `${entry.entry_type === 'IN' ? 'Money In' : 'Expense Out'} RM ${Number(entry.amount).toFixed(2)}`,
+    });
+    onRefresh(`Removed "${entry.title}" from web view (record kept in Supabase).`);
+  };
+
+  const handleSaveFeeQuickEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingFeeItem || !canEdit) return;
+    const nextAmt = parseFloat(editFeeAmount);
+    if (isNaN(nextAmt) || nextAmt <= 0) return;
+    setSavingFeeEdit(true);
+    try {
+      await supabase
+        .from('activity_fee_payments')
+        .update({ amount_paid: nextAmt, status: editFeeStatus })
+        .eq('id', editingFeeItem.id);
+      const changes = computeFieldChanges([
+        { field: 'Amount Paid (RM)', before: Number(editingFeeItem.amount_paid).toFixed(2), after: nextAmt.toFixed(2) },
+        { field: 'Status', before: editingFeeItem.status, after: editFeeStatus },
+      ]);
+      void recordEditHistory({
+        actor: profile,
+        category: 'Fees',
+        table: 'activity_fee_payments',
+        recordId: editingFeeItem.id,
+        recordTitle: `${editingFeeItem.student_name} fee`,
+        changes,
+      });
+      setEditingFeeItem(null);
+      onRefresh(`Updated fee record for ${editingFeeItem.student_name}!`);
+    } finally {
+      setSavingFeeEdit(false);
+    }
   };
 
   const selectedBudget = budgets.find((b) => b.id === trackerEventId);
@@ -637,14 +689,58 @@ export default function LedgerSection({
                         </td>
                         <td className="py-2 px-3">{f.status}</td>
                         <td className="py-2 px-3 text-right">
-                          <a
-                            href={f.receipt_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-emerald-700 font-bold"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5 inline" />
-                          </a>
+                          <div className="inline-flex items-center gap-1 justify-end">
+                            <a
+                              href={f.receipt_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1 rounded bg-slate-100 text-emerald-700"
+                              title="Receipt"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 inline" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => setHistoryTarget({ table: 'activity_fee_payments', recordId: f.id, title: `${f.student_name} Fee` })}
+                              className="p-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
+                              title="View History"
+                            >
+                              <History className="w-3.5 h-3.5 inline" />
+                            </button>
+                            {canEdit && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingFeeItem(f);
+                                    setEditFeeAmount(String(f.amount_paid));
+                                    setEditFeeStatus(f.status);
+                                  }}
+                                  className="p-1 rounded bg-slate-100 text-slate-800 hover:bg-emerald-50 cursor-pointer"
+                                  title="Edit Fee"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5 inline" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await softDeleteRecord({
+                                      actor: profile,
+                                      category: 'Fees',
+                                      table: 'activity_fee_payments',
+                                      recordId: f.id,
+                                      recordTitle: `${f.student_name} — RM ${Number(f.amount_paid).toFixed(2)}`,
+                                    });
+                                    onRefresh('Removed fee record from web (kept in Supabase).');
+                                  }}
+                                  className="p-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                  title="Delete from web (kept in Supabase)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 inline" />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -712,15 +808,45 @@ export default function LedgerSection({
                           )}
                         </td>
                         <td className="py-2 px-3 text-right">
-                          {onSelectClaim && (
+                          <div className="inline-flex items-center gap-1 justify-end">
                             <button
                               type="button"
-                              onClick={() => onSelectClaim(c)}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer"
+                              onClick={() => setHistoryTarget({ table: 'claims', recordId: c.id, title: c.title })}
+                              className="p-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
+                              title="View History"
                             >
-                              {c.payout_proof_url ? 'View / Edit' : 'Upload Proof'}
+                              <History className="w-3.5 h-3.5" />
                             </button>
-                          )}
+                            {onSelectClaim && (
+                              <button
+                                type="button"
+                                onClick={() => onSelectClaim(c)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer"
+                              >
+                                Edit / Review
+                              </button>
+                            )}
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await softDeleteRecord({
+                                    actor: profile,
+                                    category: 'Claims',
+                                    table: 'claims',
+                                    recordId: c.id,
+                                    recordTitle: c.title,
+                                    extraSummary: `RM ${Number(c.amount).toFixed(2)}`,
+                                  });
+                                  onRefresh('Removed claim from web (kept in Supabase).');
+                                }}
+                                className="p-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                title="Delete from web (kept in Supabase)"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -842,6 +968,14 @@ export default function LedgerSection({
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => setHistoryTarget({ table: 'ledger_entries', recordId: e.id, title: e.title })}
+                          className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
+                          title="View Edit History"
+                        >
+                          <History className="w-3.5 h-3.5" />
+                        </button>
                         {canEdit && (
                           <>
                             <button
@@ -1102,6 +1236,40 @@ export default function LedgerSection({
           </div>
         </div>
       )}
+      {editingFeeItem && canEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl border border-emerald-200">
+            <div className="bg-emerald-800 text-white px-5 py-3.5 flex items-center justify-between">
+              <h3 className="text-sm font-bold">Edit Fee — {editingFeeItem.student_name}</h3>
+              <button type="button" onClick={() => setEditingFeeItem(null)} className="cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleSaveFeeQuickEdit} className="p-5 space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-emerald-900 mb-1">Amount Paid (RM) *</label>
+                <input type="number" step="0.01" value={editFeeAmount} onChange={(e) => setEditFeeAmount(e.target.value)} className="w-full rounded-xl border border-emerald-300 px-3 py-2 font-bold" required />
+              </div>
+              <div>
+                <label className="block font-bold text-emerald-900 mb-1">Status</label>
+                <select value={editFeeStatus} onChange={(e) => setEditFeeStatus(e.target.value as 'Verified' | 'Pending' | 'Rejected')} className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-bold">
+                  <option value="Verified">Verified</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Rejected">Rejected</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setEditingFeeItem(null)} className="px-4 py-2 rounded-xl font-semibold text-slate-600 cursor-pointer">Cancel</button>
+                <button type="submit" disabled={savingFeeEdit} className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer">{savingFeeEdit ? 'Saving...' : 'Save Fee'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <RecordHistoryModal
+        target={historyTarget}
+        logs={logs}
+        onClose={() => setHistoryTarget(null)}
+      />
     </div>
   );
 }

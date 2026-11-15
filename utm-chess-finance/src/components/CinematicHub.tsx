@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, Announcement, Poll, PollVote, UserProfile, MAX_FILE_SIZE_BYTES } from '@/lib/supabase';
-import { Sparkles, ChevronLeft, ChevronRight, ExternalLink, Pin, BarChart2, PlusCircle, Trash2, X, CheckCircle2, Megaphone, Maximize2, Edit3, Eye, EyeOff } from 'lucide-react';
+import { supabase, Announcement, Poll, PollVote, UserProfile, ActivityLogEntry, MAX_FILE_SIZE_BYTES } from '@/lib/supabase';
+import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
+import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
+import { Sparkles, ChevronLeft, ChevronRight, ExternalLink, Pin, BarChart2, PlusCircle, Trash2, X, CheckCircle2, Megaphone, Maximize2, Edit3, Eye, EyeOff, History } from 'lucide-react';
 
 interface CinematicHubProps {
-  announcements: Announcement[]; polls: Poll[]; pollVotes: PollVote[]; profile: UserProfile; isAdmin: boolean; onRefresh: (msg: string) => void;
+  announcements: Announcement[]; polls: Poll[]; pollVotes: PollVote[]; logs?: ActivityLogEntry[]; profile: UserProfile; isAdmin: boolean; onRefresh: (msg: string) => void;
 }
 
-export default function CinematicHub({ announcements, polls, pollVotes, profile, isAdmin, onRefresh }: CinematicHubProps) {
+export default function CinematicHub({ announcements, polls, pollVotes, logs = [], profile, isAdmin, onRefresh }: CinematicHubProps) {
+  const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
   const carouselSlides = announcements.filter((a) => a.show_in_carousel);
   const pinnedNotices = announcements.filter((a) => a.is_pinned);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -26,6 +29,7 @@ export default function CinematicHub({ announcements, polls, pollVotes, profile,
   const [savingNotice, setSavingNotice] = useState(false);
 
   const [showPollModal, setShowPollModal] = useState(false);
+  const [editingPoll, setEditingPoll] = useState<Poll | null>(null);
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptionsText, setPollOptionsText] = useState('Option A\nOption B\nOption C');
   const [newPollShowNumbers, setNewPollShowNumbers] = useState(true);
@@ -124,6 +128,22 @@ export default function CinematicHub({ announcements, polls, pollVotes, profile,
             show_in_carousel: payload.show_in_carousel,
           }).eq('id', editingNotice.id);
         }
+        const changes = computeFieldChanges([
+          { field: 'Title', before: editingNotice.title, after: payload.title },
+          { field: 'Badge', before: editingNotice.subtitle, after: payload.subtitle },
+          { field: 'Content', before: editingNotice.content, after: payload.content },
+          { field: 'External Link', before: editingNotice.external_link, after: payload.external_link },
+          { field: 'Show in Banner', before: editingNotice.show_in_carousel, after: payload.show_in_carousel },
+          { field: 'Pinned Notice', before: editingNotice.is_pinned, after: payload.is_pinned },
+        ]);
+        void recordEditHistory({
+          actor: profile,
+          category: 'Activities',
+          table: 'announcements',
+          recordId: editingNotice.id,
+          recordTitle: payload.title,
+          changes,
+        });
       } else {
         await supabase.from('announcements').insert(payload);
       }
@@ -136,11 +156,40 @@ export default function CinematicHub({ announcements, polls, pollVotes, profile,
     }
   };
 
+  const openEditPollModal = (poll: Poll) => {
+    setEditingPoll(poll);
+    setPollQuestion(cleanPollQuestion(poll.question));
+    setPollOptionsText((poll.options || []).join('\n'));
+    setNewPollShowNumbers(!isPollNumbersHidden(poll));
+    setShowPollModal(true);
+  };
+
   const handleCreatePoll = async (e: React.FormEvent) => {
     e.preventDefault();
     const opts = pollOptionsText.split('\n').map((s) => s.trim()).filter(Boolean);
     if (!pollQuestion.trim() || opts.length < 2) return;
     const finalQuestion = newPollShowNumbers ? pollQuestion.trim() : `[HIDE_NUM] ${pollQuestion.trim()}`;
+    if (editingPoll) {
+      await supabase.from('polls').update({ question: finalQuestion, options: opts }).eq('id', editingPoll.id);
+      const changes = computeFieldChanges([
+        { field: 'Question', before: cleanPollQuestion(editingPoll.question), after: pollQuestion.trim() },
+        { field: 'Options', before: (editingPoll.options || []).join(', '), after: opts.join(', ') },
+        { field: 'Show Live Numbers', before: !isPollNumbersHidden(editingPoll), after: newPollShowNumbers },
+      ]);
+      void recordEditHistory({
+        actor: profile,
+        category: 'Activities',
+        table: 'polls',
+        recordId: editingPoll.id,
+        recordTitle: pollQuestion.trim(),
+        changes,
+      });
+      setEditingPoll(null);
+      setPollQuestion('');
+      setShowPollModal(false);
+      onRefresh('Poll updated!');
+      return;
+    }
     await supabase.from('polls').insert({ question: finalQuestion, options: opts, is_active: true, created_by: profile.full_name });
     setPollQuestion(''); setShowPollModal(false); onRefresh('Poll published!');
   };
@@ -159,10 +208,13 @@ export default function CinematicHub({ announcements, polls, pollVotes, profile,
               <div className="flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
                 {isAdmin && (
                   <>
+                    <button type="button" onClick={() => setHistoryTarget({ table: 'announcements', recordId: activeSlide.id, title: activeSlide.title })} className="p-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white shadow-md cursor-pointer" title="History">
+                      <History className="w-3.5 h-3.5" />
+                    </button>
                     <button type="button" onClick={() => openEditPosterModal(activeSlide)} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 flex items-center gap-1 shadow-md cursor-pointer">
                       <Edit3 className="w-3.5 h-3.5" /><span>Edit Poster</span>
                     </button>
-                    <button type="button" onClick={async () => { await supabase.from('announcements').delete().eq('id', activeSlide.id); onRefresh('Poster deleted.'); }} className="p-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white shadow-md cursor-pointer" title="Delete Poster">
+                    <button type="button" onClick={async () => { await softDeleteRecord({ actor: profile, category: 'Activities', table: 'announcements', recordId: activeSlide.id, recordTitle: activeSlide.title }); onRefresh('Poster hidden from web (kept in Supabase).'); }} className="p-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white shadow-md cursor-pointer" title="Delete from web (kept in Supabase)">
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                     <button type="button" onClick={openCreatePosterModal} className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md cursor-pointer">+ Add Poster</button>
@@ -207,8 +259,9 @@ export default function CinematicHub({ announcements, polls, pollVotes, profile,
                 </div>
                 {isAdmin && (
                   <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <button type="button" onClick={() => openEditPosterModal(n)} className="p-1 text-slate-500 hover:text-slate-900 cursor-pointer"><Edit3 className="w-3.5 h-3.5" /></button>
-                    <button type="button" onClick={async () => { await supabase.from('announcements').delete().eq('id', n.id); onRefresh('Deleted.'); }} className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => setHistoryTarget({ table: 'announcements', recordId: n.id, title: n.title })} className="p-1 text-slate-500 hover:text-slate-900 cursor-pointer" title="History"><History className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => openEditPosterModal(n)} className="p-1 text-slate-500 hover:text-slate-900 cursor-pointer" title="Edit"><Edit3 className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={async () => { await softDeleteRecord({ actor: profile, category: 'Activities', table: 'announcements', recordId: n.id, recordTitle: n.title }); onRefresh('Hidden from web (kept in Supabase).'); }} className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer" title="Delete from web (kept in Supabase)"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
                 )}
               </div>
@@ -219,7 +272,7 @@ export default function CinematicHub({ announcements, polls, pollVotes, profile,
         <div className="lg:col-span-5 bg-white/85 backdrop-blur-xl rounded-3xl border border-white/80 p-5 space-y-3 shadow-xs">
           <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
             <div className="flex items-center gap-2"><BarChart2 className="w-4 h-4 text-emerald-600" /><h3 className="text-sm font-extrabold">Polls</h3></div>
-            {isAdmin && <button type="button" onClick={() => setShowPollModal(true)} className="px-3 py-1 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer">+ New Poll</button>}
+            {isAdmin && <button type="button" onClick={() => { setEditingPoll(null); setPollQuestion(''); setPollOptionsText('Option A\nOption B\nOption C'); setNewPollShowNumbers(true); setShowPollModal(true); }} className="px-3 py-1 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer">+ New Poll</button>}
           </div>
           <div className="space-y-3 max-h-[240px] overflow-y-auto">
             {polls.map((poll) => {
@@ -245,7 +298,9 @@ export default function CinematicHub({ announcements, polls, pollVotes, profile,
                           {hideNumbers ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                           <span>{hideNumbers ? 'Numbers Hidden' : 'Live Numbers'}</span>
                         </button>
-                        <button type="button" onClick={async () => { await supabase.from('polls').delete().eq('id', poll.id); onRefresh('Poll deleted.'); }} className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => setHistoryTarget({ table: 'polls', recordId: poll.id, title: cleanPollQuestion(poll.question) })} className="p-1 text-slate-500 hover:text-slate-900 cursor-pointer" title="History"><History className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => openEditPollModal(poll)} className="p-1 text-slate-500 hover:text-slate-900 cursor-pointer" title="Edit Poll"><Edit3 className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={async () => { await softDeleteRecord({ actor: profile, category: 'Activities', table: 'polls', recordId: poll.id, recordTitle: cleanPollQuestion(poll.question) }); onRefresh('Poll hidden from web (kept in Supabase).'); }} className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer" title="Delete from web (kept in Supabase)"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     )}
                   </div>
@@ -345,7 +400,7 @@ export default function CinematicHub({ announcements, polls, pollVotes, profile,
       {showPollModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
           <div className="bg-white text-slate-900 rounded-3xl max-w-md w-full overflow-hidden">
-            <div className="bg-slate-900 text-white px-6 py-4 flex justify-between"><h3 className="text-sm font-bold">Create Poll</h3><button type="button" onClick={() => setShowPollModal(false)}><X className="w-5 h-5" /></button></div>
+            <div className="bg-slate-900 text-white px-6 py-4 flex justify-between"><h3 className="text-sm font-bold">{editingPoll ? 'Edit Poll' : 'Create Poll'}</h3><button type="button" onClick={() => { setShowPollModal(false); setEditingPoll(null); }}><X className="w-5 h-5" /></button></div>
             <form onSubmit={handleCreatePoll} className="p-6 space-y-3 text-xs">
               <input type="text" value={pollQuestion} onChange={(e) => setPollQuestion(e.target.value)} placeholder="Question *" className="w-full rounded-xl border px-3 py-2 text-sm font-bold" required />
               <textarea rows={4} value={pollOptionsText} onChange={(e) => setPollOptionsText(e.target.value)} placeholder="1 option per line *" className="w-full rounded-xl border px-3 py-2" required />
@@ -353,11 +408,17 @@ export default function CinematicHub({ announcements, polls, pollVotes, profile,
                 <input type="checkbox" checked={newPollShowNumbers} onChange={(e) => setNewPollShowNumbers(e.target.checked)} />
                 <span>Show live vote numbers to members</span>
               </label>
-              <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setShowPollModal(false)} className="px-4 py-2">Cancel</button><button type="submit" className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold">Publish</button></div>
+              <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => { setShowPollModal(false); setEditingPoll(null); }} className="px-4 py-2">Cancel</button><button type="submit" className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold">{editingPoll ? 'Save Changes' : 'Publish'}</button></div>
             </form>
           </div>
         </div>
       )}
+
+      <RecordHistoryModal
+        target={historyTarget}
+        logs={logs}
+        onClose={() => setHistoryTarget(null)}
+      />
     </div>
   );
 }

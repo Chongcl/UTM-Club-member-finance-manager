@@ -38,6 +38,13 @@ import EventOperationsModal from '@/components/EventOperationsModal';
 import QrScannerModal from '@/components/QrScannerModal';
 import LedgerSection, { LedgerEntryItem } from '@/components/LedgerSection';
 import ActivityLogSection from '@/components/ActivityLogSection';
+import RecordHistoryModal, { HistoryModalTarget } from '@/components/RecordHistoryModal';
+import {
+  filterActiveRecords,
+  softDeleteRecord,
+  computeFieldChanges,
+  recordEditHistory,
+} from '@/lib/history';
 import { normalizeEquipmentItem, normalizeEquipmentLoan } from '@/lib/equipment';
 import {
   Calendar,
@@ -64,6 +71,7 @@ import {
   FileText,
   FileSpreadsheet,
   ExternalLink,
+  History,
 } from 'lucide-react';
 
 interface ConfirmDialogState {
@@ -222,6 +230,7 @@ export default function Page() {
   const [opsModalTab, setOpsModalTab] = useState<'fee' | 'transport' | 'qr' | 'pass'>('pass');
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
   const [quickAdjustFinanceOpen, setQuickAdjustFinanceOpen] = useState(false);
+  const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -346,7 +355,7 @@ export default function Page() {
       supabase.from('announcements').select('*').order('created_at', { ascending: false }),
       supabase.from('polls').select('*').order('created_at', { ascending: false }),
       supabase.from('poll_votes').select('*'),
-      supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(250),
+      supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(1000),
     ]);
     if (bRes.data) setBudgets(bRes.data as Budget[]);
     if (cRes.data) setClaims(cRes.data as Claim[]);
@@ -518,10 +527,20 @@ export default function Page() {
     fetchAllData();
   };
 
+  const activeBudgets = filterActiveRecords('budgets', budgets, activityLogs);
+  const activeClaims = filterActiveRecords('claims', claims, activityLogs);
+  const activeFeePayments = filterActiveRecords('activity_fee_payments', feePayments, activityLogs);
+  const activeEquipmentItems = filterActiveRecords('equipment_items', equipmentItems, activityLogs);
+  const activeEquipmentLoans = filterActiveRecords('equipment_loans', equipmentLoans, activityLogs);
+  const activeLedgerEntries = filterActiveRecords('ledger_entries', ledgerEntries, activityLogs);
+  const activeAnnouncements = filterActiveRecords('announcements', announcements, activityLogs);
+  const activePolls = filterActiveRecords('polls', polls, activityLogs);
+  const activeRsvps = filterActiveRecords('event_rsvps', rsvps, activityLogs);
+
   const handleExportSingleEventExcel = async (ev: Budget) => {
-    const evPayments = feePayments.filter((f) => f.budget_id === ev.id);
-    const evClaims = claims.filter((c) => c.budget_id === ev.id);
-    const evRsvps = rsvps.filter((r) => r.budget_id === ev.id);
+    const evPayments = activeFeePayments.filter((f) => f.budget_id === ev.id);
+    const evClaims = activeClaims.filter((c) => c.budget_id === ev.id);
+    const evRsvps = activeRsvps.filter((r) => r.budget_id === ev.id);
     const evAttending = evRsvps.filter((r) => r.attendance === 'Attending');
     const evApprovedClaims = evClaims.filter((c) => c.status === 'Approved');
     const feesTotal = evPayments
@@ -960,8 +979,8 @@ export default function Page() {
     );
   }
 
-  const visibleBudgets = budgets.filter((b) => activityTimeFilter === 'All' || b.status === activityTimeFilter);
-  const visibleClaims = claims.filter((c) => isAdminOrOwner || c.user_id === profile.id);
+  const visibleBudgets = activeBudgets.filter((b) => activityTimeFilter === 'All' || b.status === activityTimeFilter);
+  const visibleClaims = activeClaims.filter((c) => isAdminOrOwner || c.user_id === profile.id);
   const isUserClubOwner = (userId?: string) =>
     Boolean(
       userId &&
@@ -1017,7 +1036,7 @@ export default function Page() {
           onToggleDarkMode={toggleDarkMode}
           canCustomizeTheme={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
           onOpenThemeStudio={() => setShowThemeStudio(true)}
-          pendingClaimsCount={isAdminOrOwner ? claims.filter((c) => c.status === 'Pending').length : 0}
+          pendingClaimsCount={isAdminOrOwner ? activeClaims.filter((c) => c.status === 'Pending').length : 0}
           onUnlockAdmin={handleUnlockAdmin}
           onSwitchMode={handleSwitchMode}
           onSignOut={async () => {
@@ -1057,11 +1076,12 @@ export default function Page() {
           {activeTab === 'activities' && (
             <div className="space-y-8">
               <CinematicHub
-                announcements={announcements}
-                polls={polls}
+                announcements={activeAnnouncements}
+                polls={activePolls}
                 pollVotes={pollVotes}
                 profile={profile}
                 isAdmin={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
+                logs={activityLogs}
                 onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
@@ -1117,14 +1137,14 @@ export default function Page() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   {visibleBudgets.map((ev) => {
-                    const myRsvp = rsvps.find((r) => r.budget_id === ev.id && r.user_id === profile.id);
+                    const myRsvp = activeRsvps.find((r) => r.budget_id === ev.id && r.user_id === profile.id);
                     const isAttending = myRsvp?.attendance === 'Attending';
                     const isNotAttending = myRsvp?.attendance === 'Not Attending';
-                    const qrCount = rsvps.filter((r) => r.budget_id === ev.id && r.qr_checked_in).length;
-                    const paxCount = rsvps.filter(
+                    const qrCount = activeRsvps.filter((r) => r.budget_id === ev.id && r.qr_checked_in).length;
+                    const paxCount = activeRsvps.filter(
                       (r) => r.budget_id === ev.id && r.attendance === 'Attending' && r.transport_type !== 'None' && !r.is_driver
                     ).length;
-                    const drvCount = rsvps.filter((r) => r.budget_id === ev.id && r.is_driver).length;
+                    const drvCount = activeRsvps.filter((r) => r.budget_id === ev.id && r.is_driver).length;
 
                     const reqFee = Number(ev.registration_fee || 0);
                     const requiresFee = reqFee > 0;
@@ -1163,6 +1183,23 @@ export default function Page() {
                                   <>
                                     <button
                                       type="button"
+                                      onClick={() =>
+                                        setHistoryTarget({
+                                          table: 'budgets',
+                                          recordId: ev.id,
+                                          title: ev.event_name,
+                                        })
+                                      }
+                                      className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer ${
+                                        isDarkCanvas ? 'bg-white/10 text-amber-300 hover:bg-white/20' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                      }`}
+                                      title="View edit & delete history"
+                                    >
+                                      <History className="w-3 h-3" />
+                                      <span>History</span>
+                                    </button>
+                                    <button
+                                      type="button"
                                       onClick={() => {
                                         setEditingActivity(ev);
                                         setIsBudgetModalOpen(true);
@@ -1176,12 +1213,28 @@ export default function Page() {
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={async () => {
-                                        await supabase.from('budgets').delete().eq('id', ev.id);
-                                        fetchAllData();
-                                        showToast('Activity deleted');
-                                      }}
+                                      onClick={() =>
+                                        setConfirmDialog({
+                                          title: 'Remove Activity from Web?',
+                                          message: `"${ev.event_name}" will be removed from ClubSync dashboards and lists, while its original database record remains preserved in Supabase.`,
+                                          confirmLabel: 'Remove from Web',
+                                          danger: true,
+                                          onConfirm: async () => {
+                                            await softDeleteRecord({
+                                              actor: profile,
+                                              category: 'Activities',
+                                              table: 'budgets',
+                                              recordId: ev.id,
+                                              recordTitle: ev.event_name,
+                                              extraSummary: `${ev.category} · ${ev.event_date}`,
+                                            });
+                                            fetchAllData();
+                                            showToast('Activity removed from web (kept in Supabase)');
+                                          },
+                                        })
+                                      }
                                       className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer"
+                                      title="Remove activity from web view (keeps row in Supabase)"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>
@@ -1317,6 +1370,7 @@ export default function Page() {
                               value={myRsvp?.transport_type || 'None'}
                               onChange={async (e) => {
                                 const val = e.target.value as 'None' | 'One-Way' | 'Return Trip' | 'Round Trip';
+                                const prevTransport = myRsvp?.transport_type || 'None';
                                 setRsvps((prev) =>
                                   prev.map((r) =>
                                     r.budget_id === ev.id && r.user_id === profile.id ? { ...r, transport_type: val } : r
@@ -1324,6 +1378,17 @@ export default function Page() {
                                 );
                                 if (myRsvp?.id && !myRsvp.id.startsWith('temp-')) {
                                   await supabase.from('event_rsvps').update({ transport_type: val }).eq('id', myRsvp.id);
+                                  const changes = computeFieldChanges([
+                                    { field: 'Transport Type', before: prevTransport, after: val },
+                                  ]);
+                                  await recordEditHistory({
+                                    actor: profile,
+                                    category: 'Carpool',
+                                    table: 'event_rsvps',
+                                    recordId: myRsvp.id,
+                                    recordTitle: `${profile.full_name} (${ev.event_name})`,
+                                    changes,
+                                  });
                                 }
                                 fetchAllData();
                               }}
@@ -1348,10 +1413,11 @@ export default function Page() {
           {activeTab === 'equipment' && (
             <div className="text-slate-900">
               <EquipmentSection
-                items={equipmentItems}
-                loans={equipmentLoans}
+                items={activeEquipmentItems}
+                loans={activeEquipmentLoans}
                 profile={profile}
                 isAdmin={isAdminOrOwner && effectivePermissions.can_manage_equipment}
+                logs={activityLogs}
                 onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
@@ -1463,14 +1529,79 @@ export default function Page() {
                             )}
                           </td>
                           <td className="py-3 px-4 text-right">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedClaim(c)}
-                              className="px-3 py-1 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"
-                            >
-                              <Eye className="w-3.5 h-3.5 inline mr-1" />
-                              {isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? 'Review / Proof' : 'View'}
-                            </button>
+                            <div className="inline-flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setHistoryTarget({
+                                    table: 'claims',
+                                    recordId: c.id,
+                                    title: c.title,
+                                  })
+                                }
+                                className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold cursor-pointer inline-flex items-center gap-1"
+                                title="View edit & delete history"
+                              >
+                                <History className="w-3.5 h-3.5" />
+                                <span>History</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedClaim(c)}
+                                className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>
+                                  {isAdminOrOwner && effectivePermissions.can_manage_claims_fees
+                                    ? 'Review / Edit'
+                                    : 'View / Edit'}
+                                </span>
+                              </button>
+                              {((isAdminOrOwner && effectivePermissions.can_manage_claims_fees) ||
+                                (c.user_id === profile.id && c.status !== 'Approved')) && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setConfirmDialog({
+                                      title: 'Remove Claim from Web?',
+                                      message: `"${c.title}" (RM ${Number(c.amount).toFixed(2)}) will be removed from ClubSync dashboards and tables, while its row remains preserved in Supabase.`,
+                                      confirmLabel: 'Remove from Web',
+                                      danger: true,
+                                      onConfirm: async () => {
+                                        if (c.status === 'Approved' && c.budget_id) {
+                                          const linkedBudget = activeBudgets.find((b) => b.id === c.budget_id);
+                                          if (linkedBudget) {
+                                            await supabase
+                                              .from('budgets')
+                                              .update({
+                                                spent_amount: Math.max(
+                                                  0,
+                                                  Number(linkedBudget.spent_amount) - Number(c.amount)
+                                                ),
+                                              })
+                                              .eq('id', linkedBudget.id);
+                                          }
+                                        }
+                                        await softDeleteRecord({
+                                          actor: profile,
+                                          category: 'Claims',
+                                          table: 'claims',
+                                          recordId: c.id,
+                                          recordTitle: c.title,
+                                          extraSummary: `RM ${Number(c.amount).toFixed(2)} by ${c.claimant_name}`,
+                                        });
+                                        fetchAllData();
+                                        showToast('Claim removed from web (kept in Supabase)');
+                                      },
+                                    })
+                                  }
+                                  className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 cursor-pointer"
+                                  title="Remove claim from web view (keeps row in Supabase)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1501,13 +1632,14 @@ export default function Page() {
           {activeTab === 'ledger' && isAdminOrOwner && (
             <div className="text-slate-900">
               <LedgerSection
-                entries={ledgerEntries}
-                events={budgets.map((b) => ({ id: b.id, event_name: b.event_name }))}
-                budgets={budgets}
-                rsvps={rsvps}
-                claims={claims}
-                feePayments={feePayments}
+                entries={activeLedgerEntries}
+                events={activeBudgets.map((b) => ({ id: b.id, event_name: b.event_name }))}
+                budgets={activeBudgets}
+                rsvps={activeRsvps}
+                claims={activeClaims}
+                feePayments={activeFeePayments}
                 profile={profile}
+                logs={activityLogs}
                 canEdit={effectivePermissions.can_manage_finance}
                 externalOpenModal={quickAdjustFinanceOpen}
                 onCloseExternalModal={() => setQuickAdjustFinanceOpen(false)}
@@ -1946,6 +2078,7 @@ export default function Page() {
           {activeTab === 'logs' && isAdminOrOwner && (
             <ActivityLogSection
               logs={activityLogs}
+              profile={profile}
               onRefresh={(m: string) => {
                 fetchAllData();
                 showToast(m);
@@ -2175,13 +2308,13 @@ export default function Page() {
       <QrScannerModal
         isOpen={isQrScannerOpen}
         onClose={() => setIsQrScannerOpen(false)}
-        budgets={budgets}
-        rsvps={rsvps}
-        feePayments={feePayments}
+        budgets={activeBudgets}
+        rsvps={activeRsvps}
+        feePayments={activeFeePayments}
         profile={profile}
         isAdmin={isAdminOrOwner}
-        equipmentItems={equipmentItems}
-        equipmentLoans={equipmentLoans}
+        equipmentItems={activeEquipmentItems}
+        equipmentLoans={activeEquipmentLoans}
         onSuccess={(m: string) => {
           showToast(m);
           fetchAllData();
@@ -2193,9 +2326,10 @@ export default function Page() {
         profile={profile}
         isAdmin={isAdminOrOwner}
         permissions={effectivePermissions}
-        rsvps={rsvps}
-        feePayments={feePayments}
-        claims={claims}
+        rsvps={activeRsvps}
+        feePayments={activeFeePayments}
+        claims={activeClaims}
+        logs={activityLogs}
         paymentQrUrl={paymentQrUrl}
         paymentBankInfo={paymentBankInfo}
         onClose={() => setOpsModalEvent(null)}
@@ -2208,7 +2342,7 @@ export default function Page() {
       <ClaimFormModal
         isOpen={isClaimModalOpen}
         onClose={() => setIsClaimModalOpen(false)}
-        budgets={budgets}
+        budgets={activeBudgets}
         departments={departments}
         profile={profile}
         onSuccess={(m: string) => {
@@ -2218,7 +2352,10 @@ export default function Page() {
       />
       <AuditReviewModal
         claim={selectedClaim}
-        budget={budgets.find((b) => b.id === selectedClaim?.budget_id)}
+        budget={activeBudgets.find((b) => b.id === selectedClaim?.budget_id)}
+        budgets={activeBudgets}
+        departments={departments}
+        logs={activityLogs}
         profile={{ ...profile, role: isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? (isOwner ? 'owner' : 'treasurer') : 'member' }}
         isOwner={isOwner}
         isClaimantOwner={isUserClubOwner(selectedClaim?.user_id)}
@@ -2237,12 +2374,19 @@ export default function Page() {
         }}
         initialData={editingActivity}
         departments={departments}
-        rsvps={rsvps}
-        feePayments={feePayments}
+        rsvps={activeRsvps}
+        feePayments={activeFeePayments}
+        profile={profile}
+        logs={activityLogs}
         onSuccess={(m: string) => {
           showToast(m);
           fetchAllData();
         }}
+      />
+      <RecordHistoryModal
+        target={historyTarget}
+        logs={activityLogs}
+        onClose={() => setHistoryTarget(null)}
       />
     </div>
   );

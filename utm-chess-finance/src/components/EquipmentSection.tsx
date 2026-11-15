@@ -2,7 +2,9 @@
 
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase, EquipmentItem, EquipmentLoan, UserProfile, logActivity } from '@/lib/supabase';
+import { supabase, EquipmentItem, EquipmentLoan, UserProfile, ActivityLogEntry, logActivity } from '@/lib/supabase';
+import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
+import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import {
   localDateStr,
   addDaysStr,
@@ -40,11 +42,13 @@ import {
   ShieldCheck,
   Zap,
   Ban,
+  History,
 } from 'lucide-react';
 
 interface EquipmentSectionProps {
   items: EquipmentItem[];
   loans: EquipmentLoan[];
+  logs?: ActivityLogEntry[];
   profile: UserProfile;
   isAdmin: boolean;
   onRefresh: (msg: string) => void;
@@ -67,6 +71,7 @@ const MONTH_NAMES = [
 export default function EquipmentSection({
   items,
   loans,
+  logs = [],
   profile,
   isAdmin,
   onRefresh,
@@ -74,6 +79,20 @@ export default function EquipmentSection({
   const todayStr = localDateStr();
 
   const [view, setView] = useState<'inventory' | 'calendar'>('inventory');
+  const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
+
+  // ---- Edit borrowing record modal ----
+  const [editingLoan, setEditingLoan] = useState<EquipmentLoan | null>(null);
+  const [editLoanQty, setEditLoanQty] = useState('1');
+  const [editLoanStart, setEditLoanStart] = useState('');
+  const [editLoanReturn, setEditLoanReturn] = useState('');
+  const [editLoanPurpose, setEditLoanPurpose] = useState('');
+  const [editLoanStatus, setEditLoanStatus] = useState<'Borrowed' | 'Returned' | 'Overdue'>('Borrowed');
+  const [editLoanApproval, setEditLoanApproval] = useState<'Pending' | 'Approved' | 'Rejected' | 'Cancelled'>('Approved');
+  const [editLoanBorrowerName, setEditLoanBorrowerName] = useState('');
+  const [editLoanBorrowerPhone, setEditLoanBorrowerPhone] = useState('');
+  const [savingEditLoan, setSavingEditLoan] = useState(false);
+  const [editLoanError, setEditLoanError] = useState<string | null>(null);
 
   // ---- Admin add / edit item ----
   const [showItemModal, setShowItemModal] = useState(false);
@@ -241,14 +260,33 @@ export default function EquipmentSection({
         }
       }
 
-      void logActivity(
-        profile,
-        'Equipment',
-        editingItem ? 'Equipment edited' : 'Equipment added',
-        `${profile.full_name} ${editingItem ? 'updated' : 'added'} "${base.item_name}" (qty ${qty}, ${
-          requiresApproval ? 'approval required' : 'instant borrow'
-        })`
-      );
+      if (editingItem) {
+        const changes = computeFieldChanges([
+          { field: 'Item Name', before: editingItem.item_name, after: base.item_name },
+          { field: 'Category', before: editingItem.category, after: base.category },
+          { field: 'Total Quantity', before: editingItem.total_quantity, after: base.total_quantity },
+          { field: 'Location', before: editingItem.location, after: base.location },
+          { field: 'Remarks', before: editingItem.notes, after: base.notes },
+          { field: 'Requires Approval', before: Boolean(editingItem.requires_approval), after: requiresApproval },
+        ]);
+        void recordEditHistory({
+          actor: profile,
+          category: 'Equipment',
+          table: 'equipment_items',
+          recordId: editingItem.id,
+          recordTitle: base.item_name,
+          changes,
+        });
+      } else {
+        void logActivity(
+          profile,
+          'Equipment',
+          'Equipment added',
+          `${profile.full_name} added "${base.item_name}" (qty ${qty}, ${
+            requiresApproval ? 'approval required' : 'instant borrow'
+          })`
+        );
+      }
 
       setShowItemModal(false);
       setEditingItem(null);
@@ -272,9 +310,157 @@ export default function EquipmentSection({
 
   const handleDeleteItem = async (item: EquipmentItem) => {
     if (!isAdmin) return;
-    await supabase.from('equipment_items').delete().eq('id', item.id);
-    void logActivity(profile, 'Equipment', 'Equipment removed', `${profile.full_name} removed "${item.item_name}" from inventory`);
-    onRefresh(`Removed "${item.item_name}".`);
+    await softDeleteRecord({
+      actor: profile,
+      category: 'Equipment',
+      table: 'equipment_items',
+      recordId: item.id,
+      recordTitle: item.item_name,
+      extraSummary: `Qty ${item.total_quantity} • Hidden from web inventory (kept in Supabase)`,
+    });
+    onRefresh(`Removed "${item.item_name}" from web view (record kept in Supabase).`);
+  };
+
+  const openEditLoanModal = (loan: EquipmentLoan) => {
+    setEditingLoan(loan);
+    setEditLoanQty(String(loan.quantity || 1));
+    setEditLoanStart(loan.borrow_date || todayStr);
+    setEditLoanReturn(loan.return_date || loan.borrow_date || todayStr);
+    setEditLoanPurpose(loan.purpose || '');
+    setEditLoanStatus(loan.status || 'Borrowed');
+    setEditLoanApproval(approvalOf(loan));
+    setEditLoanBorrowerName(loan.borrower_name || '');
+    setEditLoanBorrowerPhone(loan.phone_number || '');
+    setEditLoanError(null);
+  };
+
+  const handleSaveEditLoan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLoan) return;
+    setEditLoanError(null);
+    const nextQty = Math.max(1, parseInt(editLoanQty, 10) || 1);
+    const start = editLoanStart || todayStr;
+    const end = editLoanReturn >= start ? editLoanReturn : start;
+
+    setSavingEditLoan(true);
+    try {
+      const returnedAt =
+        editLoanStatus === 'Returned'
+          ? editingLoan.returned_at || new Date().toISOString()
+          : null;
+
+      const candidates: Record<string, unknown>[] = [
+        {
+          quantity: nextQty,
+          borrow_date: start,
+          return_date: end,
+          purpose: editLoanPurpose.trim(),
+          status: editLoanStatus,
+          approval_status: editLoanApproval,
+          borrower_name: editLoanBorrowerName.trim() || editingLoan.borrower_name,
+          phone_number: editLoanBorrowerPhone.trim() || editingLoan.phone_number,
+          returned_at: returnedAt,
+        },
+        {
+          quantity: nextQty,
+          borrow_date: start,
+          return_date: end,
+          purpose: editLoanPurpose.trim(),
+          status: editLoanStatus,
+          borrower_name: editLoanBorrowerName.trim() || editingLoan.borrower_name,
+          phone_number: editLoanBorrowerPhone.trim() || editingLoan.phone_number,
+          returned_at: returnedAt,
+        },
+        {
+          quantity: nextQty,
+          borrow_date: start,
+          return_date: end,
+          remarks: editLoanPurpose.trim(),
+          status: editLoanStatus,
+          borrower_name: editLoanBorrowerName.trim() || editingLoan.borrower_name,
+          phone_number: editLoanBorrowerPhone.trim() || editingLoan.phone_number,
+        },
+      ];
+
+      let lastErr: unknown = null;
+      let saved = false;
+      for (const payload of candidates) {
+        const { error } = await supabase
+          .from('equipment_loans')
+          .update(payload)
+          .eq('id', editingLoan.id);
+        if (!error) {
+          saved = true;
+          break;
+        }
+        lastErr = error;
+      }
+      if (!saved) {
+        const msg =
+          lastErr && typeof lastErr === 'object' && 'message' in lastErr
+            ? String((lastErr as { message: unknown }).message)
+            : 'Could not update borrowing record.';
+        setEditLoanError(msg);
+        return;
+      }
+
+      const patchedLoans = loansWithout(editingLoan.id, {
+        quantity: nextQty,
+        borrow_date: start,
+        return_date: end,
+        purpose: editLoanPurpose.trim(),
+        status: editLoanStatus,
+        approval_status: editLoanApproval,
+        borrower_name: editLoanBorrowerName.trim() || editingLoan.borrower_name,
+        phone_number: editLoanBorrowerPhone.trim() || editingLoan.phone_number,
+        returned_at: returnedAt,
+      });
+      const item = items.find((i) => i.id === editingLoan.item_id);
+      if (item) await syncAvailabilityToday(item, patchedLoans);
+
+      const changes = computeFieldChanges([
+        { field: 'Quantity', before: editingLoan.quantity, after: nextQty },
+        { field: 'Start Date', before: editingLoan.borrow_date, after: start },
+        { field: 'Return Due', before: editingLoan.return_date, after: end },
+        { field: 'Purpose', before: editingLoan.purpose, after: editLoanPurpose.trim() },
+        { field: 'Loan Status', before: editingLoan.status, after: editLoanStatus },
+        { field: 'Approval Status', before: approvalOf(editingLoan), after: editLoanApproval },
+        { field: 'Borrower Name', before: editingLoan.borrower_name, after: editLoanBorrowerName.trim() || editingLoan.borrower_name },
+        { field: 'Phone', before: editingLoan.phone_number, after: editLoanBorrowerPhone.trim() || editingLoan.phone_number },
+      ]);
+      void recordEditHistory({
+        actor: profile,
+        category: 'Equipment',
+        table: 'equipment_loans',
+        recordId: editingLoan.id,
+        recordTitle: `${editingLoan.item_name} — ${editLoanBorrowerName.trim() || editingLoan.borrower_name}`,
+        changes,
+      });
+
+      setEditingLoan(null);
+      onRefresh(`Updated borrowing record for ${editingLoan.item_name}!`);
+    } finally {
+      setSavingEditLoan(false);
+    }
+  };
+
+  const handleSoftDeleteLoan = async (loan: EquipmentLoan) => {
+    await softDeleteRecord({
+      actor: profile,
+      category: 'Equipment',
+      table: 'equipment_loans',
+      recordId: loan.id,
+      recordTitle: `${loan.quantity}x ${loan.item_name} (${loan.borrower_name})`,
+      extraSummary: `${loan.borrow_date} → ${loan.return_date}`,
+    });
+    const item = items.find((i) => i.id === loan.item_id);
+    if (item) {
+      await syncAvailabilityToday(
+        item,
+        loans.filter((l) => l.id !== loan.id)
+      );
+    }
+    onRefresh(`Removed borrowing record from web view (record kept in Supabase).`);
   };
 
   // ------------------------------------------------------------------ borrow / reserve
@@ -350,13 +536,16 @@ export default function EquipmentSection({
     if (item) {
       await syncAvailabilityToday(item, loansWithout(loan.id, { status: 'Returned', returned_at: nowIso }));
     }
-    void logActivity(
-      profile,
-      'Equipment',
-      'Equipment returned',
-      `${loan.quantity}x ${loan.item_name} returned by ${loan.borrower_name} (${loan.matric_no})` +
-        (loan.user_id !== profile.id ? ` — marked by ${profile.full_name}` : '')
-    );
+    void recordEditHistory({
+      actor: profile,
+      category: 'Equipment',
+      table: 'equipment_loans',
+      recordId: loan.id,
+      recordTitle: `${loan.item_name} — ${loan.borrower_name}`,
+      changes: computeFieldChanges([
+        { field: 'Loan Status', before: loan.status, after: 'Returned' },
+      ]),
+    });
     onRefresh(`Returned ${loan.quantity}x ${loan.item_name}!`);
   };
 
@@ -390,14 +579,17 @@ export default function EquipmentSection({
         })
       );
     }
-    void logActivity(
-      profile,
-      'Equipment',
-      decision === 'Approved' ? 'Equipment request approved' : 'Equipment request rejected',
-      `${profile.full_name} ${decision === 'Approved' ? 'approved' : 'rejected'} ${loan.quantity}x ${loan.item_name} for ${
-        loan.borrower_name
-      } (${loan.matric_no}), ${loan.borrow_date} → ${loan.return_date}`
-    );
+    void recordEditHistory({
+      actor: profile,
+      category: 'Equipment',
+      table: 'equipment_loans',
+      recordId: loan.id,
+      recordTitle: `${loan.item_name} — ${loan.borrower_name}`,
+      changes: computeFieldChanges([
+        { field: 'Approval Status', before: approvalOf(loan), after: decision },
+        { field: 'Loan Status', before: loan.status, after: decision === 'Approved' ? 'Borrowed' : 'Returned' },
+      ]),
+    });
     onRefresh(
       decision === 'Approved'
         ? `Approved ${loan.borrower_name}'s request — ready for pickup.`
@@ -406,22 +598,32 @@ export default function EquipmentSection({
   };
 
   const handleCancelBooking = async (loan: EquipmentLoan) => {
-    const { error } = await supabase.from('equipment_loans').update({ approval_status: 'Cancelled' }).eq('id', loan.id);
+    const { error } = await supabase.from('equipment_loans').update({ approval_status: 'Cancelled', status: 'Returned' }).eq('id', loan.id);
     if (error) {
-      const { error: delErr } = await supabase.from('equipment_loans').delete().eq('id', loan.id);
-      if (delErr) {
-        onRefresh(`Could not cancel booking: ${delErr.message}`);
-        return;
-      }
+      await supabase.from('equipment_loans').update({ status: 'Returned' }).eq('id', loan.id);
+      await softDeleteRecord({
+        actor: profile,
+        category: 'Equipment',
+        table: 'equipment_loans',
+        recordId: loan.id,
+        recordTitle: `${loan.quantity}x ${loan.item_name} (${loan.borrower_name})`,
+        extraSummary: 'Booking cancelled (kept in Supabase)',
+      });
+    } else {
+      void recordEditHistory({
+        actor: profile,
+        category: 'Equipment',
+        table: 'equipment_loans',
+        recordId: loan.id,
+        recordTitle: `${loan.item_name} — ${loan.borrower_name}`,
+        changes: computeFieldChanges([
+          { field: 'Approval Status', before: approvalOf(loan), after: 'Cancelled' },
+          { field: 'Loan Status', before: loan.status, after: 'Returned' },
+        ]),
+      });
     }
     const item = items.find((i) => i.id === loan.item_id);
-    if (item) await syncAvailabilityToday(item, loansWithout(loan.id, { approval_status: 'Cancelled' }));
-    void logActivity(
-      profile,
-      'Equipment',
-      'Booking cancelled',
-      `${profile.full_name} cancelled ${loan.quantity}x ${loan.item_name} booking (${loan.borrow_date} → ${loan.return_date}) of ${loan.borrower_name}`
-    );
+    if (item) await syncAvailabilityToday(item, loansWithout(loan.id, { approval_status: 'Cancelled', status: 'Returned' }));
     onRefresh(`Cancelled booking for ${loan.item_name}.`);
   };
 
@@ -609,35 +811,51 @@ export default function EquipmentSection({
                         <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/60">
                           {item.category || 'Equipment'}
                         </span>
-                        {isAdmin && (
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openStickers([item])}
-                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
-                              title="Print QR stickers"
-                            >
-                              <QrCode className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(item)}
-                              className="px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1 cursor-pointer"
-                              title="Edit Equipment Info"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                              <span>Edit</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteItem(item)}
-                              className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
-                              title="Delete Equipment"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setHistoryTarget({
+                                table: 'equipment_items',
+                                recordId: item.id,
+                                title: item.item_name,
+                              })
+                            }
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                            title="View Edit History"
+                          >
+                            <History className="w-3.5 h-3.5" />
+                          </button>
+                          {isAdmin && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openStickers([item])}
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                                title="Print QR stickers"
+                              >
+                                <QrCode className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(item)}
+                                className="px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1 cursor-pointer"
+                                title="Edit Equipment Info"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteItem(item)}
+                                className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                title="Hide from web view (keep in Supabase)"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
 
                       <h3 className="text-sm font-extrabold text-slate-900">{item.item_name}</h3>
@@ -869,6 +1087,41 @@ export default function EquipmentSection({
                                   <RotateCcw className="w-3 h-3" />
                                   <span>Return</span>
                                 </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setHistoryTarget({
+                                    table: 'equipment_loans',
+                                    recordId: loan.id,
+                                    title: `${loan.quantity}x ${loan.item_name} (${loan.borrower_name})`,
+                                  })
+                                }
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                                title="View Edit History"
+                              >
+                                <History className="w-3.5 h-3.5" />
+                              </button>
+                              {(isAdmin || isMine) && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditLoanModal(loan)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 text-slate-800 font-bold text-[11px] cursor-pointer"
+                                    title="Edit Borrowing"
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                    <span>Edit</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSoftDeleteLoan(loan)}
+                                    className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 cursor-pointer"
+                                    title="Delete from web (kept in Supabase)"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
                               )}
                             </div>
                           </td>
@@ -1449,6 +1702,190 @@ export default function EquipmentSection({
           </div>
         </div>
       )}
+
+      {/* Edit Borrowing Record Modal */}
+      {editingLoan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-emerald-200 my-8">
+            <div className="bg-emerald-800 text-white px-5 py-3.5 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-bold truncate">
+                Edit Borrowing — {editingLoan.item_name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingLoan(null)}
+                className="shrink-0 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveEditLoan} className="p-5 space-y-3 text-xs max-h-[80vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Borrower Name *</label>
+                  <input
+                    type="text"
+                    value={editLoanBorrowerName}
+                    onChange={(e) => setEditLoanBorrowerName(e.target.value)}
+                    disabled={!isAdmin}
+                    className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold disabled:bg-slate-50"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Phone No.</label>
+                  <input
+                    type="text"
+                    value={editLoanBorrowerPhone}
+                    onChange={(e) => setEditLoanBorrowerPhone(e.target.value)}
+                    className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-mono"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Qty *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editLoanQty}
+                    onChange={(e) => setEditLoanQty(e.target.value)}
+                    className="w-full rounded-xl border border-emerald-300 px-3 py-2 font-bold"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Start Date *</label>
+                  <input
+                    type="date"
+                    value={editLoanStart}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!v) return;
+                      const span = Math.max(0, diffDaysBetween(editLoanStart, editLoanReturn));
+                      setEditLoanStart(v);
+                      setEditLoanReturn(addDaysStr(v, span));
+                    }}
+                    className="w-full rounded-xl border border-emerald-300 px-2.5 py-2"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-emerald-900 mb-1">Return Date *</label>
+                  <input
+                    type="date"
+                    min={editLoanStart}
+                    value={editLoanReturn}
+                    onChange={(e) => setEditLoanReturn(e.target.value)}
+                    className="w-full rounded-xl border border-emerald-300 px-2.5 py-2"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2">
+                <span className="font-bold text-emerald-900">Duration (days):</span>
+                <div className="flex items-center gap-1.5">
+                  {[0, 1, 3, 7, 14, 30].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setEditLoanReturn(addDaysStr(editLoanStart, d))}
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-bold border cursor-pointer ${
+                        Math.max(0, diffDaysBetween(editLoanStart, editLoanReturn)) === d
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-white text-emerald-900 border-emerald-200'
+                      }`}
+                    >
+                      {d === 0 ? 'Same' : `${d}d`}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
+                    value={Math.max(0, diffDaysBetween(editLoanStart, editLoanReturn))}
+                    onChange={(e) => {
+                      const n = Math.max(0, Math.min(365, parseInt(e.target.value || '0', 10) || 0));
+                      setEditLoanReturn(addDaysStr(editLoanStart, n));
+                    }}
+                    className="w-14 rounded-lg border border-emerald-300 bg-white px-2 py-1 text-center font-extrabold"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block font-bold text-emerald-900 mb-1">Purpose *</label>
+                <input
+                  type="text"
+                  value={editLoanPurpose}
+                  onChange={(e) => setEditLoanPurpose(e.target.value)}
+                  className="w-full rounded-xl border border-emerald-300 px-3 py-2"
+                  required
+                />
+              </div>
+              {isAdmin && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-bold text-emerald-900 mb-1">Loan Status</label>
+                    <select
+                      value={editLoanStatus}
+                      onChange={(e) => setEditLoanStatus(e.target.value as 'Borrowed' | 'Returned' | 'Overdue')}
+                      className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-bold"
+                    >
+                      <option value="Borrowed">Borrowed</option>
+                      <option value="Returned">Returned</option>
+                      <option value="Overdue">Overdue</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-bold text-emerald-900 mb-1">Approval Status</label>
+                    <select
+                      value={editLoanApproval}
+                      onChange={(e) =>
+                        setEditLoanApproval(e.target.value as 'Pending' | 'Approved' | 'Rejected' | 'Cancelled')
+                      }
+                      className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-2 font-bold"
+                    >
+                      <option value="Pending">Pending</option>
+                      <option value="Approved">Approved</option>
+                      <option value="Rejected">Rejected</option>
+                      <option value="Cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+              {editLoanError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">
+                  {editLoanError}
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingLoan(null)}
+                  className="px-4 py-2 rounded-xl font-semibold text-slate-600 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEditLoan}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                >
+                  {savingEditLoan && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>Save Changes</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <RecordHistoryModal
+        target={historyTarget}
+        logs={logs}
+        onClose={() => setHistoryTarget(null)}
+      />
 
       {/* Print-only sheet (portal to <body> so it prints on its own) */}
       {stickerItems &&
