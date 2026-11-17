@@ -19,6 +19,11 @@ import {
   getRecordHistory,
 } from '@/lib/history';
 import {
+  DuplicateClaimMatch,
+  findDuplicateClaims,
+  parseItemizedBreakdownFromDescription,
+} from '@/lib/duplicateClaimDetector';
+import {
   X,
   CheckCircle2,
   XCircle,
@@ -41,6 +46,7 @@ import {
   Trash2,
   History,
   ArrowRight,
+  GitCompare,
 } from 'lucide-react';
 
 interface AuditReviewModalProps {
@@ -49,6 +55,8 @@ interface AuditReviewModalProps {
   budgets?: Budget[];
   departments?: string[];
   logs?: ActivityLogEntry[];
+  allClaims?: Claim[];
+  onSelectClaim?: (claim: Claim) => void;
   profile: UserProfile;
   /** True only for the club Owner (President / Advisor) acting in Owner mode. */
   isOwner?: boolean;
@@ -66,6 +74,8 @@ export default function AuditReviewModal({
   budgets = [],
   departments = DEFAULT_DEPARTMENTS,
   logs = [],
+  allClaims = [],
+  onSelectClaim,
   profile,
   isOwner = false,
   isClaimantOwner = false,
@@ -96,6 +106,7 @@ export default function AuditReviewModal({
   const [savingEdit, setSavingEdit] = useState(false);
   const [confirmDeleteClaim, setConfirmDeleteClaim] = useState(false);
   const [deletingClaim, setDeletingClaim] = useState(false);
+  const [compareMatch, setCompareMatch] = useState<DuplicateClaimMatch | null>(null);
 
   useEffect(() => {
     if (claim) {
@@ -109,6 +120,7 @@ export default function AuditReviewModal({
       setFullImageOpen(false);
       setIsEditingClaim(false);
       setConfirmDeleteClaim(false);
+      setCompareMatch(null);
       setEditTitle(claim.title || '');
       setEditCategory(claim.category || departments[0] || 'Member');
       setEditAmount(String(claim.amount ?? ''));
@@ -123,6 +135,23 @@ export default function AuditReviewModal({
   }, [claim, departments]);
 
   if (!claim) return null;
+
+  const parsedClaimDesc = parseItemizedBreakdownFromDescription(claim.description);
+  const duplicateMatches = findDuplicateClaims(
+    {
+      excludeClaimId: claim.id,
+      amount: Number(claim.amount),
+      expenseDate: claim.expense_date,
+      merchantName: claim.merchant_name,
+      receiptFileName: claim.receipt_file_name,
+      rawOcrText: claim.ai_ocr_summary || claim.description,
+      lineItems: parsedClaimDesc.items.map((it) => ({
+        shop: it.shop,
+        amount: it.amount,
+      })),
+    },
+    allClaims
+  );
 
   const isTreasurer = profile.role === 'treasurer' || profile.role === 'owner';
   const myLabel = `${profile.full_name} (${profile.matric_no})`;
@@ -580,6 +609,35 @@ export default function AuditReviewModal({
           </div>
         )}
 
+        {duplicateMatches.length > 0 && (
+          <div className="bg-amber-50 border-b-2 border-amber-300 px-6 py-3 space-y-2 text-xs text-amber-950">
+            {duplicateMatches.map((match) => (
+              <div
+                key={match.claim.id}
+                className="flex flex-wrap items-center justify-between gap-2 bg-white/85 border border-amber-200 rounded-xl px-3 py-2"
+              >
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <div className="font-extrabold text-amber-950">{match.headline}</div>
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-amber-800">
+                    <span className="px-1.5 py-0.5 rounded bg-amber-100 font-bold">
+                      {match.claim.status}
+                    </span>
+                    <span>{match.reasons.join(' • ')}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCompareMatch(match)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+                >
+                  <GitCompare className="w-3.5 h-3.5" />
+                  <span>Click to compare</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {isEditingClaim ? (
           <form onSubmit={handleSaveClaimEdit} className="p-6 space-y-3 text-xs max-h-[82vh] overflow-y-auto">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -965,9 +1023,31 @@ export default function AuditReviewModal({
                   {claim.merchant_name} ({claim.expense_date})
                 </span>
               </div>
-              {claim.description && (
+              {parsedClaimDesc.items.length > 0 && (
+                <div className="pt-2 border-t border-emerald-100 space-y-1.5">
+                  <div className="text-[11px] font-extrabold text-emerald-900">
+                    Itemized Receipt Breakdown ({parsedClaimDesc.items.length} receipts)
+                  </div>
+                  <div className="rounded-xl bg-emerald-50/70 border border-emerald-200 divide-y divide-emerald-100">
+                    {parsedClaimDesc.items.map((item, idx) => (
+                      <div
+                        key={`itemized-${idx}`}
+                        className="flex items-center justify-between px-2.5 py-1.5 text-[11px]"
+                      >
+                        <span className="font-semibold text-slate-800">
+                          #{idx + 1} {item.shop}
+                        </span>
+                        <span className="font-extrabold text-emerald-900">
+                          RM {item.amount.toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {parsedClaimDesc.cleanDescription && (
                 <p className="text-slate-600 pt-2 border-t border-emerald-100">
-                  {claim.description}
+                  {parsedClaimDesc.cleanDescription}
                 </p>
               )}
             </div>
@@ -1246,6 +1326,173 @@ export default function AuditReviewModal({
               alt={claim.title}
               className="max-h-[84vh] w-auto max-w-full object-contain rounded-2xl bg-white shadow-2xl"
             />
+          </div>
+        </div>
+      )}
+
+      {compareMatch && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => setCompareMatch(null)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl border-2 border-amber-300 max-w-5xl w-full overflow-hidden my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-amber-600 text-white px-6 py-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertTriangle className="w-5 h-5 shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="text-sm font-extrabold truncate">
+                    Side-by-Side Comparison — Current Claim vs Claim #{compareMatch.claimNumber}
+                  </h3>
+                  <p className="text-[11px] text-amber-100 truncate">
+                    {compareMatch.reasons.join(' • ')}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompareMatch(null)}
+                className="p-1 rounded-lg hover:bg-amber-500 cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5 text-xs max-h-[80vh] overflow-y-auto">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-extrabold text-emerald-950 text-sm">
+                    Current Claim ({claim.title})
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900">
+                    {claim.status}
+                  </span>
+                </div>
+                <div className="space-y-1 text-slate-700">
+                  <div>
+                    <span className="text-slate-500">Claimant:</span>{' '}
+                    <strong>
+                      {claim.claimant_name} ({claim.matric_no})
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Amount:</span>{' '}
+                    <strong className="text-emerald-900">
+                      RM {Number(claim.amount).toFixed(2)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Date:</span> <strong>{claim.expense_date}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Merchant:</span>{' '}
+                    <strong>{claim.merchant_name}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">File:</span>{' '}
+                    <span className="font-mono">{claim.receipt_file_name}</span>
+                  </div>
+                </div>
+                {claim.receipt_url &&
+                  (isPdf ? (
+                    <a
+                      href={claim.receipt_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Open Current PDF Receipt</span>
+                    </a>
+                  ) : (
+                    <img
+                      src={claim.receipt_url}
+                      alt={claim.title}
+                      className="max-h-80 w-full object-contain rounded-xl border bg-white p-1"
+                    />
+                  ))}
+              </div>
+
+              <div className="rounded-2xl border border-amber-300 bg-amber-50/50 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-extrabold text-amber-950 text-sm">
+                    Claim #{compareMatch.claimNumber} ({compareMatch.claim.title})
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-200 text-amber-950">
+                    {compareMatch.claim.status}
+                  </span>
+                </div>
+                <div className="space-y-1 text-slate-700">
+                  <div>
+                    <span className="text-slate-500">Claimant:</span>{' '}
+                    <strong>
+                      {compareMatch.claim.claimant_name} ({compareMatch.claim.matric_no})
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Amount:</span>{' '}
+                    <strong className="text-amber-950">
+                      RM {Number(compareMatch.claim.amount).toFixed(2)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Date:</span>{' '}
+                    <strong>{compareMatch.claim.expense_date}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Merchant:</span>{' '}
+                    <strong>{compareMatch.claim.merchant_name}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">File:</span>{' '}
+                    <span className="font-mono">{compareMatch.claim.receipt_file_name}</span>
+                  </div>
+                </div>
+                {compareMatch.claim.receipt_url &&
+                  (compareMatch.claim.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
+                  compareMatch.claim.receipt_url.toLowerCase().split('?')[0].endsWith('.pdf') ? (
+                    <a
+                      href={compareMatch.claim.receipt_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-amber-600 text-white font-bold"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Open Matched PDF Receipt</span>
+                    </a>
+                  ) : (
+                    <img
+                      src={compareMatch.claim.receipt_url}
+                      alt={compareMatch.claim.title}
+                      className="max-h-80 w-full object-contain rounded-xl border bg-white p-1"
+                    />
+                  ))}
+              </div>
+            </div>
+
+            <div className="px-6 py-3 bg-slate-50 border-t flex flex-wrap items-center justify-end gap-2">
+              {onSelectClaim && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelectClaim(compareMatch.claim);
+                    setCompareMatch(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold cursor-pointer"
+                >
+                  Inspect Claim #{compareMatch.claimNumber}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setCompareMatch(null)}
+                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold cursor-pointer"
+              >
+                Close Comparison
+              </button>
+            </div>
           </div>
         </div>
       )}

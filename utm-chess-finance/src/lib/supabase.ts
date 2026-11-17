@@ -191,6 +191,7 @@ export interface Claim {
   ai_extracted_merchant: string | null;
   ai_extracted_date: string | null;
   ai_confidence: number | null;
+  ai_ocr_summary?: string | null;
   status: 'Pending' | 'Approved' | 'Rejected';
   reviewed_by: string | null;
   review_remarks: string | null;

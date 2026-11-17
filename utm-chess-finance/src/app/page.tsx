@@ -2344,6 +2344,7 @@ export default function Page() {
         onClose={() => setIsClaimModalOpen(false)}
         budgets={activeBudgets}
         departments={departments}
+        existingClaims={activeClaims}
         profile={profile}
         onSuccess={(m: string) => {
           showToast(m);
@@ -2356,6 +2357,8 @@ export default function Page() {
         budgets={activeBudgets}
         departments={departments}
         logs={activityLogs}
+        allClaims={activeClaims}
+        onSelectClaim={(c: Claim) => setSelectedClaim(c)}
         profile={{ ...profile, role: isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? (isOwner ? 'owner' : 'treasurer') : 'member' }}
         isOwner={isOwner}
         isClaimantOwner={isUserClubOwner(selectedClaim?.user_id)}

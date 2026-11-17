@@ -13,7 +13,18 @@ import {
   Camera,
   RefreshCw,
   CheckCircle2,
+  Plus,
+  Layers,
 } from 'lucide-react';
+
+export interface ScannedReceiptItem {
+  fileName: string;
+  amount: number | null;
+  merchant: string;
+  date: string | null;
+  confidence: number;
+  rawText?: string;
+}
 
 export interface ScannedReceiptData {
   amount: number | null;
@@ -22,6 +33,8 @@ export interface ScannedReceiptData {
   suggestedCategory: string;
   confidence: number;
   rawText?: string;
+  items?: ScannedReceiptItem[];
+  fileNames?: string[];
 }
 
 export interface ReceiptDropzoneProps {
@@ -38,24 +51,122 @@ async function convertImageToJpg(file: File): Promise<File> {
   if (file.type === 'image/jpeg' && /\.jpe?g$/i.test(file.name)) return file;
   try {
     const bitmap = await createImageBitmap(file);
-    const maxSide = 2200;
-    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return file;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, h);
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-    if (!blob) return file;
-    const baseName = file.name.replace(/\.[^/.]+$/, '') || 'receipt';
-    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+    try {
+      const maxSide = 2200;
+      const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+      const w = Math.max(1, Math.round(bitmap.width * scale));
+      const h = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return file;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+      if (!blob) return file;
+      const baseName = file.name.replace(/\.[^/.]+$/, '') || 'receipt';
+      return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+    } finally {
+      bitmap.close();
+    }
   } catch {
     return file;
+  }
+}
+
+/** Stitch 1 or more receipt images vertically onto one single tall HTML5 Canvas .jpg file. */
+async function stitchImagesVerticallyToJpg(files: File[]): Promise<File> {
+  if (files.length === 1) return convertImageToJpg(files[0]);
+
+  const bitmaps: { bitmap: ImageBitmap; name: string }[] = [];
+  try {
+    for (const f of files) {
+      try {
+        const bitmap = await createImageBitmap(f);
+        bitmaps.push({ bitmap, name: f.name });
+      } catch {
+        /* skip unreadable frame */
+      }
+    }
+    if (bitmaps.length === 0) return files[0];
+    if (bitmaps.length === 1) return convertImageToJpg(files[0]);
+
+    const baseWidth = 1400;
+    const baseHeaderH = 40;
+    const baseGap = 14;
+    const rawHeights = bitmaps.map((item) =>
+      Math.max(1, Math.round(item.bitmap.height * (baseWidth / Math.max(1, item.bitmap.width))))
+    );
+    const rawTotalHeight =
+      rawHeights.reduce((sum, h) => sum + baseHeaderH + h, 0) +
+      baseGap * Math.max(0, bitmaps.length - 1);
+
+    const maxCanvasHeight = 16000;
+    const ratio = rawTotalHeight > maxCanvasHeight ? maxCanvasHeight / rawTotalHeight : 1;
+
+    const targetWidth = Math.max(400, Math.round(baseWidth * ratio));
+    const headerH = Math.max(24, Math.round(baseHeaderH * ratio));
+    const gap = Math.max(6, Math.round(baseGap * ratio));
+    const drawHeights = rawHeights.map((h) => Math.max(1, Math.round(h * ratio)));
+    const canvasHeight =
+      drawHeights.reduce((sum, h) => sum + headerH + h, 0) +
+      gap * Math.max(0, bitmaps.length - 1);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = Math.max(1, canvasHeight);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return files[0];
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    let cursorY = 0;
+    bitmaps.forEach((item, idx) => {
+      // Emerald header strip clearly separating each stitched receipt
+      ctx.fillStyle = '#ecfdf5';
+      ctx.fillRect(0, cursorY, targetWidth, headerH);
+      ctx.fillStyle = '#a7f3d0';
+      ctx.fillRect(0, cursorY + headerH - 2, targetWidth, 2);
+      ctx.fillStyle = '#065f46';
+      const fontSize = Math.max(12, Math.round(16 * ratio));
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(
+        `RECEIPT #${idx + 1} of ${bitmaps.length} • ${item.name}`,
+        Math.round(18 * ratio),
+        cursorY + headerH / 2
+      );
+      cursorY += headerH;
+
+      const drawH = drawHeights[idx];
+      ctx.drawImage(item.bitmap, 0, cursorY, targetWidth, drawH);
+      cursorY += drawH;
+
+      if (idx < bitmaps.length - 1) {
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillRect(0, cursorY, targetWidth, gap);
+        cursorY += gap;
+      }
+    });
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.88)
+    );
+    if (!blob) return files[0];
+    return new File([blob], `stitched-${bitmaps.length}-receipts-${Date.now()}.jpg`, {
+      type: 'image/jpeg',
+    });
+  } finally {
+    bitmaps.forEach((item) => {
+      try {
+        item.bitmap.close();
+      } catch {
+        /* ignore */
+      }
+    });
   }
 }
 
@@ -129,6 +240,7 @@ export default function ReceiptDropzone({
   onScanComplete,
 }: ReceiptDropzoneProps) {
   const [internalFile, setInternalFile] = useState<File | null>(null);
+  const [sourceFiles, setSourceFiles] = useState<File[]>([]);
   const [scanning, setScanning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -142,6 +254,8 @@ export default function ReceiptDropzone({
 
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadModeRef = useRef<'replace' | 'append'>('replace');
+  const cameraModeRef = useRef<'replace' | 'append'>('replace');
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const objectUrlRef = useRef<string | null>(null);
@@ -185,6 +299,7 @@ export default function ReceiptDropzone({
       setPreviewUrl(null);
       setUploadedReceiptUrl(null);
       setUploadingReceipt(false);
+      setSourceFiles([]);
     }
   }, [activeFile]);
 
@@ -198,7 +313,11 @@ export default function ReceiptDropzone({
     }
   }, [cameraOpen]);
 
-  const startCamera = async (mode: 'environment' | 'user' = facingMode) => {
+  const startCamera = async (
+    mode: 'environment' | 'user' = facingMode,
+    captureMode: 'replace' | 'append' = 'replace'
+  ) => {
+    cameraModeRef.current = captureMode;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -210,7 +329,7 @@ export default function ReceiptDropzone({
 
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setCameraOpen(false);
-      setCameraError('Live camera is not supported in this browser. Use Upload File or your device camera instead.');
+      setCameraError('Live camera is not supported in this browser. Use Upload File(s) or your device camera instead.');
       return;
     }
 
@@ -247,12 +366,14 @@ export default function ReceiptDropzone({
     }
   };
 
-  const runOcrOnFile = async (targetFile: File) => {
-    if (!onScanComplete) return;
+  const runOcrOnFiles = async (filesToScan: File[]) => {
+    if (!onScanComplete || filesToScan.length === 0) return;
     setErrorMsg(null);
 
-    const isPdf = targetFile.type === 'application/pdf' || targetFile.name.toLowerCase().endsWith('.pdf');
-    if (isPdf) {
+    const imageTargets = filesToScan.filter(
+      (f) => !(f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
+    );
+    if (imageTargets.length === 0) {
       setErrorMsg('PDF invoices cannot be auto-read. Upload or scan a receipt photo (JPG / PNG) to auto-fill, or type the details in manually.');
       return;
     }
@@ -264,36 +385,75 @@ export default function ReceiptDropzone({
       terminate: () => Promise<unknown>;
     }
     let worker: OcrWorker | null = null;
+    const progressRef = { idx: 0 };
+
     try {
       const { createWorker } = await import('tesseract.js');
       worker = (await createWorker('eng', 1, {
         logger: (m: { status: string; progress: number }) => {
-          if (m.status === 'recognizing text') setProgress(Math.round(m.progress * 100));
+          if (m.status === 'recognizing text') {
+            const pct = ((progressRef.idx + m.progress) / imageTargets.length) * 100;
+            setProgress(Math.min(99, Math.round(pct)));
+          }
         },
       })) as unknown as OcrWorker;
 
-      const prepared = await prepareImageForOcr(targetFile);
-      const { data } = await worker.recognize(prepared);
-      const parsed = parseMalaysianReceipt(data.text, data.confidence);
+      const scannedItems: ScannedReceiptItem[] = [];
+      const rawTexts: string[] = [];
 
-      if (parsed.amount === null && !parsed.merchant && !parsed.date) {
-        setErrorMsg('Could not read anything useful from this image. Try a clearer, well-lit, flat photo — or fill in the details manually.');
+      for (let i = 0; i < imageTargets.length; i++) {
+        progressRef.idx = i;
+        const imgFile = imageTargets[i];
+        const prepared = await prepareImageForOcr(imgFile);
+        const { data } = await worker.recognize(prepared);
+        const parsed = parseMalaysianReceipt(data.text, data.confidence);
+        scannedItems.push({
+          fileName: imgFile.name,
+          amount: parsed.amount,
+          merchant: parsed.merchant,
+          date: parsed.date,
+          confidence: parsed.confidence,
+          rawText: data.text,
+        });
+        if (data.text) rawTexts.push(data.text);
+      }
+
+      const validAmounts = scannedItems
+        .map((it) => it.amount)
+        .filter((amt): amt is number => amt !== null && amt > 0);
+      const totalAmount =
+        validAmounts.length > 0
+          ? Number(validAmounts.reduce((sum, amt) => sum + amt, 0).toFixed(2))
+          : null;
+
+      const uniqueMerchants = Array.from(
+        new Set(scannedItems.map((it) => it.merchant.trim()).filter(Boolean))
+      ).join(', ');
+      const firstDate = scannedItems.find((it) => it.date)?.date || null;
+      const avgConfidence = Math.round(
+        scannedItems.reduce((sum, it) => sum + it.confidence, 0) / Math.max(1, scannedItems.length)
+      );
+
+      if (totalAmount === null && !uniqueMerchants && !firstDate) {
+        setErrorMsg('Could not read anything useful from the image(s). Try clearer, well-lit, flat photos — or fill in the details manually.');
         return;
       }
 
       onScanComplete({
-        amount: parsed.amount,
-        merchant: parsed.merchant,
-        date: parsed.date,
+        amount: totalAmount,
+        merchant: uniqueMerchants,
+        date: firstDate,
         suggestedCategory: '',
-        confidence: parsed.confidence,
-        rawText: data.text,
+        confidence: avgConfidence,
+        rawText: rawTexts.join('\n---\n'),
+        items: scannedItems,
+        fileNames: filesToScan.map((f) => f.name),
       });
 
       const missing: string[] = [];
-      if (parsed.amount === null) missing.push('amount');
-      if (!parsed.merchant) missing.push('merchant');
-      if (!parsed.date) missing.push('date');
+      if (totalAmount === null) missing.push('amount');
+      if (!uniqueMerchants) missing.push('merchant');
+      if (!firstDate) missing.push('date');
       if (missing.length > 0) {
         setErrorMsg(`Couldn't find the ${missing.join(', ')}. Please fill ${missing.length > 1 ? 'those' : 'that'} in manually.`);
       }
@@ -336,10 +496,11 @@ export default function ReceiptDropzone({
     }
   };
 
-  const handleFileChange = async (f: File | null, autoScan = false) => {
+  const applySourceFiles = async (nextList: File[], autoScan: boolean) => {
     setErrorMsg(null);
     setCameraError(null);
-    if (!f) {
+
+    if (nextList.length === 0) {
       uploadSessionRef.current += 1;
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
@@ -349,19 +510,31 @@ export default function ReceiptDropzone({
       setUploadedReceiptUrl(null);
       setUploadingReceipt(false);
       setInternalFile(null);
+      setSourceFiles([]);
       onUploadedUrl?.(null);
       onFileSelect(null);
       return;
     }
 
-    if (f.size > MAX_FILE_SIZE_BYTES) {
-      setErrorMsg('File size must be under 50 MB.');
+    const oversized = nextList.find((f) => f.size > MAX_FILE_SIZE_BYTES);
+    if (oversized) {
+      setErrorMsg(`"${oversized.name}" exceeds 50 MB.`);
       return;
     }
 
-    let finalFile = f;
-    if (f.type.startsWith('image/')) {
-      finalFile = await convertImageToJpg(f);
+    const isPdfFile = (f: File) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+    const imageFiles = nextList.filter((f) => f.type.startsWith('image/') && !isPdfFile(f));
+    const pdfFiles = nextList.filter(isPdfFile);
+
+    let effectiveSources: File[];
+    let finalFile: File;
+
+    if (imageFiles.length > 0) {
+      effectiveSources = imageFiles;
+      finalFile = await stitchImagesVerticallyToJpg(imageFiles);
+      if (pdfFiles.length > 0) {
+        setErrorMsg('PDF files cannot be stitched onto photos; kept all receipt photos in 1 stitched JPG.');
+      }
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
       }
@@ -369,6 +542,8 @@ export default function ReceiptDropzone({
       objectUrlRef.current = nextPreview;
       setPreviewUrl(nextPreview);
     } else {
+      effectiveSources = [pdfFiles[0]];
+      finalFile = pdfFiles[0];
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
         objectUrlRef.current = null;
@@ -376,12 +551,33 @@ export default function ReceiptDropzone({
       setPreviewUrl(null);
     }
 
+    setSourceFiles(effectiveSources);
     setInternalFile(finalFile);
     onFileSelect(finalFile);
 
     const uploadPromise = uploadFileImmediately(finalFile);
-    const ocrPromise = autoScan && onScanComplete ? runOcrOnFile(finalFile) : Promise.resolve();
+    const ocrPromise = autoScan && onScanComplete ? runOcrOnFiles(effectiveSources) : Promise.resolve();
     await Promise.all([uploadPromise, ocrPromise]);
+  };
+
+  const handleIncomingFiles = async (
+    incoming: FileList | File[] | null,
+    mode: 'replace' | 'append',
+    autoScan: boolean
+  ) => {
+    const picked = incoming ? Array.from(incoming) : [];
+    if (picked.length === 0) return;
+
+    const currentImages = sourceFiles.filter(
+      (f) => !(f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
+    );
+    const nextList = mode === 'append' ? [...currentImages, ...picked] : picked;
+    await applySourceFiles(nextList, autoScan);
+  };
+
+  const handleRemoveSourceAt = async (idx: number) => {
+    const next = sourceFiles.filter((_, i) => i !== idx);
+    await applySourceFiles(next, false);
   };
 
   const handleCaptureFromCamera = async () => {
@@ -409,24 +605,25 @@ export default function ReceiptDropzone({
       return;
     }
     const capturedFile = new File([blob], `receipt-scan-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    const mode = cameraModeRef.current;
     stopCamera();
-    await handleFileChange(capturedFile, true);
+    await handleIncomingFiles([capturedFile], mode, true);
   };
 
   const handleScan = async () => {
     if (!activeFile) return;
-    let targetFile = activeFile;
-    if (activeFile.type.startsWith('image/')) {
-      targetFile = await convertImageToJpg(activeFile);
-      if (targetFile !== activeFile) {
-        setInternalFile(targetFile);
-        onFileSelect(targetFile);
+    const targets = sourceFiles.length > 0 ? sourceFiles : [activeFile];
+    if (targets.length === 1 && targets[0].type.startsWith('image/')) {
+      const converted = await convertImageToJpg(targets[0]);
+      if (converted !== activeFile && sourceFiles.length <= 1) {
+        setInternalFile(converted);
+        onFileSelect(converted);
       }
     }
     if (!uploadedReceiptUrl && !uploadingReceipt) {
-      void uploadFileImmediately(targetFile);
+      void uploadFileImmediately(activeFile);
     }
-    await runOcrOnFile(targetFile);
+    await runOcrOnFiles(targets);
   };
 
   return (
@@ -436,12 +633,21 @@ export default function ReceiptDropzone({
           <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-900 border-b border-slate-800">
             <div className="flex items-center gap-2 text-xs font-bold">
               <Camera className="w-4 h-4 text-emerald-400" />
-              <span>Position full receipt inside frame</span>
+              <span>
+                {cameraModeRef.current === 'append' && sourceFiles.length > 0
+                  ? `Add receipt #${sourceFiles.length + 1} to stitched image`
+                  : 'Position full receipt inside frame'}
+              </span>
             </div>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => void startCamera(facingMode === 'environment' ? 'user' : 'environment')}
+                onClick={() =>
+                  void startCamera(
+                    facingMode === 'environment' ? 'user' : 'environment',
+                    cameraModeRef.current
+                  )
+                }
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-200 cursor-pointer"
                 title="Switch front / back camera"
               >
@@ -484,38 +690,75 @@ export default function ReceiptDropzone({
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-extrabold cursor-pointer shadow-xs"
             >
               <Camera className="w-4 h-4" />
-              <span>Capture &amp; Scan Receipt</span>
+              <span>
+                {cameraModeRef.current === 'append' && sourceFiles.length > 0
+                  ? 'Capture & Stitch Receipt'
+                  : 'Capture & Scan Receipt'}
+              </span>
             </button>
           </div>
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center gap-2.5 p-5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 text-center">
           <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-            {activeFile ? <FileText className="w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
+            {sourceFiles.length > 1 ? (
+              <Layers className="w-5 h-5" />
+            ) : activeFile ? (
+              <FileText className="w-5 h-5" />
+            ) : (
+              <UploadCloud className="w-5 h-5" />
+            )}
           </div>
           <div className="text-xs font-bold text-emerald-950 break-all">
-            {activeFile ? activeFile.name : 'Upload Receipt / PDF or Scan Live with Camera (Max 50 MB)'}
+            {activeFile
+              ? sourceFiles.length > 1
+                ? `${sourceFiles.length} receipts combined into 1 tall JPG (${activeFile.name})`
+                : activeFile.name
+              : 'Select 1 or Multiple Receipts (auto-stitched into 1 JPG) or Scan Live'}
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"
               disabled={scanning}
-              onClick={() => uploadInputRef.current?.click()}
+              onClick={() => {
+                uploadModeRef.current = 'replace';
+                uploadInputRef.current?.click();
+              }}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-[11px] font-bold cursor-pointer"
             >
               <UploadCloud className="w-3.5 h-3.5" />
-              <span>{activeFile ? 'Change File' : 'Upload File'}</span>
+              <span>{activeFile ? 'Replace File(s)' : 'Upload File(s)'}</span>
             </button>
+            {activeFile && !(activeFile.type === 'application/pdf' || activeFile.name.toLowerCase().endsWith('.pdf')) && (
+              <button
+                type="button"
+                disabled={scanning}
+                onClick={() => {
+                  uploadModeRef.current = 'append';
+                  uploadInputRef.current?.click();
+                }}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-100 border border-emerald-300 disabled:opacity-60 text-emerald-900 text-[11px] font-bold cursor-pointer"
+                title="Add more receipt photos and stitch onto the same single JPG"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Receipt Photo</span>
+              </button>
+            )}
             {onScanComplete && (
               <button
                 type="button"
                 disabled={scanning}
-                onClick={() => void startCamera('environment')}
+                onClick={() =>
+                  void startCamera(
+                    'environment',
+                    sourceFiles.length > 0 ? 'append' : 'replace'
+                  )
+                }
                 className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white text-[11px] font-bold cursor-pointer"
-                title="Open camera directly to snap receipt, save full JPG, and auto-fill details"
+                title="Open camera directly to snap receipt, stitch into JPG, and auto-fill details"
               >
                 <Camera className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Scan Receipt</span>
+                <span>{sourceFiles.length > 0 ? '+ Snap & Add Receipt' : 'Scan Receipt'}</span>
               </button>
             )}
           </div>
@@ -526,9 +769,13 @@ export default function ReceiptDropzone({
         ref={uploadInputRef}
         type="file"
         accept="image/*,application/pdf"
+        multiple
         onChange={(e) => {
-          void handleFileChange(e.target.files?.[0] || null, false);
+          const picked = e.target.files ? Array.from(e.target.files) : [];
+          const mode = uploadModeRef.current;
           e.target.value = '';
+          const shouldAutoScan = mode === 'append' || picked.length > 1;
+          void handleIncomingFiles(picked, mode, shouldAutoScan);
         }}
         className="hidden"
       />
@@ -538,8 +785,10 @@ export default function ReceiptDropzone({
         accept="image/*"
         capture="environment"
         onChange={(e) => {
-          void handleFileChange(e.target.files?.[0] || null, true);
+          const picked = e.target.files ? Array.from(e.target.files) : [];
+          const mode = cameraModeRef.current;
           e.target.value = '';
+          void handleIncomingFiles(picked, mode, true);
         }}
         className="hidden"
       />
@@ -563,7 +812,10 @@ export default function ReceiptDropzone({
       {activeFile && (
         <div className="rounded-xl bg-slate-50 border border-slate-200 p-2.5 space-y-2">
           <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="font-semibold text-slate-700 truncate">{activeFile.name}</span>
+            <span className="font-semibold text-slate-700 truncate">
+              {activeFile.name}
+              {sourceFiles.length > 1 ? ` (${sourceFiles.length} receipts stacked)` : ''}
+            </span>
             <div className="flex items-center gap-2 shrink-0">
               {onScanComplete && (
                 <button
@@ -571,7 +823,7 @@ export default function ReceiptDropzone({
                   disabled={scanning}
                   onClick={() => void handleScan()}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-70 text-white font-bold text-[11px] cursor-pointer"
-                  title="Reads amount, date and merchant from the receipt image"
+                  title="Reads amount, date and merchant from the receipt image(s)"
                 >
                   {scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
                   <span>{scanning ? `Reading receipt… ${progress}%` : 'Scan Receipt'}</span>
@@ -579,21 +831,44 @@ export default function ReceiptDropzone({
               )}
               <button
                 type="button"
-                onClick={() => void handleFileChange(null)}
+                onClick={() => void applySourceFiles([], false)}
                 className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
-                title="Remove file"
+                title="Remove all receipt files"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
 
+          {sourceFiles.length > 1 && (
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {sourceFiles.map((sf, idx) => (
+                <span
+                  key={`${sf.name}-${idx}`}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-100/80 border border-emerald-200 text-[10px] font-bold text-emerald-950"
+                >
+                  <span>
+                    #{idx + 1}: {sf.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleRemoveSourceAt(idx)}
+                    className="text-emerald-700 hover:text-rose-600 cursor-pointer"
+                    title="Remove this photo and re-stitch"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
           {previewUrl && (
             <div className="rounded-lg border border-slate-200 bg-white p-1.5 flex items-center justify-center">
               <img
                 src={previewUrl}
-                alt="Captured full receipt"
-                className="max-h-48 w-auto object-contain rounded"
+                alt="Captured receipt preview"
+                className="max-h-56 w-auto object-contain rounded"
               />
             </div>
           )}
@@ -601,12 +876,20 @@ export default function ReceiptDropzone({
           {uploadingReceipt ? (
             <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-              <span>Uploading full receipt to database...</span>
+              <span>
+                {sourceFiles.length > 1
+                  ? `Uploading stitched ${sourceFiles.length}-receipt JPG as 1 file...`
+                  : 'Uploading full receipt to database...'}
+              </span>
             </div>
           ) : uploadedReceiptUrl ? (
             <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>✓ Full receipt JPG saved to database (visible to Admin)</span>
+              <span>
+                {sourceFiles.length > 1
+                  ? `✓ ${sourceFiles.length} receipts stitched into 1 single JPG in storage (visible to Admin)`
+                  : '✓ Full receipt JPG saved to database (visible to Admin)'}
+              </span>
             </div>
           ) : null}
         </div>

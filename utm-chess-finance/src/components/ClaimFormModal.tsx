@@ -4,19 +4,42 @@ import React, { useState, useEffect } from 'react';
 import {
   supabase,
   Budget,
+  Claim,
   UserProfile,
   DEFAULT_DEPARTMENTS,
   MAX_FILE_SIZE_BYTES,
   logActivity,
 } from '@/lib/supabase';
 import ReceiptDropzone, { ScannedReceiptData } from './ReceiptDropzone';
-import { X, CheckCircle2, AlertCircle, Loader2, Sparkles, Landmark, Eye, EyeOff } from 'lucide-react';
+import {
+  ClaimReceiptLineItem,
+  DuplicateClaimMatch,
+  findDuplicateClaims,
+  formatItemizedBreakdownTag,
+  parseItemizedBreakdownFromDescription,
+} from '@/lib/duplicateClaimDetector';
+import {
+  X,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Sparkles,
+  Landmark,
+  Eye,
+  EyeOff,
+  PlusCircle,
+  Trash2,
+  AlertTriangle,
+  Receipt,
+  GitCompare,
+} from 'lucide-react';
 
 interface ClaimFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   budgets: Budget[];
   departments?: string[];
+  existingClaims?: Claim[];
   profile: UserProfile;
   onSuccess: (message: string) => void;
 }
@@ -39,6 +62,7 @@ export default function ClaimFormModal({
   onClose,
   budgets,
   departments = DEFAULT_DEPARTMENTS,
+  existingClaims = [],
   profile,
   onSuccess,
 }: ClaimFormModalProps) {
@@ -53,6 +77,10 @@ export default function ClaimFormModal({
     new Date().toISOString().split('T')[0]
   );
   const [merchantName, setMerchantName] = useState('');
+  const [lineItems, setLineItems] = useState<ClaimReceiptLineItem[]>([
+    { id: 'row-1', shop: '', amount: '' },
+  ]);
+  const [extraFileNames, setExtraFileNames] = useState<string[]>([]);
   const [description, setDescription] = useState('');
   const [includePaymentDetails, setIncludePaymentDetails] = useState(true);
   const [bankName, setBankName] = useState('');
@@ -61,14 +89,35 @@ export default function ClaimFormModal({
   const [claimantQrUrl, setClaimantQrUrl] = useState('');
   const [claimantQrFile, setClaimantQrFile] = useState<File | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [localFilePreviewUrl, setLocalFilePreviewUrl] = useState<string | null>(null);
   const [uploadedReceiptUrl, setUploadedReceiptUrl] = useState<string | null>(null);
   const [scannedData, setScannedData] = useState<ScannedReceiptData | null>(null);
+  const [confirmNotDuplicate, setConfirmNotDuplicate] = useState(false);
+  const [compareMatch, setCompareMatch] = useState<DuplicateClaimMatch | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!file || file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      setLocalFilePreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setLocalFilePreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [file]);
+
+  useEffect(() => {
+    setConfirmNotDuplicate(false);
+  }, [amount, expenseDate, merchantName, file]);
+
+  useEffect(() => {
     if (!isOpen) {
       setUploadedReceiptUrl(null);
+      setCompareMatch(null);
+      setConfirmNotDuplicate(false);
       return;
     }
     setErrorMsg(null);
@@ -107,18 +156,103 @@ export default function ClaimFormModal({
 
   if (!isOpen) return null;
 
+  const syncFromLineItems = (nextItems: ClaimReceiptLineItem[]) => {
+    setLineItems(nextItems);
+    const total = nextItems.reduce((sum, item) => {
+      const n = parseFloat(item.amount);
+      return sum + (!isNaN(n) && n > 0 ? n : 0);
+    }, 0);
+    if (nextItems.length > 1 || nextItems.some((item) => item.amount.trim() !== '')) {
+      setAmount(total > 0 ? total.toFixed(2) : '');
+    }
+    const shops = Array.from(
+      new Set(nextItems.map((item) => item.shop.trim()).filter(Boolean))
+    );
+    if (nextItems.length > 1 || shops.length > 0) {
+      setMerchantName(shops.join(', '));
+    }
+  };
+
+  const handleAddLineItem = () => {
+    const next = [
+      ...lineItems,
+      { id: `row-${Date.now()}-${lineItems.length + 1}`, shop: '', amount: '' },
+    ];
+    setLineItems(next);
+  };
+
+  const handleUpdateLineItem = (
+    rowId: string,
+    field: 'shop' | 'amount',
+    value: string
+  ) => {
+    const next = lineItems.map((item) =>
+      item.id === rowId ? { ...item, [field]: value } : item
+    );
+    syncFromLineItems(next);
+  };
+
+  const handleRemoveLineItem = (rowId: string) => {
+    if (lineItems.length <= 1) {
+      syncFromLineItems([{ id: 'row-1', shop: '', amount: '' }]);
+      return;
+    }
+    syncFromLineItems(lineItems.filter((item) => item.id !== rowId));
+  };
+
   const handleScanComplete = (data: ScannedReceiptData) => {
     setScannedData(data);
-    if (data.amount !== null) setAmount(data.amount.toFixed(2));
-    if (data.merchant) setMerchantName(data.merchant);
+    setExtraFileNames(data.fileNames || []);
+    if (data.items && data.items.length > 0) {
+      const scannedRows: ClaimReceiptLineItem[] = data.items.map((it, idx) => ({
+        id: `scan-${Date.now()}-${idx}`,
+        shop: it.merchant || '',
+        amount: it.amount !== null ? it.amount.toFixed(2) : '',
+        date: it.date || undefined,
+        fileName: it.fileName,
+        rawText: it.rawText,
+      }));
+      syncFromLineItems(scannedRows);
+    } else {
+      if (data.amount !== null) setAmount(data.amount.toFixed(2));
+      if (data.merchant) setMerchantName(data.merchant);
+    }
+    if (data.amount !== null && (!data.items || data.items.length === 0)) {
+      setAmount(data.amount.toFixed(2));
+    }
     if (data.date) setExpenseDate(data.date);
     if (data.suggestedCategory && departments.includes(data.suggestedCategory)) {
       setCategory(data.suggestedCategory);
     }
     if (!title) {
-      setTitle(data.merchant ? `${data.merchant} Purchase` : `Receipt Claim (${data.date || expenseDate})`);
+      setTitle(
+        data.items && data.items.length > 1
+          ? `${data.items.length} Receipts Reimbursement${data.merchant ? ` (${data.merchant})` : ''}`
+          : data.merchant
+          ? `${data.merchant} Purchase`
+          : `Receipt Claim (${data.date || expenseDate})`
+      );
     }
   };
+
+  const duplicateMatches = findDuplicateClaims(
+    {
+      amount: parseFloat(amount) || 0,
+      expenseDate,
+      merchantName,
+      receiptFileName: file?.name,
+      extraFileNames,
+      rawOcrText: scannedData?.rawText,
+      lineItems: lineItems.map((item) => ({
+        shop: item.shop,
+        amount: parseFloat(item.amount) || 0,
+        date: item.date,
+        fileName: item.fileName,
+        rawText: item.rawText,
+      })),
+    },
+    existingClaims
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,6 +273,13 @@ export default function ClaimFormModal({
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
       setErrorMsg('Please enter a valid Amount (RM) greater than 0.');
+      return;
+    }
+
+    if (duplicateMatches.length > 0 && !confirmNotDuplicate) {
+      setErrorMsg(
+        'Potential duplicate receipt detected. Click "Click to compare" in the yellow warning banner and tick the confirmation box if this is a separate purchase.'
+      );
       return;
     }
 
@@ -200,9 +341,10 @@ export default function ClaimFormModal({
         ? customEventName.trim() || 'General Club Expense'
         : chosenBudget?.event_name || 'General Club Expense';
 
+      const itemsTag = formatItemizedBreakdownTag(lineItems, false);
       const baseDescription = `[Event: ${eventLabel}] ${description.trim()}${
         paymentSummary ? ` | Reimburse To: ${paymentSummary}` : ''
-      }`;
+      }${itemsTag ? ` ${itemsTag}` : ''}`;
 
       const cleanMerchant = merchantName.trim() || 'Merchant';
       const scannedSummary = scannedData
@@ -285,10 +427,14 @@ export default function ClaimFormModal({
       setCustomEventName('');
       setMerchantName('');
       setAmount('');
+      setLineItems([{ id: 'row-1', shop: '', amount: '' }]);
+      setExtraFileNames([]);
       setDescription('');
       setFile(null);
       setUploadedReceiptUrl(null);
       setScannedData(null);
+      setConfirmNotDuplicate(false);
+      setCompareMatch(null);
 
       onSuccess(`✓ Claim "${submittedTitle}" (RM ${numericAmount.toFixed(2)}) submitted successfully!`);
       onClose();
@@ -337,6 +483,7 @@ export default function ClaimFormModal({
               if (!f) {
                 setScannedData(null);
                 setUploadedReceiptUrl(null);
+                setExtraFileNames([]);
               }
             }}
             onUploadedUrl={setUploadedReceiptUrl}
@@ -347,8 +494,52 @@ export default function ClaimFormModal({
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-center justify-between text-xs text-emerald-900">
               <span className="font-semibold flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-emerald-700" />
-                Auto-filled from receipt ({scannedData.confidence}% confidence) — please double-check before submitting
+                Auto-filled from receipt{scannedData.items && scannedData.items.length > 1 ? `s (${scannedData.items.length} scanned)` : ''} ({scannedData.confidence}% confidence) — please double-check before submitting
               </span>
+            </div>
+          )}
+
+          {duplicateMatches.length > 0 && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3.5 space-y-2.5 text-xs text-amber-950 shadow-2xs">
+              <div className="space-y-2">
+                {duplicateMatches.map((match) => (
+                  <div
+                    key={match.claim.id}
+                    className="flex flex-wrap items-start justify-between gap-2 bg-white/80 border border-amber-200 rounded-xl p-2.5"
+                  >
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="font-extrabold text-amber-950 leading-snug">
+                        {match.headline}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-amber-800">
+                        <span className="px-1.5 py-0.5 rounded bg-amber-100 font-bold">
+                          {match.claim.status}
+                        </span>
+                        <span>{match.reasons.join(' • ')}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCompareMatch(match)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+                    >
+                      <GitCompare className="w-3.5 h-3.5" />
+                      <span>Click to compare</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <label className="flex items-start gap-2 pt-1 cursor-pointer select-none font-bold text-amber-950">
+                <input
+                  type="checkbox"
+                  checked={confirmNotDuplicate}
+                  onChange={(e) => setConfirmNotDuplicate(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-amber-600 rounded"
+                />
+                <span>
+                  I compared the matched claim(s) above and confirm this is a separate valid purchase, not a duplicate claim.
+                </span>
+              </label>
             </div>
           )}
 
@@ -394,10 +585,76 @@ export default function ClaimFormModal({
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Mineral Water & Bread"
+                placeholder="e.g., Tournament Supplies & Mineral Water"
                 className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm"
                 required
               />
+            </div>
+
+            {/* Itemized Receipt Line List (+ Add Receipt Row: Shop | RM) */}
+            <div className="sm:col-span-2 p-3.5 rounded-2xl bg-slate-50 border border-emerald-200 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-extrabold text-emerald-950 flex items-center gap-1.5">
+                  <Receipt className="w-4 h-4 text-emerald-700" />
+                  <span>Itemized Receipt Breakdown (Sums into 1 Bank Transfer)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleAddLineItem}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold cursor-pointer"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Add Receipt Row</span>
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {lineItems.map((row, idx) => (
+                  <div key={row.id} className="grid grid-cols-12 gap-2 items-center text-xs">
+                    <span className="col-span-1 text-[11px] font-bold text-slate-400 text-center">
+                      #{idx + 1}
+                    </span>
+                    <input
+                      type="text"
+                      value={row.shop}
+                      onChange={(e) => handleUpdateLineItem(row.id, 'shop', e.target.value)}
+                      placeholder="Shop / Merchant (e.g. 99 Speedmart)"
+                      className="col-span-6 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 font-semibold"
+                    />
+                    <div className="col-span-4 relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">
+                        RM
+                      </span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={row.amount}
+                        onChange={(e) => handleUpdateLineItem(row.id, 'amount', e.target.value)}
+                        placeholder="0.00"
+                        className="w-full rounded-xl border border-slate-200 bg-white pl-8 pr-2.5 py-1.5 font-bold"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveLineItem(row.id)}
+                      className="col-span-1 p-1.5 text-slate-400 hover:text-rose-600 cursor-pointer flex items-center justify-center"
+                      title="Remove receipt row"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-200 text-xs">
+                <span className="text-slate-500 font-semibold">
+                  {lineItems.length} receipt row{lineItems.length > 1 ? 's' : ''} → 1 single payout
+                </span>
+                <span className="font-extrabold text-emerald-900">
+                  Total: RM {(parseFloat(amount) || 0).toFixed(2)}
+                </span>
+              </div>
             </div>
 
             <div>
@@ -419,13 +676,19 @@ export default function ClaimFormModal({
 
             <div>
               <label className="block text-xs font-bold text-emerald-900 mb-1">
-                Amount (RM) *
+                Total Amount (RM) *
               </label>
               <input
                 type="number"
                 step="0.01"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setAmount(val);
+                  if (lineItems.length === 1) {
+                    setLineItems([{ ...lineItems[0], amount: val }]);
+                  }
+                }}
                 className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm font-bold"
                 required
               />
@@ -433,12 +696,18 @@ export default function ClaimFormModal({
 
             <div>
               <label className="block text-xs font-bold text-emerald-900 mb-1">
-                Shop / Merchant
+                Shop / Merchant Summary
               </label>
               <input
                 type="text"
                 value={merchantName}
-                onChange={(e) => setMerchantName(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setMerchantName(val);
+                  if (lineItems.length === 1) {
+                    setLineItems([{ ...lineItems[0], shop: val }]);
+                  }
+                }}
                 placeholder="Optional (defaults to Merchant)"
                 className="w-full rounded-xl border border-emerald-300 px-3 py-2 text-sm"
               />
@@ -565,6 +834,144 @@ export default function ClaimFormModal({
           </div>
         </form>
       </div>
+
+      {compareMatch && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto"
+          onClick={() => setCompareMatch(null)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl border-2 border-amber-300 max-w-4xl w-full overflow-hidden my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-amber-600 text-white px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5" />
+                <div>
+                  <h3 className="text-sm font-extrabold">
+                    Compare Potential Duplicate — Claim #{compareMatch.claimNumber}
+                  </h3>
+                  <p className="text-[11px] text-amber-100">{compareMatch.reasons.join(' • ')}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompareMatch(null)}
+                className="p-1 rounded-lg hover:bg-amber-500 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5 text-xs max-h-[80vh] overflow-y-auto">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4 space-y-3">
+                <div className="font-extrabold text-emerald-950 text-sm">Your New Draft Claim</div>
+                <div className="space-y-1 text-slate-700">
+                  <div>
+                    <span className="text-slate-500">Title:</span> <strong>{title || '(Untitled)'}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Amount:</span>{' '}
+                    <strong className="text-emerald-900">RM {(parseFloat(amount) || 0).toFixed(2)}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Date:</span> <strong>{expenseDate}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Merchant:</span> <strong>{merchantName || 'Merchant'}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">File:</span>{' '}
+                    <span className="font-mono">{file?.name || '-'}</span>
+                  </div>
+                </div>
+                {(localFilePreviewUrl || uploadedReceiptUrl) && (
+                  <img
+                    src={localFilePreviewUrl || uploadedReceiptUrl || ''}
+                    alt="Draft receipt"
+                    className="max-h-72 w-full object-contain rounded-xl border bg-white p-1"
+                  />
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-amber-300 bg-amber-50/50 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-extrabold text-amber-950 text-sm">
+                    Existing Claim #{compareMatch.claimNumber}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-200 text-amber-950">
+                    {compareMatch.claim.status}
+                  </span>
+                </div>
+                <div className="space-y-1 text-slate-700">
+                  <div>
+                    <span className="text-slate-500">Title:</span>{' '}
+                    <strong>{compareMatch.claim.title}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Claimant:</span>{' '}
+                    <strong>
+                      {compareMatch.claim.claimant_name} ({compareMatch.claim.matric_no})
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Amount:</span>{' '}
+                    <strong className="text-amber-950">
+                      RM {Number(compareMatch.claim.amount).toFixed(2)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Date:</span>{' '}
+                    <strong>{compareMatch.claim.expense_date}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Merchant:</span>{' '}
+                    <strong>{compareMatch.claim.merchant_name}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">File:</span>{' '}
+                    <span className="font-mono">{compareMatch.claim.receipt_file_name}</span>
+                  </div>
+                  {(() => {
+                    const parsed = parseItemizedBreakdownFromDescription(compareMatch.claim.description);
+                    if (parsed.items.length === 0) return null;
+                    return (
+                      <div className="pt-1 text-[11px] text-amber-900 font-semibold">
+                        Itemized: {parsed.items.map((it) => `${it.shop} (RM ${it.amount.toFixed(2)})`).join(' • ')}
+                      </div>
+                    );
+                  })()}
+                </div>
+                {compareMatch.claim.receipt_url && (
+                  <img
+                    src={compareMatch.claim.receipt_url}
+                    alt={compareMatch.claim.title}
+                    className="max-h-72 w-full object-contain rounded-xl border bg-white p-1"
+                  />
+                )}
+              </div>
+            </div>
+            <div className="px-6 py-3 bg-slate-50 border-t flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmNotDuplicate(true);
+                  setCompareMatch(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold cursor-pointer"
+              >
+                Verified Separate Receipt (Tick Confirmation)
+              </button>
+              <button
+                type="button"
+                onClick={() => setCompareMatch(null)}
+                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
