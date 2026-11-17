@@ -262,28 +262,31 @@ export default function ClaimFormModal({
     e.preventDefault();
     setErrorMsg(null);
     if (!file) {
-      setErrorMsg('Please attach or scan your receipt or PDF invoice first.');
+      setStep(1);
+      setErrorMsg('Attach or scan a receipt before submitting.');
       return;
     }
     if (file.size > MAX_FILE_SIZE_BYTES) {
+      setStep(1);
       setErrorMsg('File size must be under 50 MB.');
       return;
     }
     if (!title.trim()) {
-      setErrorMsg('Please enter an Expense Title.');
+      setStep(2);
+      setErrorMsg('Enter an expense title.');
       return;
     }
 
     const numericAmount = parseFloat(amount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
-      setErrorMsg('Please enter a valid Amount (RM) greater than 0.');
+      setStep(2);
+      setErrorMsg('Enter a valid amount (RM).');
       return;
     }
 
     if (duplicateMatches.length > 0 && !confirmNotDuplicate) {
-      setErrorMsg(
-        'Potential duplicate receipt detected. Click "Click to compare" in the yellow warning banner and tick the confirmation box if this is a separate purchase.'
-      );
+      setStep(2);
+      setErrorMsg('Compare the similar claim and tick confirmation.');
       return;
     }
 
@@ -452,29 +455,6 @@ export default function ClaimFormModal({
 
   const goToStep = (target: 1 | 2 | 3) => {
     setErrorMsg(null);
-    if (target > 1 && !file) {
-      setErrorMsg('Attach or scan a receipt first.');
-      setStep(1);
-      return;
-    }
-    if (target > 2) {
-      if (!title.trim()) {
-        setErrorMsg('Enter an expense title.');
-        setStep(2);
-        return;
-      }
-      const n = parseFloat(amount);
-      if (isNaN(n) || n <= 0) {
-        setErrorMsg('Enter a valid amount (RM).');
-        setStep(2);
-        return;
-      }
-      if (duplicateMatches.length > 0 && !confirmNotDuplicate) {
-        setErrorMsg('Compare the similar claim and tick confirmation.');
-        setStep(2);
-        return;
-      }
-    }
     setStep(target);
   };
 
@@ -500,12 +480,11 @@ export default function ClaimFormModal({
         {/* Clean 3-Stage Stepper */}
         <div className="grid grid-cols-3 gap-2 px-6 py-3 bg-emerald-50/70 border-b border-emerald-100 text-xs">
           {[
-            { id: 1 as const, label: '1. Receipt' },
-            { id: 2 as const, label: '2. Details' },
-            { id: 3 as const, label: '3. Payout' },
+            { id: 1 as const, label: '1. Receipt', done: Boolean(file) },
+            { id: 2 as const, label: '2. Details', done: Boolean(title.trim() && parseFloat(amount) > 0) },
+            { id: 3 as const, label: '3. Bank / QR', done: Boolean(bankAccountNo.trim() || claimantQrUrl || claimantQrFile) },
           ].map((s) => {
             const active = step === s.id;
-            const done = step > s.id;
             return (
               <button
                 key={s.id}
@@ -514,12 +493,12 @@ export default function ClaimFormModal({
                 className={`py-2 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   active
                     ? 'bg-emerald-600 text-white shadow-2xs'
-                    : done
+                    : s.done
                     ? 'bg-emerald-100 text-emerald-900'
-                    : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                {done && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />}
+                {s.done && !active && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />}
                 <span>{s.label}</span>
               </button>
             );
@@ -783,7 +762,7 @@ export default function ClaimFormModal({
                   onClick={() => goToStep(3)}
                   className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
                 >
-                  <span>Next: Payout</span>
+                  <span>Next: Bank / QR</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
