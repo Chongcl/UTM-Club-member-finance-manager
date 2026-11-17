@@ -712,9 +712,9 @@ export default function ReceiptDropzone({
           <div className="text-xs font-bold text-emerald-950 break-all">
             {activeFile
               ? sourceFiles.length > 1
-                ? `${sourceFiles.length} receipts combined into 1 tall JPG (${activeFile.name})`
+                ? `${sourceFiles.length} receipts combined (${activeFile.name})`
                 : activeFile.name
-              : 'Select 1 or Multiple Receipts (auto-stitched into 1 JPG) or Scan Live'}
+              : 'Upload or scan receipt(s)'}
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button
@@ -887,8 +887,8 @@ export default function ReceiptDropzone({
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
               <span>
                 {sourceFiles.length > 1
-                  ? `✓ ${sourceFiles.length} receipts stitched into 1 single JPG in storage (visible to Admin)`
-                  : '✓ Full receipt JPG saved to database (visible to Admin)'}
+                  ? `✓ ${sourceFiles.length} receipts combined (1 JPG saved)`
+                  : '✓ Receipt saved'}
               </span>
             </div>
           ) : null}

@@ -240,6 +240,7 @@ export default function Page() {
       const savedLogo = localStorage.getItem('clubsync_logo_url');
       const savedPayQr = localStorage.getItem('clubsync_payment_qr');
       const savedPayBank = localStorage.getItem('clubsync_payment_bank');
+      const savedThresh = localStorage.getItem('clubsync_claim_threshold');
       if (savedStyle) setBgStyle(savedStyle);
       if (savedImg) setBgImageUrl(savedImg);
       if (savedLogo) {
@@ -248,6 +249,13 @@ export default function Page() {
       }
       if (savedPayQr) setPaymentQrUrl(savedPayQr);
       if (savedPayBank) setPaymentBankInfo(savedPayBank);
+      if (savedThresh !== null) {
+        const parsed = parseFloat(savedThresh);
+        if (!isNaN(parsed) && parsed >= 0) {
+          setClaimThreshold(parsed);
+          setClaimThresholdInput(String(parsed));
+        }
+      }
     }
   }, []);
 
@@ -262,6 +270,33 @@ export default function Page() {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage((p) => (p === msg ? null : p)), 3500);
+  };
+
+  const saveClaimThreshold = async (rawValue: string) => {
+    const parsed = parseFloat(rawValue);
+    const nextThresh = !isNaN(parsed) && parsed >= 0 ? parsed : DEFAULT_CLAIM_APPROVAL_THRESHOLD;
+    setClaimThreshold(nextThresh);
+    setClaimThresholdInput(String(nextThresh));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('clubsync_claim_threshold', String(nextThresh));
+    }
+    const { error } = await supabase
+      .from('club_settings')
+      .upsert({ id: 1, claim_approval_threshold: nextThresh });
+    if (profile) {
+      void logActivity(
+        profile,
+        'Settings',
+        'Claim threshold updated',
+        `${profile.full_name} (${profile.matric_no}) set 2-stage claim threshold to RM ${nextThresh.toFixed(0)}`
+      );
+    }
+    if (error) {
+      showToast(`Saved locally (RM ${nextThresh.toFixed(0)}). Add DB column to sync all devices.`);
+    } else {
+      showToast(`2-stage threshold saved: RM ${nextThresh.toFixed(0)}`);
+    }
+    fetchAllData();
   };
 
   const normalizeProfile = (raw: Record<string, unknown>): UserProfile => {
@@ -389,10 +424,15 @@ export default function Page() {
     if (pvRes.data) setPollVotes(pvRes.data as PollVote[]);
     if (logRes.data) setActivityLogs(logRes.data as ActivityLogEntry[]);
     if (sRes.data) {
-      const thresh = Number(sRes.data.claim_approval_threshold ?? DEFAULT_CLAIM_APPROVAL_THRESHOLD);
-      if (!isNaN(thresh) && thresh > 0) {
-        setClaimThreshold(thresh);
-        setClaimThresholdInput(String(thresh));
+      if (sRes.data.claim_approval_threshold !== null && sRes.data.claim_approval_threshold !== undefined) {
+        const thresh = Number(sRes.data.claim_approval_threshold);
+        if (!isNaN(thresh) && thresh >= 0) {
+          setClaimThreshold(thresh);
+          setClaimThresholdInput(String(thresh));
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('clubsync_claim_threshold', String(thresh));
+          }
+        }
       }
       const cName = String(sRes.data.club_name || 'ClubSync');
       const bYear = String(sRes.data.current_batch || '2026/2027');
@@ -1428,19 +1468,41 @@ export default function Page() {
 
           {activeTab === 'claims' && (
             <section className="bg-white/90 backdrop-blur-xl text-slate-900 rounded-3xl border border-emerald-100 overflow-hidden shadow-xs">
-              <div className="p-5 border-b flex justify-between items-center">
+              <div className="p-5 border-b flex flex-wrap justify-between items-center gap-3">
                 <div className="flex items-center gap-2">
                   <Receipt className="w-5 h-5 text-emerald-700" />
                   <h2 className="text-base font-extrabold">Reimbursement Claims</h2>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsClaimModalOpen(true)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white cursor-pointer"
-                >
-                  <PlusCircle className="w-4 h-4 inline mr-1" />
-                  New Claim
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {profile?.role === 'owner' && (
+                    <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 rounded-xl px-2.5 py-1 text-xs">
+                      <span className="font-bold text-indigo-900">2-Stage &gt; RM</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="10"
+                        value={claimThresholdInput}
+                        onChange={(e) => setClaimThresholdInput(e.target.value)}
+                        className="w-16 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs font-extrabold text-indigo-950"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void saveClaimThreshold(claimThresholdInput)}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] cursor-pointer"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsClaimModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white cursor-pointer"
+                  >
+                    <PlusCircle className="w-4 h-4 inline mr-1" />
+                    New Claim
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
@@ -1749,11 +1811,11 @@ export default function Page() {
                         </div>
                         <div>
                           <label className="block font-bold mb-1">
-                            2-Stage Claim Approval Threshold (RM) — Claims above this require Treasurer + Owner approval
+                            2-Stage Approval Threshold (RM)
                           </label>
                           <input
                             type="number"
-                            min="1"
+                            min="0"
                             step="10"
                             value={claimThresholdInput}
                             onChange={(e) => setClaimThresholdInput(e.target.value)}
@@ -1794,7 +1856,14 @@ export default function Page() {
                             corePayload.admin_pin = newAdminPinInput.trim();
                             corePayload.owner_pin = newOwnerPinInput.trim();
                           }
-                          const nextThresh = Math.max(1, parseFloat(claimThresholdInput) || DEFAULT_CLAIM_APPROVAL_THRESHOLD);
+                          const parsedThresh = parseFloat(claimThresholdInput);
+                          const nextThresh =
+                            !isNaN(parsedThresh) && parsedThresh >= 0
+                              ? parsedThresh
+                              : DEFAULT_CLAIM_APPROVAL_THRESHOLD;
+                          if (isOwner && typeof window !== 'undefined') {
+                            localStorage.setItem('clubsync_claim_threshold', String(nextThresh));
+                          }
                           const fullPayload: Record<string, unknown> = {
                             ...corePayload,
                             payment_qr_url: finalPayQr,
@@ -1802,8 +1871,18 @@ export default function Page() {
                             ...(isOwner ? { claim_approval_threshold: nextThresh } : {}),
                           };
                           const { error } = await supabase.from('club_settings').upsert(fullPayload);
-                          if (error) await supabase.from('club_settings').upsert(corePayload);
-                          setClaimThreshold(nextThresh);
+                          if (error) {
+                            await supabase.from('club_settings').upsert(corePayload);
+                            if (isOwner) {
+                              await supabase
+                                .from('club_settings')
+                                .upsert({ id: 1, claim_approval_threshold: nextThresh });
+                            }
+                          }
+                          if (isOwner) {
+                            setClaimThreshold(nextThresh);
+                            setClaimThresholdInput(String(nextThresh));
+                          }
                           void logActivity(
                             profile,
                             'Settings',
