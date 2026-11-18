@@ -69,7 +69,7 @@ interface LedgerSectionProps {
   onRefresh: (msg: string) => void;
 }
 
-type FinanceTabView = 'master' | 'activity_pnl' | 'tracker' | 'receivables' | 'planner';
+type FinanceTabView = 'master' | 'activity_pnl' | 'receivables' | 'planner';
 type UnifiedSource = 'LEDGER' | 'CLAIM' | 'FEE';
 type SortKey = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc' | 'activity_asc';
 
@@ -295,6 +295,8 @@ export default function LedgerSection({
   onRefresh,
 }: LedgerSectionProps) {
   const [activeView, setActiveView] = useState<FinanceTabView>('master');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [spreadsheetMode, setSpreadsheetMode] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
 
@@ -346,8 +348,7 @@ export default function LedgerSection({
   const [newPlanAmount, setNewPlanAmount] = useState('');
   const [newPlanNotes, setNewPlanNotes] = useState('');
 
-  // Tracker scope filter + fee edit modal
-  const [trackerEventId, setTrackerEventId] = useState<string>('ALL');
+  // Fee edit modal
   const [editingFeeItem, setEditingFeeItem] = useState<ActivityFeePayment | null>(null);
   const [editFeeAmount, setEditFeeAmount] = useState('');
   const [editFeeStatus, setEditFeeStatus] = useState<'Verified' | 'Pending' | 'Rejected'>('Verified');
@@ -1109,21 +1110,6 @@ export default function LedgerSection({
     }
   };
 
-  // --- Filtered Tracker Lists ---
-  const selectedBudget = budgets.find((b) => b.id === trackerEventId);
-  const filteredFeePayments =
-    trackerEventId === 'ALL'
-      ? feePayments
-      : feePayments.filter((f) => f.budget_id === trackerEventId);
-  const filteredClaims =
-    trackerEventId === 'ALL' ? claims : claims.filter((c) => c.budget_id === trackerEventId);
-  const filteredRsvps =
-    trackerEventId === 'ALL' ? rsvps : rsvps.filter((r) => r.budget_id === trackerEventId);
-  const filteredLedger =
-    trackerEventId === 'ALL'
-      ? entries
-      : entries.filter((e) => e.event_name === selectedBudget?.event_name);
-
   // --- Export Current Filtered View (.csv) ---
   const handleExportFilteredCsv = () => {
     const headers = [
@@ -1170,12 +1156,12 @@ export default function LedgerSection({
     const scopeTitle = scopeBudget ? scopeBudget.event_name : 'All_Club_Activities';
     const scFees = scopeBudget
       ? feePayments.filter((f) => f.budget_id === scopeBudget.id)
-      : filteredFeePayments;
-    const scClaims = scopeBudget ? claims.filter((c) => c.budget_id === scopeBudget.id) : filteredClaims;
-    const scRsvps = scopeBudget ? rsvps.filter((r) => r.budget_id === scopeBudget.id) : filteredRsvps;
+      : feePayments;
+    const scClaims = scopeBudget ? claims.filter((c) => c.budget_id === scopeBudget.id) : claims;
+    const scRsvps = scopeBudget ? rsvps.filter((r) => r.budget_id === scopeBudget.id) : rsvps;
     const scLedger = scopeBudget
       ? entries.filter((e) => e.event_name === scopeBudget.event_name)
-      : filteredLedger;
+      : entries;
 
     const feesTotal = scFees
       .filter((f) => f.status === 'Verified')
@@ -1376,319 +1362,413 @@ export default function LedgerSection({
 
   return (
     <div className="space-y-4">
-      {/* 1. Clean & Compact Top KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-emerald-800 text-white rounded-3xl p-5 shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-emerald-200">
-              Current Club Savings
-            </span>
-            <Wallet className="w-5 h-5 text-emerald-300" />
+      {/* Unified Club Balance & Primary Actions Header */}
+      <div className="bg-white rounded-3xl border border-emerald-200 shadow-xs p-5 flex flex-wrap items-center justify-between gap-5">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-700 text-white flex items-center justify-center shrink-0">
+            <Wallet className="w-6 h-6" />
           </div>
-          <p className="text-2xl font-extrabold mt-2">RM {currentSavingsBalance.toFixed(2)}</p>
-          <p className="text-[11px] text-emerald-100 mt-1.5 font-medium">
-            Bank / DuitNow: <strong>RM {bankBalance.toFixed(2)}</strong> • Cash:{' '}
-            <strong>RM {physicalCash.toFixed(2)}</strong>
-          </p>
-        </div>
-
-        <div className="bg-white rounded-3xl p-5 border border-emerald-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-slate-500">Total Money In</span>
-            <TrendingUp className="w-5 h-5 text-emerald-700" />
+          <div>
+            <div className="text-xs font-bold text-slate-500">Club Savings</div>
+            <div className="text-2xl font-extrabold text-slate-900">
+              RM {currentSavingsBalance.toFixed(2)}
+            </div>
+            <div className="text-[11px] text-slate-500">
+              Bank RM {bankBalance.toFixed(2)} · Cash RM {physicalCash.toFixed(2)}
+            </div>
           </div>
-          <p className="text-2xl font-extrabold text-emerald-700 mt-2">+ RM {totalIn.toFixed(2)}</p>
-          <p className="text-[11px] text-slate-500 mt-1.5">
-            Ledger: <strong>RM {manualIn.toFixed(2)}</strong> • Verified Fees:{' '}
-            <strong>RM {verifiedFeesIn.toFixed(2)}</strong>
-            {pendingFeesTotal > 0 ? ` (+RM ${pendingFeesTotal.toFixed(0)} pending)` : ''}
-          </p>
         </div>
 
-        <div className="bg-white rounded-3xl p-5 border border-rose-200 shadow-xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-slate-500">Total Money Out</span>
-            <TrendingDown className="w-5 h-5 text-rose-600" />
+        <div className="flex items-center gap-6 text-sm">
+          <div>
+            <div className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Money In</span>
+            </div>
+            <div className="font-extrabold text-emerald-700">+RM {totalIn.toFixed(2)}</div>
           </div>
-          <p className="text-2xl font-extrabold text-rose-600 mt-2">- RM {totalOut.toFixed(2)}</p>
-          <p className="text-[11px] text-slate-500 mt-1.5">
-            Ledger: <strong>RM {manualOut.toFixed(2)}</strong> • Approved Claims:{' '}
-            <strong>RM {approvedClaimsOut.toFixed(2)}</strong>
-          </p>
-        </div>
-      </div>
-
-      {/* 2. Unified Finance Action Toolbar */}
-      <div className="bg-white rounded-3xl border border-emerald-200 p-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          {(
-            [
-              { id: 'master', label: `Master Sheet (${unifiedRows.length})` },
-              { id: 'activity_pnl', label: 'By Activity (P&L)' },
-              { id: 'tracker', label: 'Claims & Fees' },
-              {
-                id: 'receivables',
-                label: 'Unpaid Fees',
-                badge: unpaidReceivables.length,
-              },
-              { id: 'planner', label: 'Budget Planner' },
-            ] as { id: FinanceTabView; label: string; badge?: number }[]
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveView(tab.id)}
-              className={`px-3.5 py-2 rounded-2xl font-bold transition cursor-pointer inline-flex items-center gap-1.5 ${
-                activeView === tab.id
-                  ? 'bg-emerald-700 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-900'
-              }`}
-            >
-              <span>{tab.label}</span>
-              {typeof tab.badge === 'number' && tab.badge > 0 && (
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                    activeView === tab.id ? 'bg-amber-400 text-slate-950' : 'bg-rose-600 text-white'
-                  }`}
-                >
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          ))}
+          <div>
+            <div className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+              <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
+              <span>Money Out</span>
+            </div>
+            <div className="font-extrabold text-rose-600">-RM {totalOut.toFixed(2)}</div>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <div className="flex items-center gap-2 text-xs">
           {canEdit && (
             <>
               <button
                 type="button"
-                onClick={() => {
-                  setActiveView('master');
-                  setSpreadsheetMode((v) => !v);
-                }}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold border cursor-pointer transition ${
-                  spreadsheetMode
-                    ? 'bg-amber-500 border-amber-600 text-slate-950 shadow-2xs'
-                    : 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'
-                }`}
+                onClick={() => openAddModal('IN')}
+                className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
               >
-                <Edit3 className="w-3.5 h-3.5" />
-                <span>Spreadsheet Mode: {spreadsheetMode ? 'ON' : 'OFF'}</span>
+                <PlusCircle className="w-4 h-4" />
+                <span>Money In</span>
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (spreadsheetMode && activeView === 'master') {
-                    quickAddTitleRef.current?.focus();
-                  } else {
-                    openAddModal('OUT');
-                  }
-                }}
-                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                onClick={() => openAddModal('OUT')}
+                className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl font-bold bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
               >
-                <PlusCircle className="w-3.5 h-3.5" />
-                <span>Add Row</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowPasteModal(true)}
-                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 cursor-pointer"
-                title="Paste rows from Excel or Google Sheets"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>Paste Excel</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => openAddModal('SET_SAVINGS')}
-                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl font-bold bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Set Savings</span>
+                <TrendingDown className="w-4 h-4" />
+                <span>Money Out</span>
               </button>
             </>
           )}
-          <button
-            type="button"
-            onClick={handleExportFilteredCsv}
-            className="inline-flex items-center gap-1 px-3 py-2 rounded-xl font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>CSV</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => void exportWorkbookForScope(selectedBudget)}
-            className="inline-flex items-center gap-1 px-3 py-2 rounded-xl font-bold bg-emerald-800 hover:bg-emerald-700 text-white cursor-pointer"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Excel (.xlsx)</span>
-          </button>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowMoreMenu((v) => !v)}
+              className="px-3.5 py-2 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 cursor-pointer"
+            >
+              More ▾
+            </button>
+            {showMoreMenu && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setShowMoreMenu(false)} />
+                <div className="absolute right-0 mt-1.5 w-52 bg-white border border-slate-200 rounded-2xl shadow-xl z-30 py-1.5 text-xs">
+                  {canEdit && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMoreMenu(false);
+                          openAddModal('SET_SAVINGS');
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-slate-50 flex items-center gap-2 font-semibold text-slate-800 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Set savings balance</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMoreMenu(false);
+                          setShowPasteModal(true);
+                        }}
+                        className="w-full text-left px-3.5 py-2 hover:bg-slate-50 flex items-center gap-2 font-semibold text-slate-800 cursor-pointer"
+                      >
+                        <Copy className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Paste from Excel</span>
+                      </button>
+                      <div className="my-1 border-t border-slate-100" />
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      handleExportFilteredCsv();
+                    }}
+                    className="w-full text-left px-3.5 py-2 hover:bg-slate-50 flex items-center gap-2 font-semibold text-slate-800 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Download CSV</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      void exportWorkbookForScope(null);
+                    }}
+                    className="w-full text-left px-3.5 py-2 hover:bg-slate-50 flex items-center gap-2 font-semibold text-slate-800 cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Download Excel (.xlsx)</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ===================== VIEW 1: MASTER SPREADSHEET ===================== */}
+      {/* Simple 4-Tab Bar */}
+      <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 text-sm">
+        {(
+          [
+            { id: 'master', label: 'Transactions' },
+            { id: 'activity_pnl', label: 'By Activity' },
+            { id: 'receivables', label: 'Unpaid Fees', badge: unpaidReceivables.length },
+            { id: 'planner', label: 'Budget Plan' },
+          ] as { id: FinanceTabView; label: string; badge?: number }[]
+        ).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveView(tab.id)}
+            className={`px-4 py-2.5 -mb-px border-b-2 font-bold inline-flex items-center gap-1.5 cursor-pointer transition ${
+              activeView === tab.id
+                ? 'border-emerald-600 text-emerald-800'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <span>{tab.label}</span>
+            {typeof tab.badge === 'number' && tab.badge > 0 && (
+              <span className="px-1.5 rounded-full text-[10px] font-extrabold bg-rose-600 text-white">
+                {tab.badge}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ===================== VIEW 1: TRANSACTIONS ===================== */}
       {activeView === 'master' && (
         <div className="bg-white rounded-3xl border border-emerald-200 shadow-xs overflow-hidden">
-          {/* Filter, Sort & Search Ribbon */}
-          <div className="p-4 bg-emerald-50/50 border-b border-emerald-100 flex flex-wrap items-center gap-2 text-xs">
-            <div className="relative flex-1 min-w-[180px]">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search title, member, matric, notes..."
-                className="w-full rounded-xl border border-emerald-200 bg-white pl-8 pr-3 py-1.5 text-xs"
-              />
-            </div>
+          {/* Compact Top Filter & Sheet Edit Bar */}
+          <div className="p-4 border-b border-slate-100 space-y-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search..."
+                  className="w-full rounded-xl border border-slate-200 bg-white pl-8 pr-3 py-2 text-xs"
+                />
+              </div>
 
-            <select
-              value={filterEvent}
-              onChange={(e) => setFilterEvent(e.target.value)}
-              className="rounded-xl border border-emerald-200 bg-white px-2.5 py-1.5 font-semibold"
-            >
-              <option value="ALL">All Activities</option>
-              <option value="GENERAL">General Club Fund</option>
-              {budgets.map((b) => (
-                <option key={b.id} value={b.event_name}>
-                  {b.event_name}
-                </option>
-              ))}
-            </select>
+              <div className="flex flex-wrap p-1 rounded-xl bg-slate-100 gap-0.5">
+                {[
+                  {
+                    key: 'all',
+                    label: 'All',
+                    active: filterType === 'ALL' && filterSource === 'ALL',
+                    onClick: () => {
+                      setFilterType('ALL');
+                      setFilterSource('ALL');
+                    },
+                  },
+                  {
+                    key: 'in',
+                    label: 'In (+)',
+                    active: filterType === 'IN' && filterSource === 'ALL',
+                    onClick: () => {
+                      setFilterType('IN');
+                      setFilterSource('ALL');
+                    },
+                  },
+                  {
+                    key: 'out',
+                    label: 'Out (-)',
+                    active: filterType === 'OUT' && filterSource === 'ALL',
+                    onClick: () => {
+                      setFilterType('OUT');
+                      setFilterSource('ALL');
+                    },
+                  },
+                  {
+                    key: 'claims',
+                    label: 'Claims',
+                    active: filterSource === 'CLAIM',
+                    onClick: () => {
+                      setFilterType('ALL');
+                      setFilterSource('CLAIM');
+                    },
+                  },
+                  {
+                    key: 'fees',
+                    label: 'Fees',
+                    active: filterSource === 'FEE',
+                    onClick: () => {
+                      setFilterType('ALL');
+                      setFilterSource('FEE');
+                    },
+                  },
+                ].map((pill) => (
+                  <button
+                    key={pill.key}
+                    type="button"
+                    onClick={pill.onClick}
+                    className={`px-3 py-1 rounded-lg font-bold cursor-pointer ${
+                      pill.active ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {pill.label}
+                  </button>
+                ))}
+              </div>
 
-            <select
-              value={filterSource}
-              onChange={(e) => setFilterSource(e.target.value as 'ALL' | UnifiedSource)}
-              className="rounded-xl border border-emerald-200 bg-white px-2.5 py-1.5 font-semibold"
-            >
-              <option value="ALL">All Sources</option>
-              <option value="LEDGER">Manual Ledger</option>
-              <option value="CLAIM">Approved Claims</option>
-              <option value="FEE">Verified Fees</option>
-            </select>
-
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value as 'ALL' | 'IN' | 'OUT')}
-              className="rounded-xl border border-emerald-200 bg-white px-2.5 py-1.5 font-semibold"
-            >
-              <option value="ALL">In &amp; Out</option>
-              <option value="IN">Money In (+)</option>
-              <option value="OUT">Money Out (-)</option>
-            </select>
-
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="rounded-xl border border-emerald-200 bg-white px-2 py-1.5 font-mono"
-              title="From date"
-            />
-            <span className="text-slate-400">to</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="rounded-xl border border-emerald-200 bg-white px-2 py-1.5 font-mono"
-              title="To date"
-            />
-
-            <button
-              type="button"
-              onClick={() => {
-                const now = new Date();
-                const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-                const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-                setDateFrom(start);
-                setDateTo(end);
-              }}
-              className="px-2.5 py-1.5 rounded-xl bg-white border border-emerald-200 hover:bg-emerald-100 font-bold cursor-pointer"
-            >
-              This Month
-            </button>
-
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortKey)}
-              className="rounded-xl border border-emerald-200 bg-white px-2.5 py-1.5 font-semibold"
-            >
-              <option value="date_desc">Sort: Newest</option>
-              <option value="date_asc">Sort: Oldest</option>
-              <option value="amount_desc">Sort: Highest RM</option>
-              <option value="amount_asc">Sort: Lowest RM</option>
-              <option value="activity_asc">Sort: Activity</option>
-            </select>
-
-            {(filterEvent !== 'ALL' ||
-              filterSource !== 'ALL' ||
-              filterType !== 'ALL' ||
-              dateFrom ||
-              dateTo ||
-              searchQuery) && (
               <button
                 type="button"
-                onClick={() => {
-                  setFilterEvent('ALL');
-                  setFilterSource('ALL');
-                  setFilterType('ALL');
-                  setDateFrom('');
-                  setDateTo('');
-                  setSearchQuery('');
-                }}
-                className="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 font-bold cursor-pointer"
+                onClick={() => setShowFilters((v) => !v)}
+                className={`px-3 py-2 rounded-xl font-bold border cursor-pointer ${
+                  showFilters || filterEvent !== 'ALL' || dateFrom || dateTo || sortBy !== 'date_desc'
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
               >
-                Clear
+                Filters
               </button>
+
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setSpreadsheetMode((v) => !v)}
+                  className={`inline-flex items-center gap-1 px-3 py-2 rounded-xl font-bold border cursor-pointer ${
+                    spreadsheetMode
+                      ? 'bg-amber-500 border-amber-600 text-slate-950'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>{spreadsheetMode ? 'Done editing' : 'Edit as sheet'}</span>
+                </button>
+              )}
+            </div>
+
+            {showFilters && (
+              <div className="flex flex-wrap items-center gap-2 p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                <select
+                  value={filterEvent}
+                  onChange={(e) => setFilterEvent(e.target.value)}
+                  className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 font-semibold"
+                >
+                  <option value="ALL">All activities</option>
+                  <option value="GENERAL">General Club Fund</option>
+                  {budgets.map((b) => (
+                    <option key={b.id} value={b.event_name}>
+                      {b.event_name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="rounded-xl border border-slate-200 bg-white px-2 py-1.5 font-mono"
+                />
+                <span className="text-slate-400">to</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="rounded-xl border border-slate-200 bg-white px-2 py-1.5 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    setDateFrom(new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]);
+                    setDateTo(new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]);
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 font-bold cursor-pointer"
+                >
+                  This month
+                </button>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as SortKey)}
+                  className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 font-semibold"
+                >
+                  <option value="date_desc">Newest first</option>
+                  <option value="date_asc">Oldest first</option>
+                  <option value="amount_desc">Highest amount</option>
+                  <option value="amount_asc">Lowest amount</option>
+                  <option value="activity_asc">By activity</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterEvent('ALL');
+                    setFilterSource('ALL');
+                    setFilterType('ALL');
+                    setDateFrom('');
+                    setDateTo('');
+                    setSearchQuery('');
+                    setSortBy('date_desc');
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl text-rose-700 font-bold cursor-pointer"
+                >
+                  Reset
+                </button>
+              </div>
             )}
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-emerald-50 text-[11px] font-extrabold uppercase text-emerald-950 border-b border-emerald-200">
-                  <th className="py-2.5 px-3">Date</th>
-                  <th className="py-2.5 px-3">Source / Type</th>
-                  <th className="py-2.5 px-3">Activity</th>
-                  <th className="py-2.5 px-3">Item &amp; Category</th>
-                  <th className="py-2.5 px-3">Notes</th>
-                  <th className="py-2.5 px-3 text-right">Amount (RM)</th>
-                  <th className="py-2.5 px-3 text-right">Balance (Baki)</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
+                <tr className="bg-slate-50 text-[11px] font-bold uppercase text-slate-500 border-b border-slate-200">
+                  <th className="py-3 px-4">Date</th>
+                  <th className="py-3 px-4">Description</th>
+                  <th className="py-3 px-4">Activity</th>
+                  <th className="py-3 px-4 text-right">Amount</th>
+                  <th className="py-3 px-4 text-right">Balance</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-emerald-100">
-                {/* Inline Quick-Add Row in Spreadsheet Mode */}
+              <tbody className="divide-y divide-slate-100">
                 {spreadsheetMode && canEdit && (
                   <tr className="bg-amber-50/70 border-b-2 border-amber-200">
-                    <td className="p-2">
+                    <td className="p-2.5">
                       <input
                         type="date"
                         value={qaDate}
                         onChange={(e) => setQaDate(e.target.value)}
-                        className="w-full rounded-lg border border-amber-300 bg-white px-2 py-1 font-mono text-[11px]"
+                        className="w-full rounded-lg border border-amber-300 bg-white px-2 py-1.5 font-mono text-[11px]"
                       />
                     </td>
-                    <td className="p-2">
-                      <select
-                        value={qaType}
-                        onChange={(e) => {
-                          const nextT = e.target.value as 'IN' | 'OUT';
-                          setQaType(nextT);
-                          setQaCategory(nextT === 'IN' ? IN_CATEGORIES[4] : OUT_CATEGORIES[0]);
-                        }}
-                        className="w-full rounded-lg border border-amber-300 bg-white px-2 py-1 font-bold text-[11px]"
-                      >
-                        <option value="IN">+ Money In</option>
-                        <option value="OUT">- Money Out</option>
-                      </select>
+                    <td className="p-2.5 space-y-1 min-w-[220px]">
+                      <div className="flex gap-1.5">
+                        <select
+                          value={qaType}
+                          onChange={(e) => {
+                            const nextT = e.target.value as 'IN' | 'OUT';
+                            setQaType(nextT);
+                            setQaCategory(nextT === 'IN' ? IN_CATEGORIES[4] : OUT_CATEGORIES[0]);
+                          }}
+                          className="rounded-lg border border-amber-300 bg-white px-2 py-1 font-bold text-[11px]"
+                        >
+                          <option value="OUT">Out (-)</option>
+                          <option value="IN">In (+)</option>
+                        </select>
+                        <input
+                          ref={quickAddTitleRef}
+                          type="text"
+                          value={qaTitle}
+                          onChange={(e) => setQaTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void handleQuickAddSave();
+                          }}
+                          placeholder="Title (Enter to save)..."
+                          className="flex-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1 font-bold text-[11px]"
+                        />
+                      </div>
+                      <div className="flex gap-1.5">
+                        <select
+                          value={qaCategory}
+                          onChange={(e) => setQaCategory(e.target.value)}
+                          className="flex-1 rounded-lg border border-amber-200 bg-white px-2 py-0.5 text-[10px]"
+                        >
+                          {(qaType === 'IN' ? IN_CATEGORIES : OUT_CATEGORIES).map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          value={qaNotes}
+                          onChange={(e) => setQaNotes(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void handleQuickAddSave();
+                          }}
+                          placeholder="Note (optional)"
+                          className="w-28 rounded-lg border border-amber-200 bg-white px-2 py-0.5 text-[10px]"
+                        />
+                      </div>
                     </td>
-                    <td className="p-2">
+                    <td className="p-2.5">
                       <select
                         value={qaEvent}
                         onChange={(e) => setQaEvent(e.target.value)}
-                        className="w-full rounded-lg border border-amber-300 bg-white px-2 py-1 font-semibold text-[11px]"
+                        className="w-full max-w-[170px] rounded-lg border border-amber-300 bg-white px-2 py-1.5 font-semibold text-[11px]"
                       >
                         {activityOptions.map((name) => (
                           <option key={name} value={name}>
@@ -1697,43 +1777,7 @@ export default function LedgerSection({
                         ))}
                       </select>
                     </td>
-                    <td className="p-2 space-y-1">
-                      <input
-                        ref={quickAddTitleRef}
-                        type="text"
-                        value={qaTitle}
-                        onChange={(e) => setQaTitle(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') void handleQuickAddSave();
-                        }}
-                        placeholder="Quick-add title (Enter to save)..."
-                        className="w-full rounded-lg border border-amber-300 bg-white px-2 py-1 font-bold text-[11px]"
-                      />
-                      <select
-                        value={qaCategory}
-                        onChange={(e) => setQaCategory(e.target.value)}
-                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-0.5 text-[10px]"
-                      >
-                        {(qaType === 'IN' ? IN_CATEGORIES : OUT_CATEGORIES).map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        value={qaNotes}
-                        onChange={(e) => setQaNotes(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') void handleQuickAddSave();
-                        }}
-                        placeholder="Optional note..."
-                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px]"
-                      />
-                    </td>
-                    <td className="p-2">
+                    <td className="p-2.5">
                       <input
                         type="number"
                         step="0.01"
@@ -1743,21 +1787,21 @@ export default function LedgerSection({
                           if (e.key === 'Enter') void handleQuickAddSave();
                         }}
                         placeholder="0.00"
-                        className="w-24 ml-auto block rounded-lg border border-amber-300 bg-white px-2 py-1 text-right font-extrabold text-[11px]"
+                        className="w-24 ml-auto block rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-right font-extrabold text-[11px]"
                       />
                     </td>
-                    <td className="p-2 text-right text-[10px] font-bold text-amber-800">
-                      Quick Add
+                    <td className="p-2.5 text-right text-[10px] font-bold text-amber-800">
+                      New row
                     </td>
-                    <td className="p-2 text-right">
+                    <td className="p-2.5 text-right">
                       <button
                         type="button"
                         disabled={qaSaving || !qaTitle.trim() || !(parseFloat(qaAmount) > 0)}
                         onClick={() => void handleQuickAddSave()}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-[11px] cursor-pointer"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-[11px] cursor-pointer"
                       >
                         {qaSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                        <span>Save</span>
+                        <span>Add</span>
                       </button>
                     </td>
                   </tr>
@@ -1765,8 +1809,8 @@ export default function LedgerSection({
 
                 {displayedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-10 text-center text-slate-400">
-                      No financial transactions match your current filter.
+                    <td colSpan={6} className="py-10 text-center text-slate-400">
+                      No transactions found.
                     </td>
                   </tr>
                 ) : (
@@ -1774,13 +1818,18 @@ export default function LedgerSection({
                     const isInlineLedger = spreadsheetMode && canEdit && row.source === 'LEDGER' && row.rawLedger;
                     const isInlineFee = spreadsheetMode && canEdit && row.source === 'FEE' && row.rawFee;
                     const busy = inlineSavingId === row.recordId;
+                    const subParts = [
+                      row.category,
+                      row.person && row.person !== '-' ? row.person : '',
+                      row.notes && row.notes !== row.eventName ? row.notes : '',
+                    ].filter(Boolean);
 
                     return (
                       <tr
                         key={row.uid}
-                        className={`hover:bg-emerald-50/40 ${busy ? 'opacity-60' : ''}`}
+                        className={`hover:bg-emerald-50/30 ${busy ? 'opacity-60' : ''}`}
                       >
-                        <td className="py-2.5 px-3 font-mono whitespace-nowrap">
+                        <td className="py-3 px-4 font-mono text-slate-600 whitespace-nowrap">
                           {isInlineLedger && row.rawLedger ? (
                             <input
                               type="date"
@@ -1797,47 +1846,102 @@ export default function LedgerSection({
                           )}
                         </td>
 
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <div className="flex items-center gap-1">
-                            <span
-                              className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold border ${
-                                row.source === 'CLAIM'
-                                  ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
-                                  : row.source === 'FEE'
-                                  ? 'bg-teal-50 text-teal-800 border-teal-200'
-                                  : 'bg-slate-100 text-slate-700 border-slate-200'
-                              }`}
-                            >
-                              {row.source}
-                            </span>
-                            {isInlineLedger && row.rawLedger ? (
-                              <select
-                                defaultValue={row.entryType}
-                                onChange={(e) =>
-                                  void handleInlineLedgerPatch(row.rawLedger!, {
-                                    entry_type: e.target.value as 'IN' | 'OUT',
-                                  })
-                                }
-                                className="rounded-lg border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-bold"
-                              >
-                                <option value="IN">IN (+)</option>
-                                <option value="OUT">OUT (-)</option>
-                              </select>
-                            ) : (
-                              <span
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  row.entryType === 'IN'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : 'bg-rose-100 text-rose-700'
-                                }`}
-                              >
-                                {row.entryType}
-                              </span>
-                            )}
-                          </div>
+                        <td className="py-3 px-4 min-w-[220px]">
+                          {isInlineLedger && row.rawLedger ? (
+                            <div className="space-y-1">
+                              <div className="flex gap-1.5">
+                                <select
+                                  defaultValue={row.entryType}
+                                  onChange={(e) =>
+                                    void handleInlineLedgerPatch(row.rawLedger!, {
+                                      entry_type: e.target.value as 'IN' | 'OUT',
+                                    })
+                                  }
+                                  className="rounded-lg border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-bold"
+                                >
+                                  <option value="IN">In (+)</option>
+                                  <option value="OUT">Out (-)</option>
+                                </select>
+                                <input
+                                  type="text"
+                                  defaultValue={row.title}
+                                  onBlur={(e) => {
+                                    const v = e.target.value.trim();
+                                    if (v && v !== row.title) {
+                                      void handleInlineLedgerPatch(row.rawLedger!, { title: v });
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                  }}
+                                  className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1 font-bold text-slate-900"
+                                />
+                              </div>
+                              <div className="flex gap-1.5">
+                                <select
+                                  defaultValue={row.category}
+                                  onChange={(e) =>
+                                    void handleInlineLedgerPatch(row.rawLedger!, { category: e.target.value })
+                                  }
+                                  className="flex-1 rounded-lg border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-600"
+                                >
+                                  {ALL_CATEGORIES.map((cat) => (
+                                    <option key={cat} value={cat}>
+                                      {cat}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="text"
+                                  defaultValue={row.notes}
+                                  onBlur={(e) => {
+                                    if (e.target.value !== row.notes) {
+                                      void handleInlineLedgerPatch(row.rawLedger!, { notes: e.target.value });
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                  }}
+                                  placeholder="Notes..."
+                                  className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[10px]"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {row.source === 'CLAIM' && (
+                                  <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-extrabold">
+                                    Claim
+                                  </span>
+                                )}
+                                {row.source === 'FEE' && (
+                                  <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-[10px] font-extrabold">
+                                    Fee
+                                  </span>
+                                )}
+                                {row.source === 'CLAIM' && row.rawClaim && onSelectClaim ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => onSelectClaim(row.rawClaim!)}
+                                    className="font-bold text-slate-900 hover:text-emerald-700 hover:underline text-left cursor-pointer"
+                                  >
+                                    {row.title}
+                                  </button>
+                                ) : (
+                                  <span className="font-bold text-slate-900">{row.title}</span>
+                                )}
+                              </div>
+                              {subParts.length > 0 && (
+                                <div className="text-[11px] text-slate-500 line-clamp-1">
+                                  {subParts.join(' · ')}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </td>
 
-                        <td className="py-2.5 px-3">
+                        <td className="py-3 px-4">
                           {isInlineLedger && row.rawLedger ? (
                             <select
                               defaultValue={row.eventName}
@@ -1863,81 +1967,8 @@ export default function LedgerSection({
                           )}
                         </td>
 
-                        <td className="py-2.5 px-3 min-w-[200px]">
-                          {isInlineLedger && row.rawLedger ? (
-                            <div className="space-y-1">
-                              <input
-                                type="text"
-                                defaultValue={row.title}
-                                onBlur={(e) => {
-                                  const v = e.target.value.trim();
-                                  if (v && v !== row.title) {
-                                    void handleInlineLedgerPatch(row.rawLedger!, { title: v });
-                                  }
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                                }}
-                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 font-bold text-slate-900"
-                              />
-                              <select
-                                defaultValue={row.category}
-                                onChange={(e) =>
-                                  void handleInlineLedgerPatch(row.rawLedger!, { category: e.target.value })
-                                }
-                                className="w-full rounded-lg border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-600"
-                              >
-                                {ALL_CATEGORIES.map((cat) => (
-                                  <option key={cat} value={cat}>
-                                    {cat}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          ) : (
-                            <div>
-                              {row.source === 'CLAIM' && row.rawClaim && onSelectClaim ? (
-                                <button
-                                  type="button"
-                                  onClick={() => onSelectClaim(row.rawClaim!)}
-                                  className="font-bold text-emerald-900 hover:text-emerald-600 hover:underline text-left cursor-pointer"
-                                >
-                                  {row.title}
-                                </button>
-                              ) : (
-                                <div className="font-bold text-slate-900">{row.title}</div>
-                              )}
-                              <div className="text-[11px] text-slate-500">
-                                {row.category}
-                                {row.person && row.person !== '-' ? ` · ${row.person}` : ''}
-                              </div>
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="py-2.5 px-3 text-slate-600 max-w-[190px]">
-                          {isInlineLedger && row.rawLedger ? (
-                            <input
-                              type="text"
-                              defaultValue={row.notes}
-                              onBlur={(e) => {
-                                if (e.target.value !== row.notes) {
-                                  void handleInlineLedgerPatch(row.rawLedger!, { notes: e.target.value });
-                                }
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                              }}
-                              placeholder="Notes..."
-                              className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px]"
-                            />
-                          ) : (
-                            <span className="line-clamp-2">{row.notes || '-'}</span>
-                          )}
-                        </td>
-
                         <td
-                          className={`py-2.5 px-3 text-right font-extrabold whitespace-nowrap ${
+                          className={`py-3 px-4 text-right font-extrabold whitespace-nowrap ${
                             row.entryType === 'IN' ? 'text-emerald-700' : 'text-rose-600'
                           }`}
                         >
@@ -1975,16 +2006,16 @@ export default function LedgerSection({
                             />
                           ) : (
                             <>
-                              {row.entryType === 'IN' ? '+' : '-'} RM {row.amount.toFixed(2)}
+                              {row.entryType === 'IN' ? '+' : '-'}RM {row.amount.toFixed(2)}
                             </>
                           )}
                         </td>
 
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800 whitespace-nowrap">
+                        <td className="py-3 px-4 text-right font-mono font-semibold text-slate-600 whitespace-nowrap">
                           RM {row.runningBalance.toFixed(2)}
                         </td>
 
-                        <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
                           <div className="inline-flex items-center gap-1">
                             {row.attachmentUrl && (
                               <a
@@ -1992,7 +2023,7 @@ export default function LedgerSection({
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                title="View Receipt / File"
+                                title="View Receipt"
                               >
                                 <ExternalLink className="w-3.5 h-3.5" />
                               </a>
@@ -2011,7 +2042,7 @@ export default function LedgerSection({
                                   title: row.title,
                                 })
                               }
-                              className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
+                              className="p-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 cursor-pointer"
                               title="History"
                             >
                               <History className="w-3.5 h-3.5" />
@@ -2023,7 +2054,7 @@ export default function LedgerSection({
                                     type="button"
                                     onClick={() => openEditModal(row.rawLedger!)}
                                     className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-emerald-50 cursor-pointer"
-                                    title="Edit Record"
+                                    title="Edit"
                                   >
                                     <Edit3 className="w-3.5 h-3.5" />
                                   </button>
@@ -2047,7 +2078,7 @@ export default function LedgerSection({
                                     type="button"
                                     onClick={() => onSelectClaim(row.rawClaim!)}
                                     className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-emerald-50 cursor-pointer"
-                                    title="Review / Edit Claim"
+                                    title="Edit Claim"
                                   >
                                     <Edit3 className="w-3.5 h-3.5" />
                                   </button>
@@ -2056,7 +2087,7 @@ export default function LedgerSection({
                                   type="button"
                                   onClick={() => void handleDeleteRow(row)}
                                   className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
-                                  title="Remove from Web (Kept in Supabase)"
+                                  title="Delete"
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -2072,20 +2103,15 @@ export default function LedgerSection({
             </table>
           </div>
 
-          {/* Sticky Bottom Calculation Bar */}
           <div className="sticky bottom-0 bg-emerald-950 text-white px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs border-t border-emerald-800">
-            <span className="font-bold text-emerald-200">
-              Showing {displayedRows.length} of {unifiedRows.length} rows
+            <span className="font-semibold text-emerald-200">
+              {displayedRows.length} transaction{displayedRows.length === 1 ? '' : 's'}
             </span>
             <div className="flex flex-wrap items-center gap-4 font-extrabold">
-              <span className="text-emerald-300">
-                Filtered IN: +RM {filteredSummary.inTotal.toFixed(2)}
-              </span>
-              <span className="text-rose-300">
-                Filtered OUT: -RM {filteredSummary.outTotal.toFixed(2)}
-              </span>
-              <span className="px-2.5 py-1 rounded-lg bg-white/10 text-white">
-                Net Filtered: RM {filteredSummary.net.toFixed(2)}
+              <span className="text-emerald-300">In: +RM {filteredSummary.inTotal.toFixed(2)}</span>
+              <span className="text-rose-300">Out: -RM {filteredSummary.outTotal.toFixed(2)}</span>
+              <span className="px-2.5 py-0.5 rounded-lg bg-white/10">
+                Net: RM {filteredSummary.net.toFixed(2)}
               </span>
             </div>
           </div>
@@ -2221,272 +2247,15 @@ export default function LedgerSection({
         </div>
       )}
 
-      {/* ===================== VIEW 3: CLAIMS & FEE TRACKER ===================== */}
-      {activeView === 'tracker' && (
-        <div className="bg-white rounded-3xl border border-emerald-200 shadow-xs overflow-hidden">
-          <div className="p-5 border-b border-emerald-100 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-base font-extrabold text-emerald-950">
-              Activity Fee &amp; Claim Reimbursement Tracker
-            </h2>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <select
-                value={trackerEventId}
-                onChange={(e) => setTrackerEventId(e.target.value)}
-                className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-bold text-slate-900"
-              >
-                <option value="ALL">All Club Activities ({budgets.length})</option>
-                {budgets.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.event_name} ({b.event_date})
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => void exportWorkbookForScope(selectedBudget)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>Export 6-Sheet Excel (.xlsx)</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-5 text-xs">
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <h3 className="font-extrabold text-emerald-950">
-                  Fee Payments ({filteredFeePayments.length})
-                </h3>
-                <span className="font-extrabold text-emerald-700">
-                  Verified: RM{' '}
-                  {filteredFeePayments
-                    .filter((f) => f.status === 'Verified')
-                    .reduce((s, f) => s + Number(f.amount_paid), 0)
-                    .toFixed(2)}
-                </span>
-              </div>
-              <div className="border rounded-2xl overflow-hidden max-h-[340px] overflow-y-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b">
-                      <th className="py-2 px-3">Student</th>
-                      <th className="py-2 px-3">Amount</th>
-                      <th className="py-2 px-3">Status</th>
-                      <th className="py-2 px-3 text-right">Manage</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {filteredFeePayments.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="py-6 text-center text-slate-400">
-                          No fee payments for this selection.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredFeePayments.map((f) => (
-                        <tr key={f.id}>
-                          <td className="py-2 px-3">
-                            <div className="font-bold">{f.student_name}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">{f.matric_no}</div>
-                          </td>
-                          <td className="py-2 px-3 font-extrabold text-emerald-700">
-                            RM {Number(f.amount_paid).toFixed(2)}
-                          </td>
-                          <td className="py-2 px-3 font-bold">{f.status}</td>
-                          <td className="py-2 px-3 text-right">
-                            <div className="inline-flex items-center gap-1 justify-end">
-                              {f.receipt_url && (
-                                <a
-                                  href={f.receipt_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1 rounded bg-slate-100 text-emerald-700"
-                                  title="Receipt"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5 inline" />
-                                </a>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setHistoryTarget({
-                                    table: 'activity_fee_payments',
-                                    recordId: f.id,
-                                    title: `${f.student_name} Fee`,
-                                  })
-                                }
-                                className="p-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
-                                title="History"
-                              >
-                                <History className="w-3.5 h-3.5 inline" />
-                              </button>
-                              {canEdit && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditingFeeItem(f);
-                                      setEditFeeAmount(String(f.amount_paid));
-                                      setEditFeeStatus(f.status);
-                                    }}
-                                    className="p-1 rounded bg-slate-100 text-slate-800 hover:bg-emerald-50 cursor-pointer"
-                                    title="Edit Fee"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5 inline" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      await softDeleteRecord({
-                                        actor: profile,
-                                        category: 'Fees',
-                                        table: 'activity_fee_payments',
-                                        recordId: f.id,
-                                        recordTitle: `${f.student_name} — RM ${Number(f.amount_paid).toFixed(2)}`,
-                                      });
-                                      onRefresh('Removed fee record from web (kept in Supabase).');
-                                    }}
-                                    className="p-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
-                                    title="Remove from Web"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5 inline" />
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <h3 className="font-extrabold text-emerald-950">
-                  Claims &amp; Proof ({filteredClaims.length})
-                </h3>
-                <span className="font-extrabold text-rose-600">
-                  Approved: RM{' '}
-                  {filteredClaims
-                    .filter((c) => c.status === 'Approved')
-                    .reduce((s, c) => s + Number(c.amount), 0)
-                    .toFixed(2)}
-                </span>
-              </div>
-              <div className="border rounded-2xl overflow-hidden max-h-[340px] overflow-y-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b">
-                      <th className="py-2 px-3">Claim</th>
-                      <th className="py-2 px-3">Amount</th>
-                      <th className="py-2 px-3">Proof</th>
-                      <th className="py-2 px-3 text-right">Manage</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {filteredClaims.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="py-6 text-center text-slate-400">
-                          No claims for this selection.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredClaims.map((c) => (
-                        <tr key={c.id}>
-                          <td className="py-2 px-3">
-                            <div className="font-bold">{c.title}</div>
-                            <div className="text-[10px] text-slate-500">
-                              {c.claimant_name} ({c.status})
-                            </div>
-                          </td>
-                          <td className="py-2 px-3 font-extrabold">RM {Number(c.amount).toFixed(2)}</td>
-                          <td className="py-2 px-3">
-                            {c.payout_proof_url ? (
-                              <a
-                                href={c.payout_proof_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]"
-                              >
-                                <span>✓ Paid</span>
-                                <ExternalLink className="w-2.5 h-2.5" />
-                              </a>
-                            ) : (
-                              <span className="text-[10px] text-slate-400">None</span>
-                            )}
-                          </td>
-                          <td className="py-2 px-3 text-right">
-                            <div className="inline-flex items-center gap-1 justify-end">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setHistoryTarget({ table: 'claims', recordId: c.id, title: c.title })
-                                }
-                                className="p-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
-                                title="History"
-                              >
-                                <History className="w-3.5 h-3.5" />
-                              </button>
-                              {onSelectClaim && (
-                                <button
-                                  type="button"
-                                  onClick={() => onSelectClaim(c)}
-                                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer"
-                                >
-                                  Review
-                                </button>
-                              )}
-                              {canEdit && (
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    await softDeleteRecord({
-                                      actor: profile,
-                                      category: 'Claims',
-                                      table: 'claims',
-                                      recordId: c.id,
-                                      recordTitle: c.title,
-                                      extraSummary: `RM ${Number(c.amount).toFixed(2)}`,
-                                    });
-                                    onRefresh('Removed claim from web (kept in Supabase).');
-                                  }}
-                                  className="p-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
-                                  title="Remove from Web"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===================== VIEW 4: UNPAID FEES (RECEIVABLES) ===================== */}
+      {/* ===================== VIEW 3: UNPAID FEES ===================== */}
       {activeView === 'receivables' && (
         <div className="bg-white rounded-3xl border border-emerald-200 shadow-xs overflow-hidden">
-          <div className="p-5 border-b border-emerald-100 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-extrabold text-emerald-950">
-                Unpaid Activity Fees ({unpaidReceivables.length})
-              </h2>
-              <p className="text-xs text-slate-500">
-                Attending members on paid activities with no fee payment recorded yet. Total Receivable:{' '}
-                <strong className="text-amber-800">
-                  RM {unpaidReceivables.reduce((s, r) => s + r.feeDue, 0).toFixed(2)}
-                </strong>
-              </p>
+          <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs font-extrabold text-slate-900">
+              Unpaid Fees ({unpaidReceivables.length}) · Total Due:{' '}
+              <span className="text-amber-800">
+                RM {unpaidReceivables.reduce((s, r) => s + r.feeDue, 0).toFixed(2)}
+              </span>
             </div>
             <select
               value={unpaidEventFilter}
@@ -2584,18 +2353,13 @@ export default function LedgerSection({
         </div>
       )}
 
-      {/* ===================== VIEW 5: BUDGET PLANNER (EST. VS ACTUAL) ===================== */}
+      {/* ===================== VIEW 4: BUDGET PLAN ===================== */}
       {activeView === 'planner' && (
         <div className="bg-white rounded-3xl border border-emerald-200 shadow-xs overflow-hidden">
-          <div className="p-5 border-b border-emerald-100 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-extrabold text-emerald-950">
-                Budget Planner (Estimated vs Actual)
-              </h2>
-              <p className="text-xs text-slate-500">
-                Draft expected income/expenses per activity and compare live against actual club records.
-              </p>
-            </div>
+          <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-sm font-extrabold text-emerald-950">
+              Budget Plan (Estimated vs Actual)
+            </h2>
             <select
               value={plannerBudgetId}
               onChange={(e) => setPlannerBudgetId(e.target.value)}
