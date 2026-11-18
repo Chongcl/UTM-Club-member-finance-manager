@@ -273,6 +273,7 @@ export default function Page() {
   };
 
   const saveClaimThreshold = async (rawValue: string) => {
+    if (!(roleMode === 'owner' && profile?.role === 'owner')) return;
     const parsed = parseFloat(rawValue);
     const nextThresh = !isNaN(parsed) && parsed >= 0 ? parsed : DEFAULT_CLAIM_APPROVAL_THRESHOLD;
     setClaimThreshold(nextThresh);
@@ -1474,7 +1475,7 @@ export default function Page() {
                   <h2 className="text-base font-extrabold">Reimbursement Claims</h2>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {profile?.role === 'owner' && (
+                  {isOwner && (
                     <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 rounded-xl px-2.5 py-1 text-xs">
                       <span className="font-bold text-indigo-900">2-Stage &gt; RM</span>
                       <input
