@@ -459,8 +459,7 @@ export default function LedgerSection({
   const [entryAccount, setEntryAccount] = useState<AccountType>('Bank');
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState(IN_CATEGORIES[0]);
-  const [selectedEventOption, setSelectedEventOption] = useState('GENERAL');
-  const [customEventName, setCustomEventName] = useState('');
+  const [activityInput, setActivityInput] = useState('General Club Fund');
   const [amount, setAmount] = useState('');
   const [entryDate, setEntryDate] = useState(todayIso());
   const [notes, setNotes] = useState('');
@@ -650,10 +649,17 @@ export default function LedgerSection({
 
   const activityOptions = useMemo(() => {
     const names = new Set<string>(['General Club Fund']);
-    budgets.forEach((b) => names.add(b.event_name));
-    unifiedRows.forEach((r) => names.add(r.eventName));
+    events.forEach((ev) => {
+      if (ev.event_name?.trim()) names.add(ev.event_name.trim());
+    });
+    budgets.forEach((b) => {
+      if (b.event_name?.trim()) names.add(b.event_name.trim());
+    });
+    unifiedRows.forEach((r) => {
+      if (r.eventName?.trim()) names.add(r.eventName.trim());
+    });
     return Array.from(names);
-  }, [budgets, unifiedRows]);
+  }, [events, budgets, unifiedRows]);
 
   const hasSheetFilters =
     Boolean(searchQuery.trim()) || filterPill !== 'ALL' || filterEvent !== 'ALL';
@@ -844,8 +850,7 @@ export default function LedgerSection({
     setEntryAccount('Bank');
     setTitle('');
     setCategory(mode === 'IN' ? IN_CATEGORIES[0] : OUT_CATEGORIES[0]);
-    setSelectedEventOption('GENERAL');
-    setCustomEventName('');
+    setActivityInput('General Club Fund');
     setAmount('');
     setEntryDate(todayIso());
     setNotes('');
@@ -860,17 +865,7 @@ export default function LedgerSection({
     setEntryAccount(accountOf(entry.account_type));
     setTitle(entry.title);
     setCategory(entry.category);
-    const matchingEv = events.find((ev) => ev.event_name === entry.event_name);
-    if (isGeneralEventName(entry.event_name)) {
-      setSelectedEventOption('GENERAL');
-      setCustomEventName('');
-    } else if (matchingEv) {
-      setSelectedEventOption(matchingEv.event_name);
-      setCustomEventName('');
-    } else {
-      setSelectedEventOption('OTHER');
-      setCustomEventName(entry.event_name || 'General Club Fund');
-    }
+    setActivityInput(normalizeScopeName(entry.event_name));
     setAmount(String(entry.amount));
     setEntryDate(entry.entry_date);
     setNotes(entry.notes || '');
@@ -935,12 +930,7 @@ export default function LedgerSection({
           attachmentName = attachmentFile.name;
         }
       }
-      const finalEventName =
-        selectedEventOption === 'GENERAL'
-          ? 'General Club Fund'
-          : selectedEventOption === 'OTHER'
-          ? customEventName.trim() || 'Other Event'
-          : selectedEventOption;
+      const finalEventName = normalizeScopeName(activityInput);
 
       const payload = {
         entry_type: entryType,
@@ -1110,7 +1100,7 @@ export default function LedgerSection({
         entry_type: entryTypeNext,
         title: qaTitle.trim(),
         category: entryTypeNext === 'IN' ? IN_CATEGORIES[0] : OUT_CATEGORIES[0],
-        event_name: qaEvent || 'General Club Fund',
+        event_name: normalizeScopeName(qaEvent),
         amount: amtNext,
         account_type: qaAccount,
         entry_date: qaDate || todayIso(),
@@ -1616,11 +1606,13 @@ export default function LedgerSection({
               >
                 <option value="ALL">All Activities</option>
                 <option value="GENERAL">General Club Fund</option>
-                {budgets.map((b) => (
-                  <option key={b.id} value={b.event_name}>
-                    {b.event_name}
-                  </option>
-                ))}
+                {activityOptions
+                  .filter((name) => !isGeneralEventName(name))
+                  .map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -1863,19 +1855,20 @@ export default function LedgerSection({
                       {/* Col 3: Activity */}
                       <td className="py-2.5 px-3 border-r border-slate-200">
                         {isLedgerEditable && isEditingThis('event') ? (
-                          <select
+                          <input
+                            type="text"
+                            list="ledger-activity-options"
                             autoFocus
                             value={cellDraft}
-                            onChange={(e) => void commitCellEdit(row, 'event', e.target.value)}
-                            onBlur={() => setEditingCell(null)}
-                            className="w-full rounded border border-emerald-500 ring-2 ring-emerald-500/20 px-1.5 py-1 text-[11px] bg-white focus:outline-none"
-                          >
-                            {activityOptions.map((opt) => (
-                              <option key={opt} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(e) => setCellDraft(e.target.value)}
+                            onBlur={() => void commitCellEdit(row, 'event', cellDraft)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') void commitCellEdit(row, 'event', cellDraft);
+                              if (e.key === 'Escape') setEditingCell(null);
+                            }}
+                            placeholder="Select or type activity..."
+                            className="w-full rounded border border-emerald-500 ring-2 ring-emerald-500/20 px-2 py-1 text-[11px] font-semibold bg-white focus:outline-none"
+                          />
                         ) : isLedgerEditable ? (
                           <button
                             type="button"
@@ -2128,17 +2121,20 @@ export default function LedgerSection({
                       />
                     </td>
                     <td className="py-2 px-2 border-r border-slate-200">
-                      <select
+                      <input
+                        type="text"
+                        list="ledger-activity-options"
                         value={qaEvent}
                         onChange={(e) => setQaEvent(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void handleQuickAddSubmit();
+                          }
+                        }}
+                        placeholder="Select or type activity..."
                         className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold focus:outline-none focus:border-emerald-500"
-                      >
-                        {activityOptions.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </td>
                     <td className="py-2 px-2 border-r border-slate-200">
                       <input
@@ -2868,32 +2864,16 @@ export default function LedgerSection({
                 </div>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Activity</label>
-                  <select
-                    value={selectedEventOption}
-                    onChange={(e) => setSelectedEventOption(e.target.value)}
+                  <input
+                    type="text"
+                    list="ledger-activity-options"
+                    value={activityInput}
+                    onChange={(e) => setActivityInput(e.target.value)}
+                    placeholder="Select or type activity..."
                     className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold"
-                  >
-                    <option value="GENERAL">General Club Fund</option>
-                    {events.map((ev) => (
-                      <option key={ev.id} value={ev.event_name}>
-                        {ev.event_name}
-                      </option>
-                    ))}
-                    <option value="OTHER">Other...</option>
-                  </select>
+                  />
                 </div>
               </div>
-
-              {selectedEventOption === 'OTHER' && (
-                <input
-                  type="text"
-                  value={customEventName}
-                  onChange={(e) => setCustomEventName(e.target.value)}
-                  placeholder="Custom activity name..."
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs"
-                  required
-                />
-              )}
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Receipt / Attachment (Optional)</label>
@@ -3130,6 +3110,12 @@ export default function LedgerSection({
           </div>
         </div>
       )}
+
+      <datalist id="ledger-activity-options">
+        {activityOptions.map((opt) => (
+          <option key={opt} value={opt} />
+        ))}
+      </datalist>
 
       <RecordHistoryModal
         target={historyTarget}
