@@ -40,6 +40,7 @@ import QrScannerModal from '@/components/QrScannerModal';
 import LedgerSection, { LedgerEntryItem } from '@/components/LedgerSection';
 import ActivityLogSection from '@/components/ActivityLogSection';
 import RecordHistoryModal, { HistoryModalTarget } from '@/components/RecordHistoryModal';
+import FloatingChatWidget from '@/components/FloatingChatWidget';
 import {
   filterActiveRecords,
   softDeleteRecord,
@@ -231,6 +232,8 @@ export default function Page() {
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [editingActivity, setEditingActivity] = useState<EditableActivity | null>(null);
   const [opsModalEvent, setOpsModalEvent] = useState<Budget | null>(null);
   const [opsModalTab, setOpsModalTab] = useState<'fee' | 'transport' | 'qr' | 'pass'>('pass');
@@ -313,6 +316,7 @@ export default function Page() {
       bank_account_no: String(raw.bank_account_no || ''),
       bank_account_holder: String(raw.bank_account_holder || ''),
       bank_qr_url: String(raw.bank_qr_url || ''),
+      allow_whatsapp_chat: Boolean(raw.allow_whatsapp_chat),
       created_at: String(raw.created_at || ''),
     };
   };
@@ -527,6 +531,20 @@ export default function Page() {
     });
     return () => sub.subscription.unsubscribe();
   }, [fetchOrCreateProfile, fetchAllData]);
+
+  useEffect(() => {
+    if (!sessionUserId || isChatOpen) return;
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase.rpc('get_unread_chat_count');
+      if (active && !error && typeof data === 'number') {
+        setUnreadChatCount(data);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [sessionUserId, isChatOpen]);
 
   const handleRsvpAttendance = async (ev: Budget, nextStatus: 'Attending' | 'Not Attending') => {
     if (!profile) return;
@@ -1155,6 +1173,8 @@ export default function Page() {
           onSelectTab={setActiveTab}
           currentBatch={currentBatch}
           roleMode={isAdminOrOwner ? roleMode : 'member'}
+          unreadChatCount={unreadChatCount}
+          onToggleChat={() => setIsChatOpen((v) => !v)}
           darkMode={isDarkCanvas}
           onToggleDarkMode={toggleDarkMode}
           canCustomizeTheme={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
@@ -2574,6 +2594,14 @@ export default function Page() {
         target={historyTarget}
         logs={activityLogs}
         onClose={() => setHistoryTarget(null)}
+      />
+      <FloatingChatWidget
+        profile={profile}
+        departments={departments}
+        isOpen={isChatOpen}
+        onToggleOpen={setIsChatOpen}
+        unreadCount={unreadChatCount}
+        onUnreadCountChange={setUnreadChatCount}
       />
     </div>
   );

@@ -60,6 +60,7 @@ export default function ProfileSection({
   const [bankQrUrl, setBankQrUrl] = useState(profile.bank_qr_url || '');
   const [bankQrFile, setBankQrFile] = useState<File | null>(null);
   const [localBankQrPreviewUrl, setLocalBankQrPreviewUrl] = useState<string | null>(null);
+  const [allowWhatsappChat, setAllowWhatsappChat] = useState(Boolean(profile.allow_whatsapp_chat));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -93,6 +94,7 @@ export default function ProfileSection({
     setBankAccountNo(profile.bank_account_no || '');
     setBankAccountHolder(profile.bank_account_holder || profile.full_name || '');
     setBankQrUrl(profile.bank_qr_url || '');
+    setAllowWhatsappChat(Boolean(profile.allow_whatsapp_chat));
   }, [profile, departments]);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -133,6 +135,7 @@ export default function ProfileSection({
         ic_no: icNo.trim(),
         dormitory: dormitory.trim(),
         hometown: hometown.trim(),
+        allow_whatsapp_chat: allowWhatsappChat,
       };
 
       const fullUpdates = { ...coreUpdates, ...bankData };
@@ -395,6 +398,23 @@ export default function ProfileSection({
               })()}
             </div>
           </div>
+
+          <label className="flex items-start justify-between gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer text-xs">
+            <div>
+              <div className="font-extrabold text-slate-900">
+                Allow members to continue chat with me on WhatsApp
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Off by default. Your phone number is never displayed inside Club Chat—enabling this only lets members click a WhatsApp button in chat.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={allowWhatsappChat}
+              onChange={(e) => setAllowWhatsappChat(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-emerald-600 cursor-pointer shrink-0"
+            />
+          </label>
 
           {saveError && (
             <div className="flex items-start gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">

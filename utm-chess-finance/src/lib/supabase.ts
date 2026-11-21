@@ -98,6 +98,26 @@ export interface UserProfile {
   bank_account_no?: string;
   bank_account_holder?: string;
   bank_qr_url?: string;
+  allow_whatsapp_chat?: boolean;
+  created_at: string;
+}
+
+export interface ChatDirectoryMember {
+  id: string;
+  full_name: string;
+  matric_no: string;
+  role: 'member' | 'treasurer' | 'owner';
+  member_type: string;
+  batch_year: string;
+  member_status?: string;
+  allow_whatsapp_chat?: boolean;
+}
+
+export interface ChatMessageItem {
+  id: string;
+  room_id: string;
+  sender_id: string;
+  content: string;
   created_at: string;
 }
 
