@@ -1386,6 +1386,11 @@ export default function LedgerSection({
               <span>Money In</span>
             </div>
             <div className="font-extrabold text-emerald-700">+RM {totalIn.toFixed(2)}</div>
+            {pendingFeesTotal > 0 && (
+              <div className="text-[11px] font-bold text-amber-700">
+                Pending Verification: RM {pendingFeesTotal.toFixed(2)}
+              </div>
+            )}
           </div>
           <div>
             <div className="text-[11px] font-bold text-slate-400 flex items-center gap-1">

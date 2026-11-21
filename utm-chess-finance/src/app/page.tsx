@@ -2438,6 +2438,7 @@ export default function Page() {
         departments={departments}
         logs={activityLogs}
         allClaims={activeClaims}
+        claimantProfile={allMembers.find((u) => u.id === selectedClaim?.user_id)}
         onSelectClaim={(c: Claim) => setSelectedClaim(c)}
         profile={{ ...profile, role: isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? (isOwner ? 'owner' : 'treasurer') : 'member' }}
         isOwner={isOwner}

@@ -56,6 +56,7 @@ interface AuditReviewModalProps {
   departments?: string[];
   logs?: ActivityLogEntry[];
   allClaims?: Claim[];
+  claimantProfile?: UserProfile;
   onSelectClaim?: (claim: Claim) => void;
   profile: UserProfile;
   /** True only for the club Owner (President / Advisor) acting in Owner mode. */
@@ -75,6 +76,7 @@ export default function AuditReviewModal({
   departments = DEFAULT_DEPARTMENTS,
   logs = [],
   allClaims = [],
+  claimantProfile,
   onSelectClaim,
   profile,
   isOwner = false,
@@ -171,12 +173,35 @@ export default function AuditReviewModal({
     claim.receipt_url?.toLowerCase().split('?')[0].endsWith('.pdf') ||
     claim.receipt_url?.startsWith('data:application/pdf');
 
-  // Extract reimbursement bank info from claim.payment_info or description
-  const extractedBankInfo =
-    claim.payment_info ||
-    (claim.description?.includes('Reimburse To:')
-      ? claim.description.split('Reimburse To:')[1]?.trim()
-      : '');
+  // Extract reimbursement bank info & DuitNow QR from claim or claimant profile fallback
+  const rawDescBank = claim.description?.includes('Reimburse To:')
+    ? claim.description.split('Reimburse To:')[1]?.split('[Items:')[0]?.trim() || ''
+    : '';
+  const profileBankFallback = claimantProfile?.bank_account_no
+    ? `${claimantProfile.bank_name || 'Bank/DuitNow'} • ${claimantProfile.bank_account_no} (${
+        claimantProfile.bank_account_holder || claimantProfile.full_name
+      })`
+    : '';
+  const extractedBankInfo = claim.payment_info || rawDescBank || profileBankFallback;
+
+  let localBankQr = '';
+  if (typeof window !== 'undefined') {
+    localBankQr = localStorage.getItem(`clubsync_claimant_qr_${claim.id}`) || '';
+    if (!localBankQr && claim.user_id) {
+      const rawProfileBank = localStorage.getItem(`clubsync_bank_${claim.user_id}`);
+      if (rawProfileBank) {
+        try {
+          localBankQr = String(JSON.parse(rawProfileBank).bank_qr_url || '');
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+  const resolvedClaimantQrUrl = claim.claimant_qr_url || claimantProfile?.bank_qr_url || localBankQr || '';
+  const isClaimantQrPdf =
+    resolvedClaimantQrUrl.toLowerCase().split('?')[0].endsWith('.pdf') ||
+    resolvedClaimantQrUrl.startsWith('data:application/pdf');
 
   const localProofRaw =
     typeof window !== 'undefined'
@@ -978,25 +1003,76 @@ export default function AuditReviewModal({
               </div>
             )}
 
-            {extractedBankInfo && (
-              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs">
-                <div>
-                  <div className="font-extrabold text-amber-950 flex items-center gap-1">
-                    <Landmark className="w-3.5 h-3.5 text-amber-700" />
-                    <span>Reimburse To (Bank / DuitNow / TNG):</span>
+            {(extractedBankInfo || resolvedClaimantQrUrl) && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 space-y-3 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-extrabold text-amber-950 flex items-center gap-1">
+                      <Landmark className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Reimburse To</span>
+                    </div>
+                    {extractedBankInfo && (
+                      <div className="font-mono font-bold text-slate-900 mt-0.5 break-all">
+                        {extractedBankInfo}
+                      </div>
+                    )}
                   </div>
-                  <div className="font-mono font-bold text-slate-900 mt-0.5">
-                    {extractedBankInfo}
-                  </div>
+                  {extractedBankInfo && (
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(extractedBankInfo)}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-200/80 hover:bg-amber-300 text-amber-950 font-bold text-[11px] shrink-0 cursor-pointer"
+                    >
+                      <Copy className="w-3 h-3 inline mr-1" />
+                      Copy
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard.writeText(extractedBankInfo)}
-                  className="px-2.5 py-1.5 rounded-xl bg-amber-200/80 hover:bg-amber-300 text-amber-950 font-bold text-[11px] shrink-0 cursor-pointer"
-                >
-                  <Copy className="w-3 h-3 inline mr-1" />
-                  Copy
-                </button>
+
+                {resolvedClaimantQrUrl && (
+                  <div className="pt-2 border-t border-amber-200/80 flex flex-wrap items-center gap-3">
+                    {isClaimantQrPdf ? (
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-amber-800" />
+                        <span className="font-bold text-amber-950">Claimant DuitNow QR (PDF)</span>
+                      </div>
+                    ) : (
+                      <div className="p-1.5 bg-white rounded-xl border border-amber-200 shadow-2xs shrink-0">
+                        <img
+                          src={resolvedClaimantQrUrl}
+                          alt={`${claim.claimant_name} DuitNow QR`}
+                          className="w-28 h-28 object-contain rounded-lg"
+                        />
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void downloadFileFromUrl(
+                            resolvedClaimantQrUrl,
+                            `${claim.claimant_name}_DuitNow_QR.${isClaimantQrPdf ? 'pdf' : 'jpg'}`
+                          )
+                        }
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download QR</span>
+                      </button>
+                      {!resolvedClaimantQrUrl.startsWith('data:') && (
+                        <a
+                          href={resolvedClaimantQrUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 border border-amber-200 text-amber-950 font-bold text-[11px]"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          <span>Full QR</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1157,7 +1233,7 @@ export default function AuditReviewModal({
                               ) : (
                                 <CheckCircle2 className="w-4 h-4" />
                               )}
-                              <span>Approve &amp; Save Proof</span>
+                              <span>Approve &amp; Mark Paid</span>
                             </button>
                           </div>
                         );
@@ -1209,7 +1285,7 @@ export default function AuditReviewModal({
                               ) : (
                                 <CheckCircle2 className="w-4 h-4" />
                               )}
-                              <span>Final Approve &amp; Save Proof</span>
+                              <span>Final Approve &amp; Mark Paid</span>
                             </button>
                           </div>
                         );

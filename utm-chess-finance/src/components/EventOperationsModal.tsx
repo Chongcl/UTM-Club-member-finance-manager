@@ -49,6 +49,8 @@ import {
   Edit3,
   Trash2,
   History,
+  ZoomIn,
+  XCircle,
 } from 'lucide-react';
 
 interface EventOperationsModalProps {
@@ -99,7 +101,12 @@ export default function EventOperationsModal({
   const [qrToken, setQrToken] = useState('');
   const [hasEntryPass, setHasEntryPass] = useState(false);
   const [passRule, setPassRule] = useState<PassApprovalRule>('auto_after_payment');
+  const [provisionalPassEnabled, setProvisionalPassEnabled] = useState(false);
   const [localPassOverrides, setLocalPassOverrides] = useState<Record<string, boolean>>({});
+  const [reviewingFeeId, setReviewingFeeId] = useState<string | null>(null);
+  const [feeConfirmAmounts, setFeeConfirmAmounts] = useState<Record<string, string>>({});
+  const [rejectReasonByFee, setRejectReasonByFee] = useState<Record<string, string>>({});
+  const [zoomReceiptFee, setZoomReceiptFee] = useState<ActivityFeePayment | null>(null);
 
   const lastEventIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -137,6 +144,10 @@ export default function EventOperationsModal({
       (typeof window !== 'undefined' ? (localStorage.getItem(`clubsync_passrule_${event.id}`) as PassApprovalRule | null) : null) ||
       (savedMode === 'manual_only' ? 'manual_only' : 'auto_after_payment');
     setPassRule(savedRule);
+    const savedProvisional =
+      typeof window !== 'undefined' ? localStorage.getItem(`clubsync_provisional_pass_${event.id}`) === 'true' : false;
+    setProvisionalPassEnabled(savedProvisional);
+    setZoomReceiptFee(null);
 
     if (initialTab === 'pass' && !entryPassActive) setTab(isAdmin ? 'qr' : 'transport');
     else if (initialTab === 'fee' && feeVal <= 0 && !isAdmin) setTab('transport');
@@ -161,6 +172,7 @@ export default function EventOperationsModal({
   const passengers = attendingRsvps.filter((r) => r.transport_type !== 'None' && !r.is_driver);
   const eventDrivers = attendingRsvps.filter((r) => r.is_driver);
   const eventPayments = feePayments.filter((f) => f.budget_id === event.id);
+  const pendingFeePayments = eventPayments.filter((f) => f.status === 'Pending');
   const eventClaims = claims.filter((c) => c.budget_id === event.id);
   const visibleFeePayments = isAdmin ? eventPayments : eventPayments.filter((p) => p.user_id === profile.id);
   const allowancePerTrip = Number(event.driver_allowance_per_trip || 0);
@@ -191,8 +203,10 @@ export default function EventOperationsModal({
     if (localPassOverrides[rsvp.id] !== undefined) return localPassOverrides[rsvp.id];
     if (passRule === 'manual_only') return rsvp.pass_approved === true;
     if (requiresFee) {
-      const hasPaid = eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Verified');
-      return hasPaid || rsvp.pass_approved === true;
+      const hasVerifiedPaid = eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Verified');
+      const hasProvisionalPaid =
+        provisionalPassEnabled && eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Pending');
+      return hasVerifiedPaid || hasProvisionalPaid || rsvp.pass_approved === true;
     }
     return rsvp.pass_approved === true;
   };
@@ -386,20 +400,82 @@ export default function EventOperationsModal({
         await supabase.from('activity_fee_payments').insert({
           budget_id: event.id, user_id: profile.id, student_name: profile.full_name,
           matric_no: profile.matric_no, phone_number: profile.phone_number, amount_paid: numAmt,
-          receipt_url: receiptUrl, receipt_file_name: feeFile.name, status: 'Verified',
+          receipt_url: receiptUrl, receipt_file_name: feeFile.name, status: 'Pending',
         });
         setFeeFile(null);
-        if (hasEntryPass) setTab('pass');
+        if (hasEntryPass && provisionalPassEnabled) setTab('pass');
         void logActivity(
           profile,
           'Fees',
-          'Activity fee paid',
-          `${profile.full_name} (${profile.matric_no}) paid RM ${numAmt.toFixed(2)} fee for "${event.event_name}"`
+          'Activity fee submitted (Pending)',
+          `${profile.full_name} (${profile.matric_no}) submitted RM ${numAmt.toFixed(2)} fee receipt for "${event.event_name}" (Pending verification)`
         );
-        onRefresh('Fee payment submitted!');
+        onRefresh(
+          provisionalPassEnabled
+            ? 'Receipt uploaded! Provisional pass unlocked while pending Treasurer check.'
+            : 'Fee receipt submitted! Pending Treasurer verification.'
+        );
       }
     } finally {
       setSubmittingFee(false);
+    }
+  };
+
+  const handleVerifyOrRejectFee = async (p: ActivityFeePayment, decision: 'Verified' | 'Rejected') => {
+    if (!isAdmin || !permissions.can_manage_claims_fees) return;
+    const rawConfirm = feeConfirmAmounts[p.id];
+    const confirmedAmt = rawConfirm !== undefined && !isNaN(parseFloat(rawConfirm)) && parseFloat(rawConfirm) > 0
+      ? parseFloat(rawConfirm)
+      : Number(p.amount_paid);
+    const reason = (rejectReasonByFee[p.id] || '').trim();
+
+    setReviewingFeeId(p.id);
+    try {
+      const { error } = await supabase
+        .from('activity_fee_payments')
+        .update({ status: decision, amount_paid: confirmedAmt })
+        .eq('id', p.id);
+      if (error) {
+        onRefresh(error.message || 'Could not update fee payment.');
+        return;
+      }
+
+      if (decision === 'Verified' && passRule === 'auto_after_payment' && p.user_id) {
+        await supabase
+          .from('event_rsvps')
+          .update({ pass_approved: true })
+          .eq('budget_id', event.id)
+          .eq('user_id', p.user_id);
+      }
+
+      const changes = computeFieldChanges([
+        { field: 'Status', before: p.status, after: decision },
+        { field: 'Amount Paid (RM)', before: Number(p.amount_paid).toFixed(2), after: confirmedAmt.toFixed(2) },
+        ...(decision === 'Rejected' && reason ? [{ field: 'Reject Reason', before: '', after: reason }] : []),
+      ]);
+      void recordEditHistory({
+        actor: profile,
+        category: 'Fees',
+        table: 'activity_fee_payments',
+        recordId: p.id,
+        recordTitle: `${p.student_name} — ${event.event_name}`,
+        changes,
+      });
+      void logActivity(
+        profile,
+        'Fees',
+        decision === 'Verified' ? 'Fee payment verified' : 'Fee payment rejected',
+        `${profile.full_name} (${profile.matric_no}) ${decision.toLowerCase()} RM ${confirmedAmt.toFixed(2)} fee from ${p.student_name} (${p.matric_no}) for "${event.event_name}"${
+          decision === 'Rejected' && reason ? ` — Reason: ${reason}` : ''
+        }`
+      );
+      onRefresh(
+        decision === 'Verified'
+          ? `✓ Verified RM ${confirmedAmt.toFixed(2)} for ${p.student_name}${passRule === 'auto_after_payment' ? ' (Entry Pass unlocked)' : ''}!`
+          : `Rejected fee receipt from ${p.student_name}.`
+      );
+    } finally {
+      setReviewingFeeId(null);
     }
   };
 
@@ -611,7 +687,14 @@ export default function EventOperationsModal({
                 <button type="button" onClick={() => setTab('qr')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'qr' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Venue QR ({qrCheckedInList.length})</button>
               )}
               {(requiresFee || isAdmin) && (
-                <button type="button" onClick={() => setTab('fee')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'fee' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Fee (RM {reqFee.toFixed(0)})</button>
+                <button type="button" onClick={() => setTab('fee')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer inline-flex items-center gap-1.5 ${tab === 'fee' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>
+                  <span>Fee (RM {reqFee.toFixed(0)})</span>
+                  {isAdmin && permissions.can_manage_claims_fees && pendingFeePayments.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-amber-400 text-slate-950">
+                      {pendingFeePayments.length}
+                    </span>
+                  )}
+                </button>
               )}
               <button type="button" onClick={() => setTab('transport')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'transport' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Carpool ({passengers.length}P / {eventDrivers.length}D)</button>
             </div>
@@ -636,12 +719,22 @@ export default function EventOperationsModal({
                     <Lock className="w-8 h-8 text-amber-300 mx-auto" />
                     <p className="text-xs font-extrabold">Entry Pass Locked</p>
                     {requiresFee && passRule === 'auto_after_payment' ? (
-                      <>
-                        <p className="text-[11px] text-emerald-100">Pay the RM {reqFee.toFixed(2)} activity fee to unlock your Entry Pass QR automatically:</p>
-                        <button type="button" onClick={() => setTab('fee')} className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold cursor-pointer">
-                          Pay RM {reqFee.toFixed(2)} Fee →
-                        </button>
-                      </>
+                      eventPayments.some((f) => f.user_id === profile.id && f.status === 'Pending') && !provisionalPassEnabled ? (
+                        <p className="text-[11px] text-amber-200 font-semibold">
+                          ⏳ Receipt submitted — waiting for Treasurer verification to unlock your Entry Pass QR.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-[11px] text-emerald-100">
+                            {provisionalPassEnabled
+                              ? `Upload your RM ${reqFee.toFixed(2)} receipt to unlock a Provisional Pass right away:`
+                              : `Pay RM ${reqFee.toFixed(2)} and await Treasurer verification to unlock your Entry Pass QR:`}
+                          </p>
+                          <button type="button" onClick={() => setTab('fee')} className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold cursor-pointer">
+                            Pay RM {reqFee.toFixed(2)} Fee →
+                          </button>
+                        </>
+                      )
                     ) : (
                       <p className="text-[11px] text-emerald-100">Your Entry Pass QR will appear here once granted by the Admin.</p>
                     )}
@@ -785,9 +878,47 @@ export default function EventOperationsModal({
                   </div>
                 )}
 
+                {isAdmin && (permissions.can_manage_claims_fees || permissions.can_manage_activities) && hasEntryPass && requiresFee && (
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+                    <div className="text-[11px] font-extrabold text-slate-800">Entry Pass Unlock Mode</div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProvisionalPassEnabled(false);
+                          if (typeof window !== 'undefined') localStorage.setItem(`clubsync_provisional_pass_${event.id}`, 'false');
+                        }}
+                        className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border cursor-pointer ${
+                          !provisionalPassEnabled ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        Verified Payment Only
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProvisionalPassEnabled(true);
+                          if (typeof window !== 'undefined') localStorage.setItem(`clubsync_provisional_pass_${event.id}`, 'true');
+                        }}
+                        className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border cursor-pointer ${
+                          provisionalPassEnabled ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-white text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        Instant Provisional Pass
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <form onSubmit={handlePayFeeSubmit} className="bg-slate-50 border rounded-2xl p-5 space-y-3">
                   <h3 className="text-sm font-extrabold">Fee Payment (RM {reqFee.toFixed(2)})</h3>
-                  {hasEntryPass && passRule === 'auto_after_payment' && <p className="text-[11px] text-emerald-700 font-semibold">Your Entry Pass QR unlocks automatically after payment submission.</p>}
+                  {hasEntryPass && passRule === 'auto_after_payment' && (
+                    <p className="text-[11px] text-emerald-700 font-semibold">
+                      {provisionalPassEnabled
+                        ? 'Instant Provisional Pass active: your Entry Pass QR unlocks right after submitting your receipt.'
+                        : 'Your Entry Pass QR unlocks once the Treasurer verifies your receipt.'}
+                    </p>
+                  )}
 
                   {showQrToMembers && (activePayQrUrl || activePayBankInfo) && (
                     <div className="p-4 rounded-2xl bg-white border-2 border-emerald-200 space-y-2.5 text-center shadow-xs">
@@ -885,7 +1016,127 @@ export default function EventOperationsModal({
                   <button type="submit" disabled={submittingFee} className="w-full py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"><CheckCircle2 className="w-4 h-4 inline mr-1" />{submittingFee ? 'Uploading...' : 'Submit Payment'}</button>
                 </form>
               </div>
-              <div className="lg:col-span-3 space-y-3">
+              <div className="lg:col-span-3 space-y-4">
+                {isAdmin && permissions.can_manage_claims_fees && pendingFeePayments.length > 0 && (
+                  <div className="rounded-2xl border-2 border-amber-300 bg-amber-50/70 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-extrabold text-amber-950 flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-amber-700" />
+                        <span>Pending Fee Approvals ({pendingFeePayments.length})</span>
+                      </span>
+                      <span className="text-[11px] font-extrabold text-amber-900">
+                        Total Pending: RM {pendingFeePayments.reduce((s, f) => s + Number(f.amount_paid), 0).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-0.5">
+                      {pendingFeePayments.map((p) => {
+                        const isPdfFile =
+                          p.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
+                          p.receipt_url?.toLowerCase().split('?')[0].endsWith('.pdf');
+                        const confirmVal = feeConfirmAmounts[p.id] ?? String(p.amount_paid);
+                        const rejectVal = rejectReasonByFee[p.id] ?? '';
+                        const isBusy = reviewingFeeId === p.id;
+                        const waNotify = `Hi ${p.student_name}, your RM ${Number(p.amount_paid).toFixed(2)} payment receipt for ${event.event_name} has been verified!${
+                          passRule === 'auto_after_payment' ? ' Your Entry Pass QR is now unlocked in ClubSync.' : ''
+                        }`;
+
+                        return (
+                          <div key={`pending-${p.id}`} className="bg-white rounded-2xl border border-amber-200 p-3 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                            <div className="sm:col-span-4 flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2 min-h-[100px]">
+                              {p.receipt_url && !isPdfFile ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setZoomReceiptFee(p)}
+                                  className="relative group w-full flex flex-col items-center cursor-zoom-in"
+                                  title="Click to inspect full receipt"
+                                >
+                                  <img src={p.receipt_url} alt={p.student_name} className="max-h-24 w-auto object-contain rounded-lg" />
+                                  <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700">
+                                    <ZoomIn className="w-3 h-3" /> Zoom Receipt
+                                  </span>
+                                </button>
+                              ) : p.receipt_url ? (
+                                <a
+                                  href={p.receipt_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold text-[11px]"
+                                >
+                                  <FileText className="w-3.5 h-3.5" /> Open PDF
+                                </a>
+                              ) : (
+                                <span className="text-[11px] text-slate-400">No file</span>
+                              )}
+                            </div>
+
+                            <div className="sm:col-span-8 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                  <div className="font-extrabold text-slate-900">{p.student_name}</div>
+                                  <div className="text-[10px] font-mono text-slate-500">{p.matric_no} {p.phone_number ? `• ${p.phone_number}` : ''}</div>
+                                </div>
+                                <a
+                                  href={waLink(p.phone_number, waNotify)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-[10px]"
+                                  title="Notify student on WhatsApp"
+                                >
+                                  <MessageCircle className="w-3 h-3" /> Notify
+                                </a>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Confirm RM</label>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={confirmVal}
+                                    onChange={(e) => setFeeConfirmAmounts((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1 font-extrabold text-emerald-800"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Reject Reason (Optional)</label>
+                                  <input
+                                    type="text"
+                                    value={rejectVal}
+                                    onChange={(e) => setRejectReasonByFee((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                    placeholder="e.g. Blurry slip / wrong RM"
+                                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => void handleVerifyOrRejectFee(p, 'Verified')}
+                                  className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-60"
+                                >
+                                  {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                  <span>Verify</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => void handleVerifyOrRejectFee(p, 'Rejected')}
+                                  className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold cursor-pointer disabled:opacity-60"
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  <span>Reject</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <h3 className="text-sm font-extrabold">{isAdmin ? `All Fee Submissions (${visibleFeePayments.length})` : `My Fee Receipt (${visibleFeePayments.length})`}</h3>
                 <div className="border rounded-2xl overflow-hidden">
                   <table className="w-full text-left border-collapse">
@@ -901,7 +1152,19 @@ export default function EventOperationsModal({
                               <div className="text-[10px] text-slate-400 font-mono">{p.matric_no}</div>
                             </td>
                             <td className="py-2 px-3 font-extrabold text-emerald-700">RM {Number(p.amount_paid).toFixed(2)}</td>
-                            <td className="py-2 px-3"><span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">{p.status}</span></td>
+                            <td className="py-2 px-3">
+                              <span
+                                className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                  p.status === 'Verified'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : p.status === 'Rejected'
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : 'bg-amber-100 text-amber-900'
+                                }`}
+                              >
+                                {p.status}
+                              </span>
+                            </td>
                             <td className="py-2 px-3 text-right">
                               <div className="inline-flex items-center gap-1 justify-end">
                                 {p.receipt_url && (
@@ -1389,6 +1652,33 @@ export default function EventOperationsModal({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {zoomReceiptFee && zoomReceiptFee.receipt_url && (
+        <div
+          className="fixed inset-0 z-[70] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
+          onClick={() => setZoomReceiptFee(null)}
+        >
+          <div className="max-w-3xl w-full flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full flex items-center justify-between text-white text-xs px-2">
+              <span className="font-bold truncate">
+                {zoomReceiptFee.student_name} ({zoomReceiptFee.matric_no}) — RM {Number(zoomReceiptFee.amount_paid).toFixed(2)}
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoomReceiptFee(null)}
+                className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <img
+              src={zoomReceiptFee.receipt_url}
+              alt={zoomReceiptFee.student_name}
+              className="max-h-[82vh] w-auto max-w-full object-contain rounded-2xl bg-white shadow-2xl"
+            />
           </div>
         </div>
       )}
