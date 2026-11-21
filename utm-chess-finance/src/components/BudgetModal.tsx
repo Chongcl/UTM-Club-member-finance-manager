@@ -37,7 +37,7 @@ export interface EditableActivity {
   id?: string; event_name: string; category: string; event_date?: string; event_time?: string;
   location?: string; registration_fee?: number; driver_allowance_per_trip?: number;
   driver_recruitment_open?: boolean; qr_code_token?: string; ticket_qr_mode?: TicketQrMode;
-  description: string; status?: 'Active' | 'Closed';
+  pass_approval_rule?: PassApprovalRule; description: string; status?: 'Active' | 'Closed';
 }
 
 interface BudgetModalProps {
@@ -68,6 +68,7 @@ export default function BudgetModal({
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [localPassOverrides, setLocalPassOverrides] = useState<Record<string, boolean>>({});
+  const [feeFilter, setFeeFilter] = useState<'Pending' | 'Verified' | 'Rejected'>('Pending');
 
   // Only initialize when modal opens or switches to a different activity ID (prevents auto-jump when granting passes!)
   const lastInitIdRef = useRef<string | null>(null);
@@ -93,15 +94,16 @@ export default function BudgetModal({
       setDriverAllowance(String(initialData.driver_allowance_per_trip ?? 5.0));
       setDriverRecruitmentOpen(initialData.driver_recruitment_open ?? true);
       const savedMode =
-        (typeof window !== 'undefined' && initialData.id ? localStorage.getItem(`clubsync_qrmode_${initialData.id}`) : null) ||
         initialData.ticket_qr_mode ||
         (Number(feeVal) > 0 ? 'entry_pass' : 'scan_attendance');
       setUseEntryPass(isEntryPassMode(savedMode));
 
       const savedRule =
-        (typeof window !== 'undefined' && initialData.id ? (localStorage.getItem(`clubsync_passrule_${initialData.id}`) as PassApprovalRule | null) : null) ||
+        initialData.pass_approval_rule ||
         (savedMode === 'manual_only' ? 'manual_only' : 'auto_after_payment');
       setPassRule(savedRule);
+      const hasPendingFees = feePayments.some((f) => f.budget_id === initialData.id && f.status === 'Pending');
+      setFeeFilter(hasPendingFees ? 'Pending' : 'Verified');
 
       setQrToken(initialData.qr_code_token || (initialData.id ? initialData.id.slice(0, 6).toUpperCase() : 'EV2026'));
       setStatus(initialData.status || 'Active');
@@ -154,11 +156,10 @@ export default function BudgetModal({
         description: description.trim(), status,
       };
       if (isEditing && eventId) {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(`clubsync_qrmode_${eventId}`, modeValue);
-          localStorage.setItem(`clubsync_passrule_${eventId}`, passRule);
-        }
-        const { error } = await supabase.from('budgets').update({ ...basePayload, ticket_qr_mode: modeValue }).eq('id', eventId);
+        const { error } = await supabase
+          .from('budgets')
+          .update({ ...basePayload, ticket_qr_mode: modeValue, pass_approval_rule: passRule })
+          .eq('id', eventId);
         if (error) await supabase.from('budgets').update(basePayload).eq('id', eventId);
         if (profile && initialData) {
           const changes = computeFieldChanges([
@@ -184,16 +185,11 @@ export default function BudgetModal({
         }
         onSuccess(`Saved "${eventName.trim()}"!`);
       } else {
-        const { data: created, error } = await supabase.from('budgets').insert({ ...basePayload, ticket_qr_mode: modeValue, allocated_amount: 0, spent_amount: 0 }).select('*').single();
+        const { error } = await supabase
+          .from('budgets')
+          .insert({ ...basePayload, ticket_qr_mode: modeValue, pass_approval_rule: passRule, allocated_amount: 0, spent_amount: 0 });
         if (error) {
-          const { data: fallback } = await supabase.from('budgets').insert({ ...basePayload, allocated_amount: 0, spent_amount: 0 }).select('*').single();
-          if (fallback && typeof window !== 'undefined') {
-            localStorage.setItem(`clubsync_qrmode_${fallback.id}`, modeValue);
-            localStorage.setItem(`clubsync_passrule_${fallback.id}`, passRule);
-          }
-        } else if (created && typeof window !== 'undefined') {
-          localStorage.setItem(`clubsync_qrmode_${created.id}`, modeValue);
-          localStorage.setItem(`clubsync_passrule_${created.id}`, passRule);
+          await supabase.from('budgets').insert({ ...basePayload, allocated_amount: 0, spent_amount: 0 });
         }
         onSuccess(`Published "${eventName.trim()}"!`);
       }
@@ -386,58 +382,89 @@ export default function BudgetModal({
 
             {/* 3. HIDDEN FEE PAYMENTS PANEL */}
             {openSection === 'fees' && isEditing && (
-              <div className="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+              <div className="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex p-1 rounded-xl bg-white border border-slate-200 gap-1">
+                    {(['Pending', 'Verified', 'Rejected'] as const).map((st) => {
+                      const cnt = eventPayments.filter((f) => f.status === st).length;
+                      return (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setFeeFilter(st)}
+                          className={`px-3 py-1 rounded-lg font-bold text-[11px] cursor-pointer ${
+                            feeFilter === st ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          {st} ({cnt})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <div className="border bg-white rounded-xl overflow-hidden max-h-[220px] overflow-y-auto">
                   <table className="w-full text-left border-collapse">
                     <thead><tr className="bg-slate-50 border-b"><th className="py-2 px-3">Student</th><th className="py-2 px-3">Amount</th><th className="py-2 px-3">Status</th><th className="py-2 px-3 text-right">Action</th></tr></thead>
                     <tbody className="divide-y">
-                      {eventPayments.map((p) => (
+                      {eventPayments.filter((p) => p.status === feeFilter).length === 0 ? (
+                        <tr><td colSpan={4} className="py-5 text-center text-slate-400">No {feeFilter.toLowerCase()} fees.</td></tr>
+                      ) : (
+                      eventPayments.filter((p) => p.status === feeFilter).map((p) => (
                         <tr key={p.id}>
                           <td className="py-2 px-3 font-bold">{p.student_name}</td>
                           <td className="py-2 px-3 font-bold text-emerald-700">RM {Number(p.amount_paid).toFixed(2)}</td>
                           <td className="py-2 px-3">{p.status}</td>
                           <td className="py-2 px-3 text-right space-x-1">
-                            <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 rounded bg-slate-100"><ExternalLink className="w-3 h-3 inline" /></a>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await supabase.from('activity_fee_payments').update({ status: 'Verified' }).eq('id', p.id);
-                                if (profile) {
-                                  void recordEditHistory({
-                                    actor: profile,
-                                    category: 'Fees',
-                                    table: 'activity_fee_payments',
-                                    recordId: p.id,
-                                    recordTitle: `${p.student_name} fee`,
-                                    changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Verified' }]),
-                                  });
-                                }
-                                onSuccess('Verified!');
-                              }}
-                              className="px-2 py-1 rounded bg-emerald-600 text-white font-bold cursor-pointer"
-                            >
-                              Verify
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await supabase.from('activity_fee_payments').update({ status: 'Rejected' }).eq('id', p.id);
-                                if (profile) {
-                                  void recordEditHistory({
-                                    actor: profile,
-                                    category: 'Fees',
-                                    table: 'activity_fee_payments',
-                                    recordId: p.id,
-                                    recordTitle: `${p.student_name} fee`,
-                                    changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Rejected' }]),
-                                  });
-                                }
-                                onSuccess('Rejected.');
-                              }}
-                              className="px-2 py-1 rounded bg-rose-50 text-rose-700 font-bold cursor-pointer"
-                            >
-                              Reject
-                            </button>
+                            {p.receipt_url && (
+                              <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 rounded bg-slate-100"><ExternalLink className="w-3 h-3 inline" /></a>
+                            )}
+                            {p.status !== 'Verified' && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await supabase.from('activity_fee_payments').update({ status: 'Verified' }).eq('id', p.id);
+                                  if (passRule === 'auto_after_payment' && p.user_id) {
+                                    await supabase.from('event_rsvps').update({ pass_approved: true }).eq('budget_id', eventId).eq('user_id', p.user_id);
+                                  }
+                                  if (profile) {
+                                    void recordEditHistory({
+                                      actor: profile,
+                                      category: 'Fees',
+                                      table: 'activity_fee_payments',
+                                      recordId: p.id,
+                                      recordTitle: `${p.student_name} fee`,
+                                      changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Verified' }]),
+                                    });
+                                  }
+                                  onSuccess('Verified!');
+                                }}
+                                className="px-2 py-1 rounded bg-emerald-600 text-white font-bold cursor-pointer"
+                              >
+                                Verify
+                              </button>
+                            )}
+                            {p.status !== 'Rejected' && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await supabase.from('activity_fee_payments').update({ status: 'Rejected' }).eq('id', p.id);
+                                  if (profile) {
+                                    void recordEditHistory({
+                                      actor: profile,
+                                      category: 'Fees',
+                                      table: 'activity_fee_payments',
+                                      recordId: p.id,
+                                      recordTitle: `${p.student_name} fee`,
+                                      changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Rejected' }]),
+                                    });
+                                  }
+                                  onSuccess('Rejected.');
+                                }}
+                                className="px-2 py-1 rounded bg-rose-50 text-rose-700 font-bold cursor-pointer"
+                              >
+                                Reject
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => setHistoryTarget({ table: 'activity_fee_payments', recordId: p.id, title: `${p.student_name} Fee` })}
@@ -465,7 +492,8 @@ export default function BudgetModal({
                             </button>
                           </td>
                         </tr>
-                      ))}
+                      ))
+                      )}
                     </tbody>
                   </table>
                 </div>

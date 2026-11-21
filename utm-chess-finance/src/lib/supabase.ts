@@ -122,8 +122,28 @@ export interface Budget {
   driver_recruitment_open: boolean;
   qr_code_token?: string;
   ticket_qr_mode?: TicketQrMode;
+  pass_approval_rule?: PassApprovalRule;
+  payment_qr_url?: string;
+  payment_bank_info?: string;
+  show_payment_qr?: boolean;
   description: string;
   status: 'Active' | 'Closed';
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  created_at: string;
+}
+
+export interface BudgetPlanItem {
+  id: string;
+  budget_id: string;
+  entry_type: 'IN' | 'OUT';
+  item: string;
+  category: string;
+  planned_amount: number;
+  notes?: string;
+  created_by?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -148,6 +168,8 @@ export interface EventRsvp {
   qr_checked_in?: boolean;
   qr_checked_in_at?: string | null;
   pass_approved?: boolean;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   updated_at: string;
 }
 
@@ -162,6 +184,8 @@ export interface ActivityFeePayment {
   receipt_url: string;
   receipt_file_name: string;
   status: 'Verified' | 'Pending' | 'Rejected';
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -200,6 +224,8 @@ export interface Claim {
   treasurer_verified_at?: string | null;
   final_approved_by?: string | null;
   final_approved_at?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -214,6 +240,8 @@ export interface EquipmentItem {
   location: string;
   notes: string;
   requires_approval?: boolean;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -234,6 +262,8 @@ export interface EquipmentLoan {
   approval_status?: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | null;
   approved_by?: string | null;
   approved_at?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -305,6 +335,8 @@ export interface Announcement {
   is_pinned: boolean;
   show_in_carousel: boolean;
   created_by: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -315,6 +347,8 @@ export interface Poll {
   is_active: boolean;
   show_results?: boolean;
   created_by: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 

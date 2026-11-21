@@ -53,7 +53,15 @@ interface StoredMetaPayload {
   changes?: FieldChange[];
 }
 
-const SOFT_DELETE_STORAGE_KEY = 'clubsync_soft_deleted_v1';
+export interface SoftDeletedItem {
+  table: TrackedTable;
+  recordId: string;
+  title: string;
+  deletedAt: string;
+  deletedBy: string;
+  category: ActivityLogCategory;
+}
+
 const HISTORY_STORAGE_KEY = 'clubsync_record_history_v1';
 const META_MARKER = '[HIST_META:';
 
@@ -104,34 +112,6 @@ function saveLocalHistoryEvent(ev: RecordHistoryEvent) {
     localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next));
   } catch {
     /* ignore quota errors */
-  }
-}
-
-interface LocalDeleteEntry {
-  deleted: boolean;
-  updatedAt: string;
-}
-
-function readLocalSoftDeletes(): Record<string, LocalDeleteEntry> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(SOFT_DELETE_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, LocalDeleteEntry>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function setLocalSoftDeleteState(table: TrackedTable, recordId: string, deleted: boolean) {
-  if (typeof window === 'undefined') return;
-  try {
-    const cur = readLocalSoftDeletes();
-    cur[`${table}:${recordId}`] = { deleted, updatedAt: new Date().toISOString() };
-    localStorage.setItem(SOFT_DELETE_STORAGE_KEY, JSON.stringify(cur));
-  } catch {
-    /* ignore */
   }
 }
 
@@ -229,7 +209,7 @@ export async function recordEditHistory(params: {
 }
 
 /**
- * Hides a record from the web UI while keeping its row in Supabase unless manually deleted in Supabase.
+ * Hides a record from the web UI via `deleted_at` while keeping its row in Supabase unless manually deleted in Supabase.
  */
 export async function softDeleteRecord(params: {
   actor: HistoryActor | null | undefined;
@@ -242,17 +222,15 @@ export async function softDeleteRecord(params: {
   const { actor, category, table, recordId, recordTitle, extraSummary } = params;
   if (!recordId) return;
 
-  setLocalSoftDeleteState(table, recordId, true);
+  const actorLabel = actor ? `${actor.full_name}${actor.matric_no ? ` (${actor.matric_no})` : ''}` : 'System';
+  const nowIso = new Date().toISOString();
 
-  // Best-effort flag on the table if `is_deleted` exists; never calls `.delete()`.
-  try {
-    await supabase.from(table).update({ is_deleted: true }).eq('id', recordId);
-  } catch {
-    /* table may not have is_deleted column; activity_logs + localStorage handle hiding cleanly */
-  }
+  await supabase
+    .from(table)
+    .update({ deleted_at: nowIso, deleted_by: actorLabel })
+    .eq('id', recordId);
 
   if (actor) {
-    const actorLabel = `${actor.full_name}${actor.matric_no ? ` (${actor.matric_no})` : ''}`;
     const roleLabel = actor.role === 'owner' ? 'Owner' : actor.role === 'treasurer' ? 'Admin' : 'Member';
     const summary = `${actorLabel} removed ${tableDisplayLabel(table)} "${recordTitle}" from web view (record preserved in Supabase)${
       extraSummary ? ` — ${extraSummary}` : ''
@@ -276,7 +254,7 @@ export async function softDeleteRecord(params: {
       actorName: actor.full_name,
       actorMatric: actor.matric_no || '',
       actorRole: roleLabel,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso,
       summary,
       changes: [],
     });
@@ -300,13 +278,10 @@ export async function restoreSoftDeletedRecord(params: {
   const { actor, category, table, recordId, recordTitle } = params;
   if (!recordId) return;
 
-  setLocalSoftDeleteState(table, recordId, false);
-
-  try {
-    await supabase.from(table).update({ is_deleted: false }).eq('id', recordId);
-  } catch {
-    /* ignore if column missing */
-  }
+  await supabase
+    .from(table)
+    .update({ deleted_at: null, deleted_by: null })
+    .eq('id', recordId);
 
   if (actor) {
     const actorLabel = `${actor.full_name}${actor.matric_no ? ` (${actor.matric_no})` : ''}`;
@@ -345,55 +320,14 @@ export async function restoreSoftDeletedRecord(params: {
   }
 }
 
-export function getSoftDeleteStateMap(logs: ActivityLogEntry[]): Map<string, boolean> {
-  const latestByKey = new Map<string, { deleted: boolean; ts: number }>();
-
-  const consider = (key: string, deleted: boolean, iso: string) => {
-    const ts = new Date(iso).getTime() || 0;
-    const prev = latestByKey.get(key);
-    if (!prev || ts >= prev.ts) {
-      latestByKey.set(key, { deleted, ts });
-    }
-  };
-
-  for (const log of logs) {
-    const parsed = parseHistoryMetaFromLog(log);
-    if (parsed && (parsed.action === 'deleted' || parsed.action === 'restored')) {
-      consider(`${parsed.table}:${parsed.recordId}`, parsed.action === 'deleted', parsed.timestamp);
-    }
-  }
-
-  for (const ev of readLocalHistory()) {
-    if (ev.action === 'deleted' || ev.action === 'restored') {
-      consider(`${ev.table}:${ev.recordId}`, ev.action === 'deleted', ev.timestamp);
-    }
-  }
-
-  const localMap = readLocalSoftDeletes();
-  for (const [key, val] of Object.entries(localMap)) {
-    consider(key, Boolean(val.deleted), val.updatedAt);
-  }
-
-  const out = new Map<string, boolean>();
-  latestByKey.forEach((v, k) => {
-    out.set(k, v.deleted);
-  });
-  return out;
-}
-
 export function filterActiveRecords<T extends { id: string }>(
-  table: TrackedTable,
+  _table: TrackedTable,
   rows: T[],
-  logs: ActivityLogEntry[]
+  _logs?: ActivityLogEntry[]
 ): T[] {
-  const stateMap = getSoftDeleteStateMap(logs);
   return rows.filter((row) => {
-    const dbDeleted = (row as unknown as { is_deleted?: boolean }).is_deleted === true;
-    const key = `${table}:${row.id}`;
-    const logState = stateMap.get(key);
-    if (logState === false) return true; // Explicitly restored overrides DB flag if is_deleted column is absent or stale
-    if (logState === true) return false;
-    return !dbDeleted;
+    const r = row as unknown as { deleted_at?: string | null; is_deleted?: boolean };
+    return !r.deleted_at && r.is_deleted !== true;
   });
 }
 
@@ -458,15 +392,15 @@ export function getAllHistoryEvents(logs: ActivityLogEntry[]): RecordHistoryEven
 }
 
 export function getCurrentlyDeletedEvents(logs: ActivityLogEntry[]): RecordHistoryEvent[] {
-  const stateMap = getSoftDeleteStateMap(logs);
   const all = getAllHistoryEvents(logs);
   const seenKey = new Set<string>();
   const out: RecordHistoryEvent[] = [];
   for (const ev of all) {
     const key = `${ev.table}:${ev.recordId}`;
-    if (ev.action === 'deleted' && stateMap.get(key) === true && !seenKey.has(key)) {
+    if (seenKey.has(key)) continue;
+    if (ev.action === 'deleted' || ev.action === 'restored') {
       seenKey.add(key);
-      out.push(ev);
+      if (ev.action === 'deleted') out.push(ev);
     }
   }
   return out;

@@ -6,9 +6,9 @@ import {
   stripHistoryTag,
   parseHistoryMetaFromLog,
   getAllHistoryEvents,
-  getCurrentlyDeletedEvents,
   restoreSoftDeletedRecord,
   tableDisplayLabel,
+  SoftDeletedItem,
 } from '@/lib/history';
 import {
   ShieldCheck,
@@ -34,6 +34,7 @@ import {
 
 interface ActivityLogSectionProps {
   logs: ActivityLogEntry[];
+  deletedRecords?: SoftDeletedItem[];
   profile?: UserProfile;
   onRefresh: (msg: string) => void;
 }
@@ -86,14 +87,14 @@ function formatLogTime(iso: string) {
   });
 }
 
-export default function ActivityLogSection({ logs, profile, onRefresh }: ActivityLogSectionProps) {
+export default function ActivityLogSection({ logs, deletedRecords = [], profile, onRefresh }: ActivityLogSectionProps) {
   const [viewMode, setViewMode] = useState<'all' | 'edits' | 'deleted'>('all');
   const [catFilter, setCatFilter] = useState<'ALL' | ActivityLogCategory>('ALL');
   const [search, setSearch] = useState('');
   const [restoringKey, setRestoringKey] = useState<string | null>(null);
 
   const allEditEvents = getAllHistoryEvents(logs).filter((ev) => ev.action === 'edited');
-  const currentlyDeleted = getCurrentlyDeletedEvents(logs);
+  const currentlyDeleted = deletedRecords;
 
   const matchesSearch = (parts: (string | undefined | null)[]) => {
     if (!search.trim()) return true;
@@ -119,14 +120,12 @@ export default function ActivityLogSection({ logs, profile, onRefresh }: Activit
     ]);
   });
 
-  const filteredDeleted = currentlyDeleted.filter((ev) => {
-    if (catFilter !== 'ALL' && ev.category !== catFilter) return false;
+  const filteredDeleted = currentlyDeleted.filter((item) => {
+    if (catFilter !== 'ALL' && item.category !== catFilter) return false;
     return matchesSearch([
-      ev.actorName,
-      ev.actorMatric,
-      ev.recordTitle,
-      tableDisplayLabel(ev.table),
-      ev.summary,
+      item.deletedBy,
+      item.title,
+      tableDisplayLabel(item.table),
     ]);
   });
 
@@ -401,33 +400,26 @@ export default function ActivityLogSection({ logs, profile, onRefresh }: Activit
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {filteredDeleted.map((ev) => {
-                  const rowKey = `${ev.table}:${ev.recordId}`;
+                {filteredDeleted.map((item) => {
+                  const rowKey = `${item.table}:${item.recordId}`;
                   const isRestoring = restoringKey === rowKey;
                   const canRestore = Boolean(
-                    profile &&
-                      (profile.role === 'owner' ||
-                        profile.role === 'treasurer' ||
-                        (ev.actorMatric && profile.matric_no === ev.actorMatric))
+                    profile && (profile.role === 'owner' || profile.role === 'treasurer')
                   );
                   return (
                     <div key={rowKey} className="p-4 flex flex-wrap items-center justify-between gap-3 text-xs hover:bg-rose-50/30">
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-rose-100 text-rose-900 border border-rose-200">
-                            {tableDisplayLabel(ev.table)}
+                            {tableDisplayLabel(item.table)}
                           </span>
-                          <span className="font-extrabold text-slate-900">{ev.recordTitle}</span>
-                          <span className="text-[11px] font-mono text-slate-400">ID: {ev.recordId.slice(0, 8)}</span>
+                          <span className="font-extrabold text-slate-900">{item.title}</span>
+                          <span className="text-[11px] font-mono text-slate-400">ID: {item.recordId.slice(0, 8)}</span>
                         </div>
                         <p className="text-slate-600 break-words">
                           Hidden by{' '}
-                          <span className="font-bold text-slate-800">
-                            {ev.actorRole ? `${ev.actorRole} ` : ''}
-                            {ev.actorName}
-                            {ev.actorMatric ? ` (${ev.actorMatric})` : ''}
-                          </span>{' '}
-                          at {formatLogTime(ev.timestamp)}
+                          <span className="font-bold text-slate-800">{item.deletedBy || 'Admin'}</span>{' '}
+                          at {formatLogTime(item.deletedAt)}
                         </p>
                       </div>
                       {canRestore && (
@@ -440,12 +432,12 @@ export default function ActivityLogSection({ logs, profile, onRefresh }: Activit
                             try {
                               await restoreSoftDeletedRecord({
                                 actor: profile,
-                                category: (ev.category as ActivityLogCategory) || 'Settings',
-                                table: ev.table,
-                                recordId: ev.recordId,
-                                recordTitle: ev.recordTitle,
+                                category: item.category,
+                                table: item.table,
+                                recordId: item.recordId,
+                                recordTitle: item.title,
                               });
-                              onRefresh(`Restored ${tableDisplayLabel(ev.table)} "${ev.recordTitle}" back to web view.`);
+                              onRefresh(`Restored ${tableDisplayLabel(item.table)} "${item.title}" back to web view.`);
                             } finally {
                               setRestoringKey(null);
                             }

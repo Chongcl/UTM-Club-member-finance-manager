@@ -6,6 +6,7 @@ import {
   isSupabaseConfigured,
   UserProfile,
   Budget,
+  BudgetPlanItem,
   EventRsvp,
   ActivityFeePayment,
   Claim,
@@ -44,6 +45,7 @@ import {
   softDeleteRecord,
   computeFieldChanges,
   recordEditHistory,
+  SoftDeletedItem,
 } from '@/lib/history';
 import { normalizeEquipmentItem, normalizeEquipmentLoan } from '@/lib/equipment';
 import {
@@ -165,9 +167,8 @@ export default function Page() {
   const [clubName, setClubName] = useState('ClubSync');
   const [logoUrl, setLogoUrl] = useState('');
   const [currentBatch, setCurrentBatch] = useState('2026/2027');
-  const [adminPinSetting, setAdminPinSetting] = useState('EXEC-2026');
-  const [ownerPinSetting, setOwnerPinSetting] = useState('OWNER-2026');
   const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
+  const [physicalCash, setPhysicalCash] = useState<number>(0);
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
   const [bgStyle, setBgStyle] = useState('emerald-aurora');
   const [bgImageUrl, setBgImageUrl] = useState('');
@@ -178,8 +179,8 @@ export default function Page() {
 
   const [clubNameInput, setClubNameInput] = useState('ClubSync');
   const [newBatchInput, setNewBatchInput] = useState('2026/2027');
-  const [newAdminPinInput, setNewAdminPinInput] = useState('EXEC-2026');
-  const [newOwnerPinInput, setNewOwnerPinInput] = useState('OWNER-2026');
+  const [newAdminPinInput, setNewAdminPinInput] = useState('');
+  const [newOwnerPinInput, setNewOwnerPinInput] = useState('');
   const [departmentsText, setDepartmentsText] = useState(DEFAULT_DEPARTMENTS.join('\n'));
 
   const [showThemeStudio, setShowThemeStudio] = useState(false);
@@ -212,6 +213,7 @@ export default function Page() {
   const [feePayments, setFeePayments] = useState<ActivityFeePayment[]>([]);
   const [allMembers, setAllMembers] = useState<UserProfile[]>([]);
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntryItem[]>([]);
+  const [budgetPlanItems, setBudgetPlanItems] = useState<BudgetPlanItem[]>([]);
   const [equipmentItems, setEquipmentItems] = useState<EquipmentItem[]>([]);
   const [equipmentLoans, setEquipmentLoans] = useState<EquipmentLoan[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -235,27 +237,6 @@ export default function Page() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setDarkMode(localStorage.getItem('clubsync_dark') === 'true');
-      const savedStyle = localStorage.getItem('clubsync_bg_style');
-      const savedImg = localStorage.getItem('clubsync_bg_image');
-      const savedLogo = localStorage.getItem('clubsync_logo_url');
-      const savedPayQr = localStorage.getItem('clubsync_payment_qr');
-      const savedPayBank = localStorage.getItem('clubsync_payment_bank');
-      const savedThresh = localStorage.getItem('clubsync_claim_threshold');
-      if (savedStyle) setBgStyle(savedStyle);
-      if (savedImg) setBgImageUrl(savedImg);
-      if (savedLogo) {
-        setLogoUrl(savedLogo);
-        setLogoUrlInput(savedLogo);
-      }
-      if (savedPayQr) setPaymentQrUrl(savedPayQr);
-      if (savedPayBank) setPaymentBankInfo(savedPayBank);
-      if (savedThresh !== null) {
-        const parsed = parseFloat(savedThresh);
-        if (!isNaN(parsed) && parsed >= 0) {
-          setClaimThreshold(parsed);
-          setClaimThresholdInput(String(parsed));
-        }
-      }
     }
   }, []);
 
@@ -278,12 +259,10 @@ export default function Page() {
     const nextThresh = !isNaN(parsed) && parsed >= 0 ? parsed : DEFAULT_CLAIM_APPROVAL_THRESHOLD;
     setClaimThreshold(nextThresh);
     setClaimThresholdInput(String(nextThresh));
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('clubsync_claim_threshold', String(nextThresh));
-    }
     const { error } = await supabase
       .from('club_settings')
-      .upsert({ id: 1, claim_approval_threshold: nextThresh });
+      .update({ claim_approval_threshold: nextThresh })
+      .eq('id', 1);
     if (profile) {
       void logActivity(
         profile,
@@ -293,7 +272,7 @@ export default function Page() {
       );
     }
     if (error) {
-      showToast(`Saved locally (RM ${nextThresh.toFixed(0)}). Add DB column to sync all devices.`);
+      showToast(error.message || 'Could not update threshold in Supabase.');
     } else {
       showToast(`2-stage threshold saved: RM ${nextThresh.toFixed(0)}`);
     }
@@ -378,14 +357,54 @@ export default function Page() {
   }, []);
 
   const fetchAllData = useCallback(async () => {
-    const [bRes, cRes, rRes, fRes, mRes, lRes, sRes, eqIRes, eqLRes, annRes, pRes, pvRes, logRes] = await Promise.all([
+    let activeUid = sessionUserId;
+    if (!activeUid) {
+      const { data: authData } = await supabase.auth.getUser();
+      activeUid = authData.user?.id || null;
+    }
+
+    const meRes = activeUid
+      ? await supabase.from('users').select('*').eq('id', activeUid).maybeSingle()
+      : { data: null };
+    const meProfile = meRes.data ? normalizeProfile(meRes.data as Record<string, unknown>) : null;
+    if (meProfile) {
+      setProfile(meProfile);
+      if (meProfile.role === 'member') setRoleMode('member');
+    }
+
+    const callerIsAdmin = meProfile?.role === 'treasurer' || meProfile?.role === 'owner';
+    const callerIsOwner = meProfile?.role === 'owner';
+
+    const [
+      bRes,
+      cRes,
+      rRes,
+      fRes,
+      mRes,
+      lRes,
+      bpRes,
+      sRes,
+      pinRes,
+      eqIRes,
+      eqLRes,
+      annRes,
+      pRes,
+      pvRes,
+      logRes,
+    ] = await Promise.all([
       supabase.from('budgets').select('*').order('event_date', { ascending: true }),
       supabase.from('claims').select('*').order('created_at', { ascending: false }),
       supabase.from('event_rsvps').select('*'),
       supabase.from('activity_fee_payments').select('*').order('created_at', { ascending: false }),
-      supabase.from('users').select('*').order('full_name', { ascending: true }),
+      callerIsAdmin
+        ? supabase.from('users').select('*').order('full_name', { ascending: true })
+        : supabase.from('users_public').select('*').order('full_name', { ascending: true }),
       supabase.from('ledger_entries').select('*').order('created_at', { ascending: false }),
-      supabase.from('club_settings').select('*').eq('id', 1).maybeSingle(),
+      supabase.from('budget_plan_items').select('*').order('created_at', { ascending: true }),
+      supabase.from('club_settings_public').select('*').eq('id', 1).maybeSingle(),
+      callerIsOwner
+        ? supabase.from('club_settings').select('admin_pin, owner_pin').eq('id', 1).maybeSingle()
+        : Promise.resolve({ data: null }),
       supabase.from('equipment_items').select('*').order('item_name', { ascending: true }),
       supabase.from('equipment_loans').select('*').order('created_at', { ascending: false }),
       supabase.from('announcements').select('*').order('created_at', { ascending: false }),
@@ -393,22 +412,22 @@ export default function Page() {
       supabase.from('poll_votes').select('*'),
       supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(1000),
     ]);
+
     if (bRes.data) setBudgets(bRes.data as Budget[]);
     if (cRes.data) setClaims(cRes.data as Claim[]);
     if (rRes.data) setRsvps(rRes.data as EventRsvp[]);
     if (fRes.data) setFeePayments(fRes.data as ActivityFeePayment[]);
     if (mRes.data) {
-      const list = (mRes.data as Record<string, unknown>[]).map(normalizeProfile);
-      setAllMembers(list);
-      if (sessionUserId) {
-        const me = list.find((u) => u.id === sessionUserId);
-        if (me) {
-          setProfile(me);
-          if (me.role === 'member') setRoleMode('member');
-        }
-      }
+      const publicOrAdminList = (mRes.data as Record<string, unknown>[]).map(normalizeProfile);
+      const mergedList = meProfile
+        ? publicOrAdminList.map((u) => (u.id === meProfile.id ? meProfile : u))
+        : publicOrAdminList;
+      setAllMembers(mergedList);
+    } else if (meProfile) {
+      setAllMembers([meProfile]);
     }
     if (lRes.data) setLedgerEntries(lRes.data as LedgerEntryItem[]);
+    if (bpRes.data) setBudgetPlanItems(bpRes.data as BudgetPlanItem[]);
     const normalizedLoans = eqLRes.data
       ? (eqLRes.data as Record<string, unknown>[]).map(normalizeEquipmentLoan)
       : [];
@@ -424,21 +443,29 @@ export default function Page() {
     if (pRes.data) setPolls(pRes.data as Poll[]);
     if (pvRes.data) setPollVotes(pvRes.data as PollVote[]);
     if (logRes.data) setActivityLogs(logRes.data as ActivityLogEntry[]);
+
+    if (pinRes.data) {
+      const pinRow = pinRes.data as { admin_pin?: string | null; owner_pin?: string | null };
+      if (pinRow.admin_pin) setNewAdminPinInput(String(pinRow.admin_pin));
+      if (pinRow.owner_pin) setNewOwnerPinInput(String(pinRow.owner_pin));
+    }
+
     if (sRes.data) {
       if (sRes.data.claim_approval_threshold !== null && sRes.data.claim_approval_threshold !== undefined) {
         const thresh = Number(sRes.data.claim_approval_threshold);
         if (!isNaN(thresh) && thresh >= 0) {
           setClaimThreshold(thresh);
           setClaimThresholdInput(String(thresh));
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('clubsync_claim_threshold', String(thresh));
-          }
+        }
+      }
+      if (sRes.data.physical_cash !== null && sRes.data.physical_cash !== undefined) {
+        const cashVal = Number(sRes.data.physical_cash);
+        if (!isNaN(cashVal) && cashVal >= 0) {
+          setPhysicalCash(cashVal);
         }
       }
       const cName = String(sRes.data.club_name || 'ClubSync');
       const bYear = String(sRes.data.current_batch || '2026/2027');
-      const aPin = String(sRes.data.admin_pin || 'EXEC-2026');
-      const oPin = String(sRes.data.owner_pin || 'OWNER-2026');
       const depts = Array.isArray(sRes.data.departments)
         ? (sRes.data.departments as string[]).filter(Boolean)
         : DEFAULT_DEPARTMENTS;
@@ -446,38 +473,14 @@ export default function Page() {
       setClubNameInput(cName);
       setCurrentBatch(bYear);
       setNewBatchInput(bYear);
-      setAdminPinSetting(aPin);
-      setNewAdminPinInput(aPin);
-      setOwnerPinSetting(oPin);
-      setNewOwnerPinInput(oPin);
       setOwnerUserId(sRes.data.owner_user_id ? String(sRes.data.owner_user_id) : null);
-
-      if (sRes.data.payment_qr_url) {
-        setPaymentQrUrl(String(sRes.data.payment_qr_url));
-        if (typeof window !== 'undefined') localStorage.setItem('clubsync_payment_qr', String(sRes.data.payment_qr_url));
-      }
-      if (sRes.data.payment_bank_info) {
-        setPaymentBankInfo(String(sRes.data.payment_bank_info));
-        if (typeof window !== 'undefined') localStorage.setItem('clubsync_payment_bank', String(sRes.data.payment_bank_info));
-      }
-
-      const localStyle = typeof window !== 'undefined' ? localStorage.getItem('clubsync_bg_style') : null;
-      const localImg = typeof window !== 'undefined' ? localStorage.getItem('clubsync_bg_image') : null;
-      const localLogo = typeof window !== 'undefined' ? localStorage.getItem('clubsync_logo_url') : null;
-
-      if (!localStyle && sRes.data.bg_style) {
-        setBgStyle(String(sRes.data.bg_style));
-        if (typeof window !== 'undefined') localStorage.setItem('clubsync_bg_style', String(sRes.data.bg_style));
-      }
-      if (!localImg && sRes.data.bg_image_url) {
-        setBgImageUrl(String(sRes.data.bg_image_url));
-        if (typeof window !== 'undefined') localStorage.setItem('clubsync_bg_image', String(sRes.data.bg_image_url));
-      }
-      if (!localLogo && sRes.data.logo_url) {
-        setLogoUrl(String(sRes.data.logo_url));
-        setLogoUrlInput(String(sRes.data.logo_url));
-        if (typeof window !== 'undefined') localStorage.setItem('clubsync_logo_url', String(sRes.data.logo_url));
-      }
+      setPaymentQrUrl(sRes.data.payment_qr_url ? String(sRes.data.payment_qr_url) : '');
+      setPaymentBankInfo(sRes.data.payment_bank_info ? String(sRes.data.payment_bank_info) : '');
+      setBgStyle(sRes.data.bg_style ? String(sRes.data.bg_style) : 'emerald-aurora');
+      setBgImageUrl(sRes.data.bg_image_url ? String(sRes.data.bg_image_url) : '');
+      const dbLogo = sRes.data.logo_url ? String(sRes.data.logo_url) : '';
+      setLogoUrl(dbLogo);
+      setLogoUrlInput(dbLogo);
       if (depts.length > 0) {
         setDepartments((prev) => (prev.join('|') === depts.join('|') ? prev : depts));
         setDepartmentsText(depts.join('\n'));
@@ -568,15 +571,112 @@ export default function Page() {
     fetchAllData();
   };
 
-  const activeBudgets = filterActiveRecords('budgets', budgets, activityLogs);
-  const activeClaims = filterActiveRecords('claims', claims, activityLogs);
-  const activeFeePayments = filterActiveRecords('activity_fee_payments', feePayments, activityLogs);
-  const activeEquipmentItems = filterActiveRecords('equipment_items', equipmentItems, activityLogs);
-  const activeEquipmentLoans = filterActiveRecords('equipment_loans', equipmentLoans, activityLogs);
-  const activeLedgerEntries = filterActiveRecords('ledger_entries', ledgerEntries, activityLogs);
-  const activeAnnouncements = filterActiveRecords('announcements', announcements, activityLogs);
-  const activePolls = filterActiveRecords('polls', polls, activityLogs);
-  const activeRsvps = filterActiveRecords('event_rsvps', rsvps, activityLogs);
+  const activeBudgets = filterActiveRecords('budgets', budgets);
+  const activeClaims = filterActiveRecords('claims', claims);
+  const activeFeePayments = filterActiveRecords('activity_fee_payments', feePayments);
+  const activeEquipmentItems = filterActiveRecords('equipment_items', equipmentItems);
+  const activeEquipmentLoans = filterActiveRecords('equipment_loans', equipmentLoans);
+  const activeLedgerEntries = filterActiveRecords('ledger_entries', ledgerEntries);
+  const activeBudgetPlanItems = budgetPlanItems.filter((p) => !p.deleted_at);
+  const activeAnnouncements = filterActiveRecords('announcements', announcements);
+  const activePolls = filterActiveRecords('polls', polls);
+  const activeRsvps = filterActiveRecords('event_rsvps', rsvps);
+
+  const deletedRecords: SoftDeletedItem[] = [
+    ...budgets
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'budgets' as const,
+        recordId: r.id,
+        title: r.event_name || 'Activity',
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Activities' as const,
+      })),
+    ...claims
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'claims' as const,
+        recordId: r.id,
+        title: `${r.title} (${r.claimant_name})`,
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Claims' as const,
+      })),
+    ...feePayments
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'activity_fee_payments' as const,
+        recordId: r.id,
+        title: `${r.student_name} (RM ${Number(r.amount_paid).toFixed(2)})`,
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Fees' as const,
+      })),
+    ...equipmentItems
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'equipment_items' as const,
+        recordId: r.id,
+        title: r.item_name || 'Equipment',
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Equipment' as const,
+      })),
+    ...equipmentLoans
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'equipment_loans' as const,
+        recordId: r.id,
+        title: `${r.borrower_name} — ${r.item_name}`,
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Equipment' as const,
+      })),
+    ...ledgerEntries
+      .filter((r) => Boolean((r as { deleted_at?: string | null }).deleted_at))
+      .map((r) => {
+        const rec = r as LedgerEntryItem & { deleted_at?: string | null; deleted_by?: string | null };
+        return {
+          table: 'ledger_entries' as const,
+          recordId: rec.id,
+          title: `${rec.title} (RM ${Number(rec.amount).toFixed(2)})`,
+          deletedAt: rec.deleted_at || rec.created_at,
+          deletedBy: rec.deleted_by || 'Admin',
+          category: 'Finance' as const,
+        };
+      }),
+    ...announcements
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'announcements' as const,
+        recordId: r.id,
+        title: r.title || 'Poster / Announcement',
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Activities' as const,
+      })),
+    ...polls
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'polls' as const,
+        recordId: r.id,
+        title: r.question || 'Poll',
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Activities' as const,
+      })),
+    ...rsvps
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'event_rsvps' as const,
+        recordId: r.id,
+        title: `${r.student_name} (${r.matric_no})`,
+        deletedAt: r.deleted_at || '',
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Activities' as const,
+      })),
+  ].sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
 
   const handleExportSingleEventExcel = async (ev: Budget) => {
     const evPayments = activeFeePayments.filter((f) => f.budget_id === ev.id);
@@ -671,39 +771,20 @@ export default function Page() {
 
   const handleUnlockAdmin = async (pin: string): Promise<boolean> => {
     if (!profile) return false;
-    const normalizedPin = pin.trim().toUpperCase();
-    if (
-      normalizedPin === ownerPinSetting.trim().toUpperCase() ||
-      normalizedPin === 'OWNER-2026'
-    ) {
-      await supabase.from('users').update({ role: 'treasurer' }).eq('role', 'owner').neq('id', profile.id);
-      await supabase
-        .from('users')
-        .update({ role: 'owner', admin_permissions: FULL_OWNER_PERMISSIONS })
-        .eq('id', profile.id);
-      await supabase.from('club_settings').update({ owner_user_id: profile.id }).eq('id', 1);
-      setProfile((prev) => (prev ? { ...prev, role: 'owner', admin_permissions: FULL_OWNER_PERMISSIONS } : null));
-      setRoleMode('owner');
-      localStorage.setItem(`clubsync_mode_${profile.id}`, 'owner');
-      fetchAllData();
-      showToast('Owner Mode unlocked');
-      return true;
+    const trimmedPin = pin.trim();
+    if (!trimmedPin) return false;
+    const { data, error } = await supabase.rpc('verify_role_passcode', { pin_input: trimmedPin });
+    const res = (data || {}) as { ok?: boolean; role?: 'owner' | 'admin' | null };
+    if (error || !res?.ok || !res.role) return false;
+
+    const targetMode: 'owner' | 'admin' = res.role === 'owner' ? 'owner' : 'admin';
+    setRoleMode(targetMode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`clubsync_mode_${profile.id}`, targetMode);
     }
-    if (
-      normalizedPin === adminPinSetting.trim().toUpperCase() ||
-      normalizedPin === 'EXEC-2026'
-    ) {
-      if (profile.role === 'member') {
-        await supabase.from('users').update({ role: 'treasurer', admin_permissions: DEFAULT_ADMIN_PERMISSIONS }).eq('id', profile.id);
-        setProfile((prev) => (prev ? { ...prev, role: 'treasurer', admin_permissions: DEFAULT_ADMIN_PERMISSIONS } : null));
-      }
-      setRoleMode('admin');
-      localStorage.setItem(`clubsync_mode_${profile.id}`, 'admin');
-      fetchAllData();
-      showToast('Admin Mode unlocked');
-      return true;
-    }
-    return false;
+    await fetchAllData();
+    showToast(targetMode === 'owner' ? 'Owner Mode unlocked' : 'Admin Mode unlocked');
+    return true;
   };
 
   const handleSwitchMode = async (target: 'member' | 'admin' | 'owner') => {
@@ -739,18 +820,14 @@ export default function Page() {
       setLogoUrl(finalLogoUrl);
       setLogoUrlInput(finalLogoUrl);
 
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('clubsync_bg_style', chosenStyle);
-        localStorage.setItem('clubsync_bg_image', finalBgUrl);
-        localStorage.setItem('clubsync_logo_url', finalLogoUrl);
-      }
-
-      await supabase.from('club_settings').upsert({
-        id: 1,
-        bg_style: chosenStyle,
-        bg_image_url: finalBgUrl,
-        logo_url: finalLogoUrl,
-      });
+      await supabase
+        .from('club_settings')
+        .update({
+          bg_style: chosenStyle,
+          bg_image_url: finalBgUrl,
+          logo_url: finalLogoUrl,
+        })
+        .eq('id', 1);
 
       setBgFile(null);
       setLogoFile(null);
@@ -1189,10 +1266,7 @@ export default function Page() {
 
                     const reqFee = Number(ev.registration_fee || 0);
                     const requiresFee = reqFee > 0;
-                    const savedMode =
-                      (typeof window !== 'undefined' ? localStorage.getItem(`clubsync_qrmode_${ev.id}`) : null) ||
-                      ev.ticket_qr_mode ||
-                      (requiresFee ? 'entry_pass' : 'scan_attendance');
+                    const savedMode = ev.ticket_qr_mode || (requiresFee ? 'entry_pass' : 'scan_attendance');
                     const hasEntryPass = isEntryPassMode(savedMode);
 
                     return (
@@ -1698,12 +1772,18 @@ export default function Page() {
                 entries={activeLedgerEntries}
                 events={activeBudgets.map((b) => ({ id: b.id, event_name: b.event_name }))}
                 budgets={activeBudgets}
+                budgetPlanItems={activeBudgetPlanItems}
                 rsvps={activeRsvps}
                 claims={activeClaims}
                 feePayments={activeFeePayments}
                 profile={profile}
                 logs={activityLogs}
                 canEdit={effectivePermissions.can_manage_finance}
+                physicalCash={physicalCash}
+                onUpdatePhysicalCash={async (val: number) => {
+                  setPhysicalCash(val);
+                  await supabase.from('club_settings').update({ physical_cash: val }).eq('id', 1);
+                }}
                 externalOpenModal={quickAdjustFinanceOpen}
                 onCloseExternalModal={() => setQuickAdjustFinanceOpen(false)}
                 onSelectClaim={(c: Claim) => setSelectedClaim(c)}
@@ -1838,46 +1918,43 @@ export default function Page() {
                           }
                           setPaymentQrUrl(finalPayQr);
                           setPaymentQrFile(null);
-                          if (typeof window !== 'undefined') {
-                            localStorage.setItem('clubsync_payment_qr', finalPayQr);
-                            localStorage.setItem('clubsync_payment_bank', paymentBankInfo.trim());
-                          }
 
                           const depts = departmentsText
                             .split('\n')
                             .map((s) => s.trim())
                             .filter(Boolean);
-                          const corePayload: Record<string, unknown> = {
-                            id: 1,
+                          const updatePayload: Record<string, unknown> = {
                             departments: depts.length ? depts : DEFAULT_DEPARTMENTS,
+                            payment_qr_url: finalPayQr,
+                            payment_bank_info: paymentBankInfo.trim(),
                           };
-                          if (isOwner) {
-                            corePayload.club_name = clubNameInput.trim() || 'ClubSync';
-                            corePayload.current_batch = newBatchInput.trim();
-                            corePayload.admin_pin = newAdminPinInput.trim();
-                            corePayload.owner_pin = newOwnerPinInput.trim();
-                          }
                           const parsedThresh = parseFloat(claimThresholdInput);
                           const nextThresh =
                             !isNaN(parsedThresh) && parsedThresh >= 0
                               ? parsedThresh
                               : DEFAULT_CLAIM_APPROVAL_THRESHOLD;
-                          if (isOwner && typeof window !== 'undefined') {
-                            localStorage.setItem('clubsync_claim_threshold', String(nextThresh));
+                          if (isOwner) {
+                            updatePayload.club_name = clubNameInput.trim() || 'ClubSync';
+                            updatePayload.current_batch = newBatchInput.trim();
+                            updatePayload.claim_approval_threshold = nextThresh;
                           }
-                          const fullPayload: Record<string, unknown> = {
-                            ...corePayload,
-                            payment_qr_url: finalPayQr,
-                            payment_bank_info: paymentBankInfo.trim(),
-                            ...(isOwner ? { claim_approval_threshold: nextThresh } : {}),
-                          };
-                          const { error } = await supabase.from('club_settings').upsert(fullPayload);
-                          if (error) {
-                            await supabase.from('club_settings').upsert(corePayload);
-                            if (isOwner) {
-                              await supabase
-                                .from('club_settings')
-                                .upsert({ id: 1, claim_approval_threshold: nextThresh });
+                          const { error: settingsErr } = await supabase
+                            .from('club_settings')
+                            .update(updatePayload)
+                            .eq('id', 1);
+                          if (settingsErr) {
+                            showToast(settingsErr.message || 'Could not update settings.');
+                            return;
+                          }
+                          if (isOwner && newAdminPinInput.trim() && newOwnerPinInput.trim()) {
+                            const { data: pinRpcRes } = await supabase.rpc('update_club_passcodes', {
+                              new_admin_pin: newAdminPinInput.trim(),
+                              new_owner_pin: newOwnerPinInput.trim(),
+                            });
+                            const pinStatus = pinRpcRes as { ok?: boolean; error?: string } | null;
+                            if (pinStatus && pinStatus.ok === false) {
+                              showToast(pinStatus.error || 'Could not update passcodes.');
+                              return;
                             }
                           }
                           if (isOwner) {
@@ -2158,6 +2235,7 @@ export default function Page() {
           {activeTab === 'logs' && isAdminOrOwner && (
             <ActivityLogSection
               logs={activityLogs}
+              deletedRecords={deletedRecords}
               profile={profile}
               onRefresh={(m: string) => {
                 fetchAllData();

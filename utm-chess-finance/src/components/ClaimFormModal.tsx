@@ -128,33 +128,10 @@ export default function ClaimFormModal({
     if (budgets.length > 0 && !budgets.some((b) => b.id === selectedEventOption) && !customEventName) {
       setSelectedEventOption(budgets[0].id);
     }
-    let savedBank = {
-      bank_name: profile.bank_name || '',
-      bank_account_no: profile.bank_account_no || '',
-      bank_account_holder: profile.bank_account_holder || profile.full_name || '',
-      bank_qr_url: profile.bank_qr_url || '',
-    };
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem(`clubsync_bank_${profile.id}`);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          savedBank = {
-            bank_name: profile.bank_name || parsed.bank_name || '',
-            bank_account_no: profile.bank_account_no || parsed.bank_account_no || '',
-            bank_account_holder:
-              profile.bank_account_holder || parsed.bank_account_holder || profile.full_name || '',
-            bank_qr_url: profile.bank_qr_url || parsed.bank_qr_url || '',
-          };
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-    setBankName(savedBank.bank_name);
-    setBankAccountNo(savedBank.bank_account_no);
-    setBankAccountHolder(savedBank.bank_account_holder);
-    setClaimantQrUrl(savedBank.bank_qr_url);
+    setBankName(profile.bank_name || '');
+    setBankAccountNo(profile.bank_account_no || '');
+    setBankAccountHolder(profile.bank_account_holder || profile.full_name || '');
+    setClaimantQrUrl(profile.bank_qr_url || '');
     setClaimantQrFile(null);
   }, [isOpen, profile, budgets, selectedEventOption, customEventName]);
 
@@ -307,16 +284,16 @@ export default function ClaimFormModal({
           ? `${bankName.trim() || 'Bank/DuitNow'} • ${bankAccountNo.trim()} (${bankAccountHolder.trim() || profile.full_name})`
           : '';
 
-      if (typeof window !== 'undefined' && includePaymentDetails) {
-        localStorage.setItem(
-          `clubsync_bank_${profile.id}`,
-          JSON.stringify({
+      if (includePaymentDetails && (bankAccountNo.trim() || finalClaimantQr)) {
+        void supabase
+          .from('users')
+          .update({
             bank_name: bankName.trim(),
             bank_account_no: bankAccountNo.trim(),
             bank_account_holder: bankAccountHolder.trim() || profile.full_name,
             bank_qr_url: finalClaimantQr,
           })
-        );
+          .eq('id', profile.id);
       }
 
       let receiptUrl = uploadedReceiptUrl || '';
@@ -396,19 +373,13 @@ export default function ClaimFormModal({
         corePayload,
       ];
 
-      let insertedId: string | null = null;
       let lastErr: unknown = null;
       let saved = false;
 
       for (const payload of candidates) {
-        const { data: insData, error: insErr } = await supabase
-          .from('claims')
-          .insert(payload)
-          .select('id')
-          .maybeSingle();
+        const { error: insErr } = await supabase.from('claims').insert(payload);
         if (!insErr) {
           saved = true;
-          insertedId = insData?.id ? String(insData.id) : null;
           break;
         }
         lastErr = insErr;
@@ -416,10 +387,6 @@ export default function ClaimFormModal({
 
       if (!saved) {
         throw lastErr || new Error('Could not save claim to the database.');
-      }
-
-      if (insertedId && finalClaimantQr && typeof window !== 'undefined') {
-        localStorage.setItem(`clubsync_claimant_qr_${insertedId}`, finalClaimantQr);
       }
 
       void logActivity(

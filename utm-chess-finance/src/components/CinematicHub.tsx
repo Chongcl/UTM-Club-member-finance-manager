@@ -33,16 +33,6 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptionsText, setPollOptionsText] = useState('Option A\nOption B\nOption C');
   const [newPollShowNumbers, setNewPollShowNumbers] = useState(true);
-  const [hiddenPollsMap, setHiddenPollsMap] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem('clubsync_hidden_polls');
-      if (raw) {
-        try { setHiddenPollsMap(JSON.parse(raw)); } catch { /* ignore */ }
-      }
-    }
-  }, []);
 
   useEffect(() => {
     if (carouselSlides.length <= 1 || selectedPoster || showNoticeModal) return;
@@ -79,26 +69,19 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
     setShowNoticeModal(true);
   };
 
-  const isPollNumbersHidden = (poll: Poll) => {
-    if (poll.question.startsWith('[HIDE_NUM]')) return true;
-    if (hiddenPollsMap[poll.id] !== undefined) return hiddenPollsMap[poll.id];
-    if (poll.show_results === false) return true;
-    return false;
-  };
+  const isPollNumbersHidden = (poll: Poll) =>
+    poll.show_results === false || poll.question.startsWith('[HIDE_NUM]');
 
   const cleanPollQuestion = (q: string) => q.replace(/^\[HIDE_NUM\]\s*/, '');
 
   const togglePollNumbersVisibility = async (poll: Poll) => {
-    const currentlyHidden = isPollNumbersHidden(poll);
-    const nextHidden = !currentlyHidden;
-    const updatedMap = { ...hiddenPollsMap, [poll.id]: nextHidden };
-    setHiddenPollsMap(updatedMap);
-    if (typeof window !== 'undefined') localStorage.setItem('clubsync_hidden_polls', JSON.stringify(updatedMap));
-
+    const nextShow = isPollNumbersHidden(poll);
     const cleanQ = cleanPollQuestion(poll.question);
-    const encodedQ = nextHidden ? `[HIDE_NUM] ${cleanQ}` : cleanQ;
-    await supabase.from('polls').update({ question: encodedQ }).eq('id', poll.id);
-    onRefresh(nextHidden ? 'Live poll numbers hidden from members.' : 'Live poll numbers visible to everyone.');
+    await supabase
+      .from('polls')
+      .update({ question: cleanQ, show_results: nextShow })
+      .eq('id', poll.id);
+    onRefresh(nextShow ? 'Live poll numbers visible to everyone.' : 'Live poll numbers hidden from members.');
   };
 
   const handleSaveNotice = async (e: React.FormEvent) => {
@@ -168,11 +151,14 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
     e.preventDefault();
     const opts = pollOptionsText.split('\n').map((s) => s.trim()).filter(Boolean);
     if (!pollQuestion.trim() || opts.length < 2) return;
-    const finalQuestion = newPollShowNumbers ? pollQuestion.trim() : `[HIDE_NUM] ${pollQuestion.trim()}`;
+    const cleanQ = pollQuestion.trim();
     if (editingPoll) {
-      await supabase.from('polls').update({ question: finalQuestion, options: opts }).eq('id', editingPoll.id);
+      await supabase
+        .from('polls')
+        .update({ question: cleanQ, options: opts, show_results: newPollShowNumbers })
+        .eq('id', editingPoll.id);
       const changes = computeFieldChanges([
-        { field: 'Question', before: cleanPollQuestion(editingPoll.question), after: pollQuestion.trim() },
+        { field: 'Question', before: cleanPollQuestion(editingPoll.question), after: cleanQ },
         { field: 'Options', before: (editingPoll.options || []).join(', '), after: opts.join(', ') },
         { field: 'Show Live Numbers', before: !isPollNumbersHidden(editingPoll), after: newPollShowNumbers },
       ]);
@@ -181,7 +167,7 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
         category: 'Activities',
         table: 'polls',
         recordId: editingPoll.id,
-        recordTitle: pollQuestion.trim(),
+        recordTitle: cleanQ,
         changes,
       });
       setEditingPoll(null);
@@ -190,7 +176,9 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
       onRefresh('Poll updated!');
       return;
     }
-    await supabase.from('polls').insert({ question: finalQuestion, options: opts, is_active: true, created_by: profile.full_name });
+    await supabase
+      .from('polls')
+      .insert({ question: cleanQ, options: opts, show_results: newPollShowNumbers, is_active: true, created_by: profile.full_name });
     setPollQuestion(''); setShowPollModal(false); onRefresh('Poll published!');
   };
 

@@ -5,6 +5,7 @@ import {
   supabase,
   UserProfile,
   Budget,
+  BudgetPlanItem,
   EventRsvp,
   Claim,
   ActivityFeePayment,
@@ -57,12 +58,15 @@ interface LedgerSectionProps {
   entries: LedgerEntryItem[];
   events?: { id: string; event_name: string }[];
   budgets?: Budget[];
+  budgetPlanItems?: BudgetPlanItem[];
   rsvps?: EventRsvp[];
   claims: Claim[];
   feePayments?: ActivityFeePayment[];
   logs?: ActivityLogEntry[];
   profile: UserProfile;
   canEdit?: boolean;
+  physicalCash?: number;
+  onUpdatePhysicalCash?: (val: number) => Promise<void>;
   externalOpenModal?: boolean;
   onCloseExternalModal?: () => void;
   onSelectClaim?: (claim: Claim) => void;
@@ -95,16 +99,6 @@ interface UnifiedFinanceRow {
   rawFee?: ActivityFeePayment;
 }
 
-interface PlannerRow {
-  id: string;
-  budgetId: string; // 'ALL' or budget.id
-  entryType: 'IN' | 'OUT';
-  item: string;
-  category: string;
-  plannedAmount: string;
-  notes: string;
-}
-
 interface ParsedPasteRow {
   entry_date: string;
   entry_type: 'IN' | 'OUT';
@@ -135,9 +129,6 @@ const OUT_CATEGORIES = [
 ];
 
 const ALL_CATEGORIES = Array.from(new Set([...IN_CATEGORIES, ...OUT_CATEGORIES]));
-
-const PHYSICAL_CASH_STORAGE_KEY = 'clubsync_physical_cash_v1';
-const PLANNER_STORAGE_KEY = 'clubsync_budget_planner_v1';
 
 const ACTIVITY_PALETTE = [
   'bg-emerald-100 text-emerald-900 border-emerald-200',
@@ -283,12 +274,15 @@ export default function LedgerSection({
   entries,
   events = [],
   budgets = [],
+  budgetPlanItems = [],
   rsvps = [],
   claims,
   feePayments = [],
   logs = [],
   profile,
   canEdit = true,
+  physicalCash = 0,
+  onUpdatePhysicalCash,
   externalOpenModal = false,
   onCloseExternalModal,
   onSelectClaim,
@@ -301,8 +295,7 @@ export default function LedgerSection({
   const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
 
   // Physical cash split (bank balance = currentSavingsBalance - physicalCash)
-  const [physicalCash, setPhysicalCash] = useState<number>(0);
-  const [physicalCashInput, setPhysicalCashInput] = useState<string>('0.00');
+  const [physicalCashInput, setPhysicalCashInput] = useState<string>(Number(physicalCash || 0).toFixed(2));
 
   // Master spreadsheet filters & sort
   const [filterEvent, setFilterEvent] = useState<string>('ALL');
@@ -341,12 +334,12 @@ export default function LedgerSection({
 
   // Budget Planner state
   const [plannerBudgetId, setPlannerBudgetId] = useState<string>(budgets[0]?.id || 'ALL');
-  const [plannerRows, setPlannerRows] = useState<PlannerRow[]>([]);
   const [newPlanType, setNewPlanType] = useState<'IN' | 'OUT'>('OUT');
   const [newPlanItem, setNewPlanItem] = useState('');
   const [newPlanCategory, setNewPlanCategory] = useState(OUT_CATEGORIES[0]);
   const [newPlanAmount, setNewPlanAmount] = useState('');
   const [newPlanNotes, setNewPlanNotes] = useState('');
+  const [savingPlanItem, setSavingPlanItem] = useState(false);
 
   // Fee edit modal
   const [editingFeeItem, setEditingFeeItem] = useState<ActivityFeePayment | null>(null);
@@ -371,29 +364,8 @@ export default function LedgerSection({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const savedCash = parseFloat(localStorage.getItem(PHYSICAL_CASH_STORAGE_KEY) || '0');
-    if (!isNaN(savedCash) && savedCash >= 0) {
-      setPhysicalCash(savedCash);
-      setPhysicalCashInput(savedCash.toFixed(2));
-    }
-    const rawPlanner = localStorage.getItem(PLANNER_STORAGE_KEY);
-    if (rawPlanner) {
-      try {
-        const parsed = JSON.parse(rawPlanner);
-        if (Array.isArray(parsed)) setPlannerRows(parsed as PlannerRow[]);
-      } catch {
-        /* ignore */
-      }
-    }
-  }, []);
-
-  const persistPlannerRows = (next: PlannerRow[]) => {
-    setPlannerRows(next);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(PLANNER_STORAGE_KEY, JSON.stringify(next));
-    }
-  };
+    setPhysicalCashInput(Number(physicalCash || 0).toFixed(2));
+  }, [physicalCash]);
 
   // --- Exact Unified KPI Totals (matches Master Spreadsheet rows 1:1) ---
   const verifiedFeesList = useMemo(
@@ -754,9 +726,8 @@ export default function LedgerSection({
 
       if (modalMode === 'SET_SAVINGS' && !editingEntry) {
         const nextCash = Math.max(0, parseFloat(physicalCashInput) || 0);
-        setPhysicalCash(nextCash);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(PHYSICAL_CASH_STORAGE_KEY, nextCash.toFixed(2));
+        if (onUpdatePhysicalCash) {
+          await onUpdatePhysicalCash(nextCash);
         }
 
         const diff = Number((num - currentSavingsBalance).toFixed(2));
@@ -1337,17 +1308,20 @@ export default function LedgerSection({
 
   // --- Budget Planner filtered lines & actuals comparison ---
   const scopedPlannerRows = useMemo(
-    () => plannerRows.filter((p) => plannerBudgetId === 'ALL' || p.budgetId === plannerBudgetId),
-    [plannerRows, plannerBudgetId]
+    () =>
+      budgetPlanItems.filter(
+        (p) => !p.deleted_at && (plannerBudgetId === 'ALL' || p.budget_id === plannerBudgetId)
+      ),
+    [budgetPlanItems, plannerBudgetId]
   );
 
   const plannerTotals = useMemo(() => {
     const plannedIn = scopedPlannerRows
-      .filter((r) => r.entryType === 'IN')
-      .reduce((s, r) => s + (parseFloat(r.plannedAmount) || 0), 0);
+      .filter((r) => r.entry_type === 'IN')
+      .reduce((s, r) => s + (Number(r.planned_amount) || 0), 0);
     const plannedOut = scopedPlannerRows
-      .filter((r) => r.entryType === 'OUT')
-      .reduce((s, r) => s + (parseFloat(r.plannedAmount) || 0), 0);
+      .filter((r) => r.entry_type === 'OUT')
+      .reduce((s, r) => s + (Number(r.planned_amount) || 0), 0);
 
     const actualRows = unifiedRows.filter((r) =>
       plannerBudgetId === 'ALL' ? true : r.budgetId === plannerBudgetId || (plannerBudgetId === 'GENERAL' && isGeneralEventName(r.eventName))
@@ -1356,6 +1330,76 @@ export default function LedgerSection({
     const actualOut = actualRows.filter((r) => r.entryType === 'OUT').reduce((s, r) => s + r.amount, 0);
     return { plannedIn, plannedOut, actualIn, actualOut };
   }, [scopedPlannerRows, unifiedRows, plannerBudgetId]);
+
+  const handleAddPlanItem = async () => {
+    if (!canEdit || savingPlanItem) return;
+    const n = parseFloat(newPlanAmount);
+    if (!newPlanItem.trim() || isNaN(n) || n <= 0) return;
+    setSavingPlanItem(true);
+    try {
+      const { error } = await supabase.from('budget_plan_items').insert({
+        budget_id: plannerBudgetId,
+        entry_type: newPlanType,
+        item: newPlanItem.trim(),
+        category: newPlanCategory,
+        planned_amount: n,
+        notes: newPlanNotes.trim(),
+        created_by: profile.id,
+      });
+      if (error) {
+        onRefresh(error.message || 'Could not add budget plan item.');
+        return;
+      }
+      void logActivity(
+        profile,
+        'Finance',
+        'Added Budget Plan Item',
+        `${profile.full_name} (${profile.matric_no}) planned "${newPlanItem.trim()}" (${newPlanType} RM ${n.toFixed(2)})`
+      );
+      setNewPlanItem('');
+      setNewPlanAmount('');
+      setNewPlanNotes('');
+      onRefresh(`Added "${newPlanItem.trim()}" to Budget Plan!`);
+    } finally {
+      setSavingPlanItem(false);
+    }
+  };
+
+  const handleUpdatePlanItem = async (
+    row: BudgetPlanItem,
+    patch: { item?: string; planned_amount?: number }
+  ) => {
+    if (!canEdit) return;
+    const { error } = await supabase.from('budget_plan_items').update(patch).eq('id', row.id);
+    if (error) {
+      onRefresh(error.message || 'Could not update budget plan item.');
+      return;
+    }
+    onRefresh('Updated Budget Plan line.');
+  };
+
+  const handleDeletePlanItem = async (row: BudgetPlanItem) => {
+    if (!canEdit) return;
+    if (!window.confirm(`Remove planned line "${row.item}" from view?`)) return;
+    const { error } = await supabase
+      .from('budget_plan_items')
+      .update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: `${profile.full_name} (${profile.matric_no})`,
+      })
+      .eq('id', row.id);
+    if (error) {
+      onRefresh(error.message || 'Could not delete budget plan item.');
+      return;
+    }
+    void logActivity(
+      profile,
+      'Finance',
+      'Deleted Budget Plan Item',
+      `${profile.full_name} (${profile.matric_no}) removed planned line "${row.item}" (RM ${Number(row.planned_amount).toFixed(2)})`
+    );
+    onRefresh(`Removed "${row.item}" from Budget Plan.`);
+  };
 
   const parsedPastePreview = useMemo(() => parseSpreadsheetPaste(pasteText), [pasteText]);
   const activeCategoryList = entryType === 'IN' ? IN_CATEGORIES : OUT_CATEGORIES;
@@ -2450,28 +2494,11 @@ export default function LedgerSection({
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    const n = parseFloat(newPlanAmount);
-                    if (!newPlanItem.trim() || isNaN(n) || n <= 0) return;
-                    persistPlannerRows([
-                      ...plannerRows,
-                      {
-                        id: `plan-${Date.now()}`,
-                        budgetId: plannerBudgetId,
-                        entryType: newPlanType,
-                        item: newPlanItem.trim(),
-                        category: newPlanCategory,
-                        plannedAmount: n.toFixed(2),
-                        notes: newPlanNotes.trim(),
-                      },
-                    ]);
-                    setNewPlanItem('');
-                    setNewPlanAmount('');
-                    setNewPlanNotes('');
-                  }}
-                  className="md:col-span-2 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                  disabled={savingPlanItem}
+                  onClick={() => void handleAddPlanItem()}
+                  className="md:col-span-2 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-60"
                 >
-                  + Add Line
+                  {savingPlanItem ? 'Saving...' : '+ Add Line'}
                 </button>
               </div>
             )}
@@ -2498,46 +2525,48 @@ export default function LedgerSection({
                     </tr>
                   ) : (
                     scopedPlannerRows.map((p) => {
-                      const plannedVal = parseFloat(p.plannedAmount) || 0;
+                      const plannedVal = Number(p.planned_amount) || 0;
                       const actualCat = unifiedRows
                         .filter(
                           (r) =>
-                            r.entryType === p.entryType &&
-                            (p.budgetId === 'ALL'
+                            r.entryType === p.entry_type &&
+                            (p.budget_id === 'ALL'
                               ? true
-                              : p.budgetId === 'GENERAL'
+                              : p.budget_id === 'GENERAL'
                               ? isGeneralEventName(r.eventName)
-                              : r.budgetId === p.budgetId) &&
+                              : r.budgetId === p.budget_id) &&
                             r.category.toLowerCase() === p.category.toLowerCase()
                         )
                         .reduce((s, r) => s + r.amount, 0);
-                      const diff = p.entryType === 'IN' ? actualCat - plannedVal : plannedVal - actualCat;
+                      const diff = p.entry_type === 'IN' ? actualCat - plannedVal : plannedVal - actualCat;
 
                       return (
                         <tr key={p.id}>
                           <td className="py-2.5 px-4">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                p.entryType === 'IN'
+                                p.entry_type === 'IN'
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : 'bg-rose-100 text-rose-700'
                               }`}
                             >
-                              {p.entryType === 'IN' ? 'Income' : 'Expense'}
+                              {p.entry_type === 'IN' ? 'Income' : 'Expense'}
                             </span>
                           </td>
                           <td className="py-2.5 px-4 font-bold">
                             {canEdit ? (
                               <input
                                 type="text"
-                                value={p.item}
-                                onChange={(e) =>
-                                  persistPlannerRows(
-                                    plannerRows.map((x) =>
-                                      x.id === p.id ? { ...x, item: e.target.value } : x
-                                    )
-                                  )
-                                }
+                                defaultValue={p.item}
+                                onBlur={(e) => {
+                                  const nextItem = e.target.value.trim();
+                                  if (nextItem && nextItem !== p.item) {
+                                    void handleUpdatePlanItem(p, { item: nextItem });
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                }}
                                 className="w-full rounded-lg border border-slate-200 px-2 py-1 font-bold"
                               />
                             ) : (
@@ -2550,14 +2579,16 @@ export default function LedgerSection({
                               <input
                                 type="number"
                                 step="0.01"
-                                value={p.plannedAmount}
-                                onChange={(e) =>
-                                  persistPlannerRows(
-                                    plannerRows.map((x) =>
-                                      x.id === p.id ? { ...x, plannedAmount: e.target.value } : x
-                                    )
-                                  )
-                                }
+                                defaultValue={plannedVal.toFixed(2)}
+                                onBlur={(e) => {
+                                  const nextVal = parseFloat(e.target.value);
+                                  if (!isNaN(nextVal) && nextVal >= 0 && Math.abs(nextVal - plannedVal) > 0.001) {
+                                    void handleUpdatePlanItem(p, { planned_amount: nextVal });
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                }}
                                 className="w-24 ml-auto block rounded-lg border border-slate-200 px-2 py-1 text-right font-extrabold"
                               />
                             ) : (
@@ -2578,9 +2609,7 @@ export default function LedgerSection({
                             <td className="py-2.5 px-4 text-right">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  persistPlannerRows(plannerRows.filter((x) => x.id !== p.id))
-                                }
+                                onClick={() => void handleDeletePlanItem(p)}
                                 className="p-1 text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />

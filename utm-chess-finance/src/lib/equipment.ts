@@ -55,6 +55,8 @@ export function normalizeEquipmentLoan(raw: Record<string, unknown>): EquipmentL
     approval_status: approvalStatus,
     approved_by: raw.approved_by ? String(raw.approved_by) : null,
     approved_at: raw.approved_at ? String(raw.approved_at) : null,
+    deleted_at: raw.deleted_at ? String(raw.deleted_at) : null,
+    deleted_by: raw.deleted_by ? String(raw.deleted_by) : null,
     created_at: String(raw.created_at || ''),
   };
 }
@@ -85,6 +87,8 @@ export function normalizeEquipmentItem(
     location: String(raw.location || 'Club Storage Room'),
     notes: String(raw.notes ?? raw.remarks ?? ''),
     requires_approval: Boolean(raw.requires_approval),
+    deleted_at: raw.deleted_at ? String(raw.deleted_at) : null,
+    deleted_by: raw.deleted_by ? String(raw.deleted_by) : null,
     created_at: String(raw.created_at || ''),
   };
 }

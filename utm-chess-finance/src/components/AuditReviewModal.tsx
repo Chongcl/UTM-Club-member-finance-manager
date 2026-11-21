@@ -89,6 +89,8 @@ export default function AuditReviewModal({
   const [payoutFile, setPayoutFile] = useState<File | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [fullImageOpen, setFullImageOpen] = useState(false);
+  const [fullQrOpen, setFullQrOpen] = useState(false);
+  const [rightTab, setRightTab] = useState<'overview' | 'payout' | 'history'>('overview');
   const [processing, setProcessing] = useState<'Approved' | 'Rejected' | 'ProofOnly' | 'Verified' | null>(
     null
   );
@@ -120,6 +122,8 @@ export default function AuditReviewModal({
       setPayoutFile(null);
       setErrorMsg(null);
       setFullImageOpen(false);
+      setFullQrOpen(false);
+      setRightTab('overview');
       setIsEditingClaim(false);
       setConfirmDeleteClaim(false);
       setCompareMatch(null);
@@ -184,40 +188,13 @@ export default function AuditReviewModal({
     : '';
   const extractedBankInfo = claim.payment_info || rawDescBank || profileBankFallback;
 
-  let localBankQr = '';
-  if (typeof window !== 'undefined') {
-    localBankQr = localStorage.getItem(`clubsync_claimant_qr_${claim.id}`) || '';
-    if (!localBankQr && claim.user_id) {
-      const rawProfileBank = localStorage.getItem(`clubsync_bank_${claim.user_id}`);
-      if (rawProfileBank) {
-        try {
-          localBankQr = String(JSON.parse(rawProfileBank).bank_qr_url || '');
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-  }
-  const resolvedClaimantQrUrl = claim.claimant_qr_url || claimantProfile?.bank_qr_url || localBankQr || '';
+  const resolvedClaimantQrUrl = claim.claimant_qr_url || claimantProfile?.bank_qr_url || '';
   const isClaimantQrPdf =
     resolvedClaimantQrUrl.toLowerCase().split('?')[0].endsWith('.pdf') ||
     resolvedClaimantQrUrl.startsWith('data:application/pdf');
 
-  const localProofRaw =
-    typeof window !== 'undefined'
-      ? localStorage.getItem(`clubsync_claim_proof_${claim.id}`)
-      : null;
-  let localProof: { url: string; name: string; paid_at: string } | null = null;
-  if (localProofRaw) {
-    try {
-      localProof = JSON.parse(localProofRaw);
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const proofUrl = claim.payout_proof_url || localProof?.url || '';
-  const proofName = claim.payout_proof_name || localProof?.name || 'Reimbursement_Proof';
+  const proofUrl = claim.payout_proof_url || '';
+  const proofName = claim.payout_proof_name || 'Reimbursement_Proof';
 
   const uploadProofFileIfPresent = async (): Promise<{ url: string; name: string } | null> => {
     if (!payoutFile) return null;
@@ -229,16 +206,6 @@ export default function AuditReviewModal({
     const { error } = await supabase.storage.from('receipts').upload(path, payoutFile);
     if (error) throw error;
     const publicUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(
-        `clubsync_claim_proof_${claim.id}`,
-        JSON.stringify({
-          url: publicUrl,
-          name: payoutFile.name,
-          paid_at: new Date().toISOString(),
-        })
-      );
-    }
     return { url: publicUrl, name: payoutFile.name };
   };
 
@@ -901,235 +868,305 @@ export default function AuditReviewModal({
                 </div>
               </div>
             )}
-
-            {proofUrl && (
-              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-center justify-between gap-2">
-                <div>
-                  <span className="text-[10px] font-extrabold uppercase text-emerald-700 block">
-                    ✓ Official Proof of Paid / Reimbursement
-                  </span>
-                  <span className="text-xs font-bold text-slate-900 break-all">
-                    {proofName}
-                  </span>
-                </div>
-                <a
-                  href={proofUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0"
-                >
-                  View Proof <ExternalLink className="w-3 h-3 inline ml-0.5" />
-                </a>
-              </div>
-            )}
           </div>
 
           <div className="space-y-4">
-            <div className="bg-emerald-50/70 rounded-2xl p-4 border border-emerald-200 space-y-1.5 text-xs">
-              <div className="flex items-center gap-2 text-slate-800">
-                <User className="w-3.5 h-3.5 text-emerald-700" />
-                <span className="font-bold">{claim.claimant_name}</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-700">
-                <Hash className="w-3.5 h-3.5 text-emerald-700" />
-                <span className="font-mono font-semibold">{claim.matric_no}</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-700">
-                <Phone className="w-3.5 h-3.5 text-emerald-700" />
-                <span className="font-mono">{claim.phone_number}</span>
-              </div>
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl text-xs">
+              <button
+                type="button"
+                onClick={() => setRightTab('overview')}
+                className={`flex-1 py-2 px-3 rounded-xl font-bold cursor-pointer transition ${
+                  rightTab === 'overview'
+                    ? 'bg-white text-emerald-950 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Overview
+              </button>
+              {isTreasurer && (
+                <button
+                  type="button"
+                  onClick={() => setRightTab('payout')}
+                  className={`flex-1 py-2 px-3 rounded-xl font-bold cursor-pointer transition ${
+                    rightTab === 'payout'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Pay &amp; Approve
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setRightTab('history')}
+                className={`flex-1 py-2 px-3 rounded-xl font-bold cursor-pointer transition ${
+                  rightTab === 'history'
+                    ? 'bg-white text-emerald-950 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                History ({claimHistory.length})
+              </button>
             </div>
 
-            {isOwnerClaim ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 space-y-1.5 text-xs">
-                <div className="flex items-center gap-1.5 font-extrabold text-emerald-950">
-                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                  <span>Owner&apos;s Claim — Direct Treasurer Approval</span>
-                </div>
-                <p className="text-emerald-800 leading-relaxed">
-                  Since the club Owner cannot approve their own claim, once a Treasurer (Admin) approves this claim, it is immediately marked as Approved.
-                </p>
-              </div>
-            ) : needsTwoStage && (
-              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3.5 space-y-2.5 text-xs">
-                <div className="flex items-center gap-1.5 font-extrabold text-indigo-950">
-                  <ShieldCheck className="w-4 h-4 text-indigo-700" />
-                  <span>High-value claim — 2-stage approval (above RM {approvalThreshold.toFixed(0)})</span>
-                </div>
-                <ol className="space-y-2">
-                  <li className="flex items-start gap-2">
-                    {stage1Done ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    ) : claim.status === 'Rejected' ? (
-                      <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                    ) : (
-                      <Clock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                    )}
-                    <div>
-                      <div className="font-bold text-slate-900">1. Treasurer verification</div>
-                      <div className="text-slate-600">
-                        {stage1Done
-                          ? `Verified by ${verifiedBy}${
-                              claim.treasurer_verified_at
-                                ? ` • ${new Date(claim.treasurer_verified_at).toLocaleString()}`
-                                : ''
-                            }`
-                          : 'Waiting for a Treasurer / Admin to check the receipt'}
-                      </div>
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    {claim.status === 'Approved' ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    ) : claim.status === 'Rejected' ? (
-                      <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                    ) : (
-                      <Clock className={`w-4 h-4 shrink-0 mt-0.5 ${stage1Done ? 'text-amber-500' : 'text-slate-300'}`} />
-                    )}
-                    <div>
-                      <div className="font-bold text-slate-900">2. President / Advisor approval</div>
-                      <div className="text-slate-600">
-                        {claim.status === 'Approved'
-                          ? `Approved by ${finalBy || claim.reviewed_by || 'Owner'}`
-                          : claim.status === 'Rejected'
-                          ? `Rejected by ${claim.reviewed_by || 'reviewer'}`
-                          : stage1Done
-                          ? 'Waiting for the Owner (President / Advisor) to approve'
-                          : 'Unlocks after Treasurer verification'}
-                      </div>
-                    </div>
-                  </li>
-                </ol>
-              </div>
-            )}
-
-            {(extractedBankInfo || resolvedClaimantQrUrl) && (
-              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 space-y-3 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-extrabold text-amber-950 flex items-center gap-1">
-                      <Landmark className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Reimburse To</span>
-                    </div>
-                    {extractedBankInfo && (
-                      <div className="font-mono font-bold text-slate-900 mt-0.5 break-all">
-                        {extractedBankInfo}
-                      </div>
-                    )}
+            {rightTab === 'overview' && (
+              <div className="space-y-4">
+                <div className="bg-emerald-50/70 rounded-2xl p-4 border border-emerald-200 space-y-1.5 text-xs">
+                  <div className="flex items-center gap-2 text-slate-800">
+                    <User className="w-3.5 h-3.5 text-emerald-700" />
+                    <span className="font-bold">{claim.claimant_name}</span>
                   </div>
-                  {extractedBankInfo && (
-                    <button
-                      type="button"
-                      onClick={() => navigator.clipboard.writeText(extractedBankInfo)}
-                      className="px-2.5 py-1.5 rounded-xl bg-amber-200/80 hover:bg-amber-300 text-amber-950 font-bold text-[11px] shrink-0 cursor-pointer"
-                    >
-                      <Copy className="w-3 h-3 inline mr-1" />
-                      Copy
-                    </button>
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Hash className="w-3.5 h-3.5 text-emerald-700" />
+                    <span className="font-mono font-semibold">{claim.matric_no}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Phone className="w-3.5 h-3.5 text-emerald-700" />
+                    <span className="font-mono">{claim.phone_number}</span>
+                  </div>
+                </div>
+
+                {isOwnerClaim ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 space-y-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 font-extrabold text-emerald-950">
+                      <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                      <span>Owner&apos;s Claim — Direct Treasurer Approval</span>
+                    </div>
+                    <p className="text-emerald-800 leading-relaxed">
+                      Once a Treasurer (Admin) approves this claim, it is immediately marked as Approved.
+                    </p>
+                  </div>
+                ) : (
+                  needsTwoStage && (
+                    <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3.5 space-y-2.5 text-xs">
+                      <div className="flex items-center gap-1.5 font-extrabold text-indigo-950">
+                        <ShieldCheck className="w-4 h-4 text-indigo-700" />
+                        <span>2-stage approval (above RM {approvalThreshold.toFixed(0)})</span>
+                      </div>
+                      <ol className="space-y-2">
+                        <li className="flex items-start gap-2">
+                          {stage1Done ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          ) : claim.status === 'Rejected' ? (
+                            <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                          ) : (
+                            <Clock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                          )}
+                          <div>
+                            <div className="font-bold text-slate-900">1. Treasurer verification</div>
+                            <div className="text-slate-600">
+                              {stage1Done
+                                ? `Verified by ${verifiedBy}${
+                                    claim.treasurer_verified_at
+                                      ? ` • ${new Date(claim.treasurer_verified_at).toLocaleString()}`
+                                      : ''
+                                  }`
+                                : 'Waiting for Treasurer to verify receipt'}
+                            </div>
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          {claim.status === 'Approved' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          ) : claim.status === 'Rejected' ? (
+                            <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                          ) : (
+                            <Clock
+                              className={`w-4 h-4 shrink-0 mt-0.5 ${
+                                stage1Done ? 'text-amber-500' : 'text-slate-300'
+                              }`}
+                            />
+                          )}
+                          <div>
+                            <div className="font-bold text-slate-900">2. President / Advisor approval</div>
+                            <div className="text-slate-600">
+                              {claim.status === 'Approved'
+                                ? `Approved by ${finalBy || claim.reviewed_by || 'Owner'}`
+                                : claim.status === 'Rejected'
+                                ? `Rejected by ${claim.reviewed_by || 'reviewer'}`
+                                : stage1Done
+                                ? 'Waiting for Owner approval'
+                                : 'Unlocks after Treasurer verification'}
+                            </div>
+                          </div>
+                        </li>
+                      </ol>
+                    </div>
+                  )
+                )}
+
+                <div className="rounded-2xl border border-emerald-200 p-4 space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Event:</span>
+                    <span className="font-bold text-slate-900">
+                      {budget?.event_name || 'Club Expense'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Department:</span>
+                    <span className="font-bold text-emerald-800">{claim.category}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Amount:</span>
+                    <span className="text-sm font-extrabold text-emerald-900">
+                      RM {Number(claim.amount).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Merchant &amp; Date:</span>
+                    <span className="font-semibold text-slate-800">
+                      {claim.merchant_name} ({claim.expense_date})
+                    </span>
+                  </div>
+                  {parsedClaimDesc.items.length > 0 && (
+                    <div className="pt-2 border-t border-emerald-100 space-y-1.5">
+                      <div className="text-[11px] font-extrabold text-emerald-900">
+                        Itemized Receipt Breakdown ({parsedClaimDesc.items.length} receipts)
+                      </div>
+                      <div className="rounded-xl bg-emerald-50/70 border border-emerald-200 divide-y divide-emerald-100">
+                        {parsedClaimDesc.items.map((item, idx) => (
+                          <div
+                            key={`itemized-${idx}`}
+                            className="flex items-center justify-between px-2.5 py-1.5 text-[11px]"
+                          >
+                            <span className="font-semibold text-slate-800">
+                              #{idx + 1} {item.shop}
+                            </span>
+                            <span className="font-extrabold text-emerald-900">
+                              RM {item.amount.toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {parsedClaimDesc.cleanDescription && (
+                    <p className="text-slate-600 pt-2 border-t border-emerald-100">
+                      {parsedClaimDesc.cleanDescription}
+                    </p>
                   )}
                 </div>
 
-                {resolvedClaimantQrUrl && (
-                  <div className="pt-2 border-t border-amber-200/80 flex flex-wrap items-center gap-3">
-                    {isClaimantQrPdf ? (
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-5 h-5 text-amber-800" />
-                        <span className="font-bold text-amber-950">Claimant DuitNow QR (PDF)</span>
-                      </div>
-                    ) : (
-                      <div className="p-1.5 bg-white rounded-xl border border-amber-200 shadow-2xs shrink-0">
-                        <img
-                          src={resolvedClaimantQrUrl}
-                          alt={`${claim.claimant_name} DuitNow QR`}
-                          className="w-28 h-28 object-contain rounded-lg"
-                        />
-                      </div>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void downloadFileFromUrl(
-                            resolvedClaimantQrUrl,
-                            `${claim.claimant_name}_DuitNow_QR.${isClaimantQrPdf ? 'pdf' : 'jpg'}`
-                          )
-                        }
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] cursor-pointer"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Download QR</span>
-                      </button>
-                      {!resolvedClaimantQrUrl.startsWith('data:') && (
-                        <a
-                          href={resolvedClaimantQrUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 border border-amber-200 text-amber-950 font-bold text-[11px]"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          <span>Full QR</span>
-                        </a>
-                      )}
+                {proofUrl && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-center justify-between gap-2 text-xs">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-extrabold uppercase text-emerald-700 block">
+                        ✓ Proof of Paid / Reimbursement
+                      </span>
+                      <span className="font-bold text-slate-900 truncate block">{proofName}</span>
                     </div>
+                    <a
+                      href={proofUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shrink-0"
+                    >
+                      View Proof <ExternalLink className="w-3 h-3 inline ml-0.5" />
+                    </a>
                   </div>
+                )}
+
+                {isTreasurer && claim.status === 'Pending' && (
+                  <button
+                    type="button"
+                    onClick={() => setRightTab('payout')}
+                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Proceed to Pay &amp; Approve →
+                  </button>
                 )}
               </div>
             )}
 
-            <div className="rounded-2xl border border-emerald-200 p-4 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Event:</span>
-                <span className="font-bold text-slate-900">
-                  {budget?.event_name || 'Club Expense'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Department:</span>
-                <span className="font-bold text-emerald-800">{claim.category}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Amount:</span>
-                <span className="text-sm font-extrabold text-emerald-900">
-                  RM {Number(claim.amount).toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Merchant &amp; Date:</span>
-                <span className="font-semibold text-slate-800">
-                  {claim.merchant_name} ({claim.expense_date})
-                </span>
-              </div>
-              {parsedClaimDesc.items.length > 0 && (
-                <div className="pt-2 border-t border-emerald-100 space-y-1.5">
-                  <div className="text-[11px] font-extrabold text-emerald-900">
-                    Itemized Receipt Breakdown ({parsedClaimDesc.items.length} receipts)
-                  </div>
-                  <div className="rounded-xl bg-emerald-50/70 border border-emerald-200 divide-y divide-emerald-100">
-                    {parsedClaimDesc.items.map((item, idx) => (
-                      <div
-                        key={`itemized-${idx}`}
-                        className="flex items-center justify-between px-2.5 py-1.5 text-[11px]"
-                      >
-                        <span className="font-semibold text-slate-800">
-                          #{idx + 1} {item.shop}
-                        </span>
-                        <span className="font-extrabold text-emerald-900">
-                          RM {item.amount.toFixed(2)}
-                        </span>
+            {rightTab === 'payout' && isTreasurer && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-3 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                        <Landmark className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Reimburse To</span>
                       </div>
-                    ))}
+                      <div className="font-mono font-bold text-slate-900 mt-1 break-all">
+                        {extractedBankInfo || 'No bank account text provided.'}
+                      </div>
+                    </div>
+                    {extractedBankInfo && (
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(extractedBankInfo)}
+                        className="px-2.5 py-1.5 rounded-xl bg-amber-200/80 hover:bg-amber-300 text-amber-950 font-bold text-[11px] shrink-0 cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3 inline mr-1" />
+                        Copy
+                      </button>
+                    )}
                   </div>
-                </div>
-              )}
-              {parsedClaimDesc.cleanDescription && (
-                <p className="text-slate-600 pt-2 border-t border-emerald-100">
-                  {parsedClaimDesc.cleanDescription}
-                </p>
-              )}
-            </div>
 
-            {isTreasurer && (
-              <div className="space-y-3">
+                  {resolvedClaimantQrUrl ? (
+                    <div className="pt-2.5 border-t border-amber-200/80 flex flex-wrap items-center gap-3">
+                      {isClaimantQrPdf ? (
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-5 h-5 text-amber-800" />
+                          <span className="font-bold text-amber-950">Claimant DuitNow QR (PDF)</span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setFullQrOpen(true)}
+                          className="p-1.5 bg-white rounded-xl border border-amber-200 shadow-2xs shrink-0 cursor-zoom-in"
+                          title="Click to zoom Claimant DuitNow QR"
+                        >
+                          <img
+                            src={resolvedClaimantQrUrl}
+                            alt={`${claim.claimant_name} DuitNow QR`}
+                            className="w-28 h-28 object-contain rounded-lg"
+                          />
+                        </button>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {!isClaimantQrPdf ? (
+                          <button
+                            type="button"
+                            onClick={() => setFullQrOpen(true)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 border border-amber-200 text-amber-950 font-bold text-[11px] cursor-pointer"
+                          >
+                            <ZoomIn className="w-3.5 h-3.5" />
+                            <span>View Full QR</span>
+                          </button>
+                        ) : (
+                          <a
+                            href={resolvedClaimantQrUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 border border-amber-200 text-amber-950 font-bold text-[11px]"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Open PDF QR</span>
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void downloadFileFromUrl(
+                              resolvedClaimantQrUrl,
+                              `${claim.claimant_name}_DuitNow_QR.${isClaimantQrPdf ? 'pdf' : 'jpg'}`
+                            )
+                          }
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download QR</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="pt-2 border-t border-amber-200/80 text-[11px] text-amber-800">
+                      No DuitNow QR uploaded by claimant.
+                    </div>
+                  )}
+                </div>
+
                 <label className="flex flex-col items-center justify-center gap-1.5 p-3.5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-50 cursor-pointer text-center">
                   <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
                     <UploadCloud className="w-4 h-4" />
@@ -1184,7 +1221,6 @@ export default function AuditReviewModal({
                         </div>
                       );
 
-                      // ---- Prevent self-approval on all own claims (except completing an already Treasurer-verified claim) ----
                       if (isOwnClaim) {
                         if (stage1Done && verifiedBy !== myLabel) {
                           return (
@@ -1217,7 +1253,6 @@ export default function AuditReviewModal({
                         );
                       }
 
-                      // ---- Normal claims or Owner claims: single approval by Treasurer (Admin) ----
                       if (!needsTwoStage) {
                         return (
                           <div className="grid grid-cols-2 gap-2.5">
@@ -1239,7 +1274,6 @@ export default function AuditReviewModal({
                         );
                       }
 
-                      // ---- High-value non-Owner claims: Stage 1 (Treasurer) then Stage 2 (Owner) ----
                       if (!stage1Done) {
                         if (isOwner) {
                           return (
@@ -1319,51 +1353,97 @@ export default function AuditReviewModal({
               </div>
             )}
 
-            {/* Edit & Audit History for this Claim */}
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2 text-xs">
-              <div className="flex items-center justify-between font-extrabold text-slate-800">
-                <span className="flex items-center gap-1.5">
-                  <History className="w-3.5 h-3.5 text-emerald-700" />
-                  <span>Edit History ({claimHistory.length})</span>
-                </span>
-              </div>
-              {claimHistory.length === 0 ? (
-                <p className="text-[11px] text-slate-400">No edits recorded yet.</p>
-              ) : (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {claimHistory.map((ev) => (
-                    <div key={ev.id} className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1">
-                      <div className="flex justify-between gap-2 text-[11px]">
-                        <span className="font-bold text-slate-900">
-                          {ev.actorName} ({ev.action})
-                        </span>
-                        <span className="font-mono text-slate-400">
-                          {new Date(ev.timestamp).toLocaleString()}
-                        </span>
-                      </div>
-                      {ev.changes.length > 0 ? (
-                        <div className="space-y-1">
-                          {ev.changes.map((c, idx) => (
-                            <div key={idx} className="flex flex-wrap items-center gap-1 text-[10px]">
-                              <span className="font-bold text-slate-700">{c.field}:</span>
-                              <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 line-through">{c.before}</span>
-                              <ArrowRight className="w-2.5 h-2.5 text-slate-400" />
-                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold">{c.after}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-slate-600">{ev.summary}</p>
-                      )}
-                    </div>
-                  ))}
+            {rightTab === 'history' && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between font-extrabold text-slate-800">
+                  <span className="flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Edit History ({claimHistory.length})</span>
+                  </span>
                 </div>
-              )}
-            </div>
+                {claimHistory.length === 0 ? (
+                  <p className="text-[11px] text-slate-400">No edits recorded yet.</p>
+                ) : (
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {claimHistory.map((ev) => (
+                      <div key={ev.id} className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1">
+                        <div className="flex justify-between gap-2 text-[11px]">
+                          <span className="font-bold text-slate-900">
+                            {ev.actorName} ({ev.action})
+                          </span>
+                          <span className="font-mono text-slate-400">
+                            {new Date(ev.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+                        {ev.changes.length > 0 ? (
+                          <div className="space-y-1">
+                            {ev.changes.map((c, idx) => (
+                              <div key={idx} className="flex flex-wrap items-center gap-1 text-[10px]">
+                                <span className="font-bold text-slate-700">{c.field}:</span>
+                                <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 line-through">{c.before}</span>
+                                <ArrowRight className="w-2.5 h-2.5 text-slate-400" />
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold">{c.after}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-600">{ev.summary}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         )}
       </div>
+
+      {fullQrOpen && resolvedClaimantQrUrl && !isClaimantQrPdf && (
+        <div
+          className="fixed inset-0 z-[65] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
+          onClick={() => setFullQrOpen(false)}
+        >
+          <div
+            className="max-w-md w-full bg-white rounded-3xl p-5 flex flex-col items-center gap-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between text-slate-900">
+              <div>
+                <div className="text-sm font-extrabold">{claim.claimant_name}</div>
+                <div className="text-[11px] font-mono text-slate-500">DuitNow / TNG QR</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFullQrOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
+                aria-label="Close full QR"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <img
+              src={resolvedClaimantQrUrl}
+              alt={`${claim.claimant_name} DuitNow QR`}
+              className="w-72 h-72 object-contain rounded-2xl border border-amber-200 p-2 bg-white"
+            />
+            <button
+              type="button"
+              onClick={() =>
+                void downloadFileFromUrl(
+                  resolvedClaimantQrUrl,
+                  `${claim.claimant_name}_DuitNow_QR.jpg`
+                )
+              }
+              className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download QR Image</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {fullImageOpen && !isPdf && claim.receipt_url && (
         <div

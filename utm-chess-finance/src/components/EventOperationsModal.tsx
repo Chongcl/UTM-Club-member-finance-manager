@@ -101,7 +101,7 @@ export default function EventOperationsModal({
   const [qrToken, setQrToken] = useState('');
   const [hasEntryPass, setHasEntryPass] = useState(false);
   const [passRule, setPassRule] = useState<PassApprovalRule>('auto_after_payment');
-  const [provisionalPassEnabled, setProvisionalPassEnabled] = useState(false);
+  const [feeStatusFilter, setFeeStatusFilter] = useState<'Pending' | 'Verified' | 'Rejected'>('Pending');
   const [localPassOverrides, setLocalPassOverrides] = useState<Record<string, boolean>>({});
   const [reviewingFeeId, setReviewingFeeId] = useState<string | null>(null);
   const [feeConfirmAmounts, setFeeConfirmAmounts] = useState<Record<string, string>>({});
@@ -125,28 +125,19 @@ export default function EventOperationsModal({
     setAmountPaid(String(feeVal));
     setQrToken(event.qr_code_token || event.id.slice(0, 6).toUpperCase());
 
-    const evQr = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_payqr_${event.id}`) : null;
-    const evBank = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_paybank_${event.id}`) : null;
-    const evShow = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_showqr_${event.id}`) : null;
+    setActivePayQrUrl(event.payment_qr_url ?? paymentQrUrl);
+    setActivePayBankInfo(event.payment_bank_info ?? paymentBankInfo);
+    setShowQrToMembers(event.show_payment_qr ?? true);
 
-    setActivePayQrUrl(evQr !== null ? evQr : paymentQrUrl);
-    setActivePayBankInfo(evBank !== null ? evBank : paymentBankInfo);
-    setShowQrToMembers(evShow !== null ? evShow !== 'false' : true);
-
-    const savedMode =
-      (typeof window !== 'undefined' ? localStorage.getItem(`clubsync_qrmode_${event.id}`) : null) ||
-      event.ticket_qr_mode ||
-      (feeVal > 0 ? 'entry_pass' : 'scan_attendance');
+    const savedMode = event.ticket_qr_mode || (feeVal > 0 ? 'entry_pass' : 'scan_attendance');
     const entryPassActive = isEntryPassMode(savedMode);
     setHasEntryPass(entryPassActive);
 
-    const savedRule =
-      (typeof window !== 'undefined' ? (localStorage.getItem(`clubsync_passrule_${event.id}`) as PassApprovalRule | null) : null) ||
-      (savedMode === 'manual_only' ? 'manual_only' : 'auto_after_payment');
+    const savedRule: PassApprovalRule =
+      event.pass_approval_rule || (savedMode === 'manual_only' ? 'manual_only' : 'auto_after_payment');
     setPassRule(savedRule);
-    const savedProvisional =
-      typeof window !== 'undefined' ? localStorage.getItem(`clubsync_provisional_pass_${event.id}`) === 'true' : false;
-    setProvisionalPassEnabled(savedProvisional);
+    const hasPending = feePayments.some((f) => f.budget_id === event.id && f.status === 'Pending');
+    setFeeStatusFilter(hasPending ? 'Pending' : 'Verified');
     setZoomReceiptFee(null);
 
     if (initialTab === 'pass' && !entryPassActive) setTab(isAdmin ? 'qr' : 'transport');
@@ -161,7 +152,7 @@ export default function EventOperationsModal({
     setPickupTime(cur?.pickup_time || '');
     setPickupPoint(cur?.pickup_point || '');
     setDormitoryInput(cur?.dormitory || profile.dormitory || '');
-  }, [event, initialTab, isAdmin, rsvps, profile.id, profile.dormitory, paymentQrUrl, paymentBankInfo]);
+  }, [event, initialTab, isAdmin, rsvps, feePayments, profile.id, profile.dormitory, paymentQrUrl, paymentBankInfo]);
 
   if (!event) return null;
 
@@ -204,9 +195,7 @@ export default function EventOperationsModal({
     if (passRule === 'manual_only') return rsvp.pass_approved === true;
     if (requiresFee) {
       const hasVerifiedPaid = eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Verified');
-      const hasProvisionalPaid =
-        provisionalPassEnabled && eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Pending');
-      return hasVerifiedPaid || hasProvisionalPaid || rsvp.pass_approved === true;
+      return hasVerifiedPaid || rsvp.pass_approved === true;
     }
     return rsvp.pass_approved === true;
   };
@@ -244,18 +233,14 @@ export default function EventOperationsModal({
       }
       setActivePayQrUrl(finalUrl);
       setAdminQrFile(null);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`clubsync_ev_payqr_${event.id}`, finalUrl);
-        localStorage.setItem(`clubsync_ev_paybank_${event.id}`, activePayBankInfo.trim());
-        localStorage.setItem(`clubsync_ev_showqr_${event.id}`, String(showQrToMembers));
-        localStorage.setItem('clubsync_payment_qr', finalUrl);
-        localStorage.setItem('clubsync_payment_bank', activePayBankInfo.trim());
-      }
-      await supabase.from('club_settings').upsert({
-        id: 1,
-        payment_qr_url: finalUrl,
-        payment_bank_info: activePayBankInfo.trim(),
-      });
+      await supabase
+        .from('budgets')
+        .update({
+          payment_qr_url: finalUrl || null,
+          payment_bank_info: activePayBankInfo.trim() || null,
+          show_payment_qr: showQrToMembers,
+        })
+        .eq('id', event.id);
       setAdminQrSetupOpen(false);
       onRefresh(showQrToMembers ? 'Payment QR & Bank details displayed to members!' : 'Payment QR hidden from members.');
     } finally {
@@ -403,18 +388,13 @@ export default function EventOperationsModal({
           receipt_url: receiptUrl, receipt_file_name: feeFile.name, status: 'Pending',
         });
         setFeeFile(null);
-        if (hasEntryPass && provisionalPassEnabled) setTab('pass');
         void logActivity(
           profile,
           'Fees',
           'Activity fee submitted (Pending)',
           `${profile.full_name} (${profile.matric_no}) submitted RM ${numAmt.toFixed(2)} fee receipt for "${event.event_name}" (Pending verification)`
         );
-        onRefresh(
-          provisionalPassEnabled
-            ? 'Receipt uploaded! Provisional pass unlocked while pending Treasurer check.'
-            : 'Fee receipt submitted! Pending Treasurer verification.'
-        );
+        onRefresh('Fee receipt submitted! Pending Treasurer verification.');
       }
     } finally {
       setSubmittingFee(false);
@@ -719,16 +699,14 @@ export default function EventOperationsModal({
                     <Lock className="w-8 h-8 text-amber-300 mx-auto" />
                     <p className="text-xs font-extrabold">Entry Pass Locked</p>
                     {requiresFee && passRule === 'auto_after_payment' ? (
-                      eventPayments.some((f) => f.user_id === profile.id && f.status === 'Pending') && !provisionalPassEnabled ? (
+                      eventPayments.some((f) => f.user_id === profile.id && f.status === 'Pending') ? (
                         <p className="text-[11px] text-amber-200 font-semibold">
                           ⏳ Receipt submitted — waiting for Treasurer verification to unlock your Entry Pass QR.
                         </p>
                       ) : (
                         <>
                           <p className="text-[11px] text-emerald-100">
-                            {provisionalPassEnabled
-                              ? `Upload your RM ${reqFee.toFixed(2)} receipt to unlock a Provisional Pass right away:`
-                              : `Pay RM ${reqFee.toFixed(2)} and await Treasurer verification to unlock your Entry Pass QR:`}
+                            Pay RM {reqFee.toFixed(2)} and await Treasurer verification to unlock your Entry Pass QR:
                           </p>
                           <button type="button" onClick={() => setTab('fee')} className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold cursor-pointer">
                             Pay RM {reqFee.toFixed(2)} Fee →
@@ -878,45 +856,11 @@ export default function EventOperationsModal({
                   </div>
                 )}
 
-                {isAdmin && (permissions.can_manage_claims_fees || permissions.can_manage_activities) && hasEntryPass && requiresFee && (
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                    <div className="text-[11px] font-extrabold text-slate-800">Entry Pass Unlock Mode</div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProvisionalPassEnabled(false);
-                          if (typeof window !== 'undefined') localStorage.setItem(`clubsync_provisional_pass_${event.id}`, 'false');
-                        }}
-                        className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border cursor-pointer ${
-                          !provisionalPassEnabled ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-200'
-                        }`}
-                      >
-                        Verified Payment Only
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProvisionalPassEnabled(true);
-                          if (typeof window !== 'undefined') localStorage.setItem(`clubsync_provisional_pass_${event.id}`, 'true');
-                        }}
-                        className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border cursor-pointer ${
-                          provisionalPassEnabled ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-white text-slate-700 border-slate-200'
-                        }`}
-                      >
-                        Instant Provisional Pass
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 <form onSubmit={handlePayFeeSubmit} className="bg-slate-50 border rounded-2xl p-5 space-y-3">
                   <h3 className="text-sm font-extrabold">Fee Payment (RM {reqFee.toFixed(2)})</h3>
                   {hasEntryPass && passRule === 'auto_after_payment' && (
                     <p className="text-[11px] text-emerald-700 font-semibold">
-                      {provisionalPassEnabled
-                        ? 'Instant Provisional Pass active: your Entry Pass QR unlocks right after submitting your receipt.'
-                        : 'Your Entry Pass QR unlocks once the Treasurer verifies your receipt.'}
+                      Your Entry Pass QR unlocks once the Treasurer verifies your receipt.
                     </p>
                   )}
 
@@ -1016,198 +960,180 @@ export default function EventOperationsModal({
                   <button type="submit" disabled={submittingFee} className="w-full py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"><CheckCircle2 className="w-4 h-4 inline mr-1" />{submittingFee ? 'Uploading...' : 'Submit Payment'}</button>
                 </form>
               </div>
-              <div className="lg:col-span-3 space-y-4">
-                {isAdmin && permissions.can_manage_claims_fees && pendingFeePayments.length > 0 && (
-                  <div className="rounded-2xl border-2 border-amber-300 bg-amber-50/70 p-4 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-extrabold text-amber-950 flex items-center gap-1.5">
-                        <ShieldCheck className="w-4 h-4 text-amber-700" />
-                        <span>Pending Fee Approvals ({pendingFeePayments.length})</span>
-                      </span>
-                      <span className="text-[11px] font-extrabold text-amber-900">
-                        Total Pending: RM {pendingFeePayments.reduce((s, f) => s + Number(f.amount_paid), 0).toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-0.5">
-                      {pendingFeePayments.map((p) => {
-                        const isPdfFile =
-                          p.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
-                          p.receipt_url?.toLowerCase().split('?')[0].endsWith('.pdf');
-                        const confirmVal = feeConfirmAmounts[p.id] ?? String(p.amount_paid);
-                        const rejectVal = rejectReasonByFee[p.id] ?? '';
-                        const isBusy = reviewingFeeId === p.id;
-                        const waNotify = `Hi ${p.student_name}, your RM ${Number(p.amount_paid).toFixed(2)} payment receipt for ${event.event_name} has been verified!${
-                          passRule === 'auto_after_payment' ? ' Your Entry Pass QR is now unlocked in ClubSync.' : ''
-                        }`;
-
+              <div className="lg:col-span-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-extrabold">
+                    {isAdmin ? `Fee Submissions (${visibleFeePayments.length})` : `My Fee Receipt (${visibleFeePayments.length})`}
+                  </h3>
+                  {isAdmin && (
+                    <div className="inline-flex bg-slate-100 p-1 rounded-xl gap-1">
+                      {(['Pending', 'Verified', 'Rejected'] as const).map((statusTab) => {
+                        const count = visibleFeePayments.filter((f) => f.status === statusTab).length;
+                        const active = feeStatusFilter === statusTab;
                         return (
-                          <div key={`pending-${p.id}`} className="bg-white rounded-2xl border border-amber-200 p-3 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                            <div className="sm:col-span-4 flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-2 min-h-[100px]">
-                              {p.receipt_url && !isPdfFile ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setZoomReceiptFee(p)}
-                                  className="relative group w-full flex flex-col items-center cursor-zoom-in"
-                                  title="Click to inspect full receipt"
-                                >
-                                  <img src={p.receipt_url} alt={p.student_name} className="max-h-24 w-auto object-contain rounded-lg" />
-                                  <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700">
-                                    <ZoomIn className="w-3 h-3" /> Zoom Receipt
-                                  </span>
-                                </button>
-                              ) : p.receipt_url ? (
-                                <a
-                                  href={p.receipt_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold text-[11px]"
-                                >
-                                  <FileText className="w-3.5 h-3.5" /> Open PDF
-                                </a>
-                              ) : (
-                                <span className="text-[11px] text-slate-400">No file</span>
-                              )}
-                            </div>
-
-                            <div className="sm:col-span-8 space-y-2">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div>
-                                  <div className="font-extrabold text-slate-900">{p.student_name}</div>
-                                  <div className="text-[10px] font-mono text-slate-500">{p.matric_no} {p.phone_number ? `• ${p.phone_number}` : ''}</div>
-                                </div>
-                                <a
-                                  href={waLink(p.phone_number, waNotify)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-[10px]"
-                                  title="Notify student on WhatsApp"
-                                >
-                                  <MessageCircle className="w-3 h-3" /> Notify
-                                </a>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Confirm RM</label>
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    value={confirmVal}
-                                    onChange={(e) => setFeeConfirmAmounts((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1 font-extrabold text-emerald-800"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Reject Reason (Optional)</label>
-                                  <input
-                                    type="text"
-                                    value={rejectVal}
-                                    onChange={(e) => setRejectReasonByFee((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                                    placeholder="e.g. Blurry slip / wrong RM"
-                                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  disabled={isBusy}
-                                  onClick={() => void handleVerifyOrRejectFee(p, 'Verified')}
-                                  className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-60"
-                                >
-                                  {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                                  <span>Verify</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={isBusy}
-                                  onClick={() => void handleVerifyOrRejectFee(p, 'Rejected')}
-                                  className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold cursor-pointer disabled:opacity-60"
-                                >
-                                  <XCircle className="w-3.5 h-3.5" />
-                                  <span>Reject</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
+                          <button
+                            key={statusTab}
+                            type="button"
+                            onClick={() => setFeeStatusFilter(statusTab)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition ${
+                              active
+                                ? statusTab === 'Pending'
+                                  ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                                  : statusTab === 'Verified'
+                                  ? 'bg-emerald-600 text-white shadow-2xs'
+                                  : 'bg-rose-600 text-white shadow-2xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            {statusTab} ({count})
+                          </button>
                         );
                       })}
                     </div>
-                  </div>
-                )}
-
-                <h3 className="text-sm font-extrabold">{isAdmin ? `All Fee Submissions (${visibleFeePayments.length})` : `My Fee Receipt (${visibleFeePayments.length})`}</h3>
-                <div className="border rounded-2xl overflow-hidden">
-                  <table className="w-full text-left border-collapse">
-                    <thead><tr className="bg-slate-50 border-b"><th className="py-2 px-3">Student</th><th className="py-2 px-3">Amount</th><th className="py-2 px-3">Status</th><th className="py-2 px-3 text-right">Actions</th></tr></thead>
-                    <tbody className="divide-y">
-                      {visibleFeePayments.length === 0 ? (
-                        <tr><td colSpan={4} className="py-6 text-center text-slate-400">No payment submission yet.</td></tr>
-                      ) : (
-                        visibleFeePayments.map((p) => (
-                          <tr key={p.id}>
-                            <td className="py-2 px-3">
-                              <div className="font-bold">{p.student_name}</div>
-                              <div className="text-[10px] text-slate-400 font-mono">{p.matric_no}</div>
-                            </td>
-                            <td className="py-2 px-3 font-extrabold text-emerald-700">RM {Number(p.amount_paid).toFixed(2)}</td>
-                            <td className="py-2 px-3">
-                              <span
-                                className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
-                                  p.status === 'Verified'
-                                    ? 'bg-emerald-100 text-emerald-800'
-                                    : p.status === 'Rejected'
-                                    ? 'bg-rose-100 text-rose-700'
-                                    : 'bg-amber-100 text-amber-900'
-                                }`}
-                              >
-                                {p.status}
-                              </span>
-                            </td>
-                            <td className="py-2 px-3 text-right">
-                              <div className="inline-flex items-center gap-1 justify-end">
-                                {p.receipt_url && (
-                                  <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-slate-100 text-emerald-700 hover:bg-slate-200" title="View Receipt">
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                  </a>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => setHistoryTarget({ table: 'activity_fee_payments', recordId: p.id, title: `${p.student_name} Fee` })}
-                                  className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
-                                  title="View Edit History"
-                                >
-                                  <History className="w-3.5 h-3.5" />
-                                </button>
-                                {(isAdmin || p.user_id === profile.id) && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => openEditFeeModal(p)}
-                                      className="p-1.5 rounded-lg bg-slate-100 text-slate-800 hover:bg-emerald-50 cursor-pointer"
-                                      title="Edit Fee Payment"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSoftDeleteFee(p)}
-                                      className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
-                                      title="Delete from web (kept in Supabase)"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                  )}
                 </div>
+
+                {(() => {
+                  const displayedFees = isAdmin
+                    ? visibleFeePayments.filter((f) => f.status === feeStatusFilter)
+                    : visibleFeePayments;
+                  return (
+                    <div className="border rounded-2xl overflow-hidden">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b">
+                            <th className="py-2 px-3">Student</th>
+                            <th className="py-2 px-3">Amount</th>
+                            {(!isAdmin || feeStatusFilter !== 'Pending') && <th className="py-2 px-3">Status</th>}
+                            <th className="py-2 px-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {displayedFees.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="py-6 text-center text-slate-400">
+                                {isAdmin ? `No ${feeStatusFilter.toLowerCase()} fee submissions.` : 'No payment submission yet.'}
+                              </td>
+                            </tr>
+                          ) : (
+                            displayedFees.map((p) => {
+                              const isBusy = reviewingFeeId === p.id;
+                              const isPdfFile =
+                                p.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
+                                p.receipt_url?.toLowerCase().split('?')[0].endsWith('.pdf');
+                              return (
+                                <tr key={p.id}>
+                                  <td className="py-2 px-3">
+                                    <div className="font-bold text-slate-900">{p.student_name}</div>
+                                    <div className="text-[10px] text-slate-400 font-mono">{p.matric_no}</div>
+                                  </td>
+                                  <td className="py-2 px-3 font-extrabold text-emerald-700">
+                                    RM {Number(p.amount_paid).toFixed(2)}
+                                  </td>
+                                  {(!isAdmin || feeStatusFilter !== 'Pending') && (
+                                    <td className="py-2 px-3">
+                                      <span
+                                        className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                          p.status === 'Verified'
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : p.status === 'Rejected'
+                                            ? 'bg-rose-100 text-rose-700'
+                                            : 'bg-amber-100 text-amber-900'
+                                        }`}
+                                      >
+                                        {p.status}
+                                      </span>
+                                    </td>
+                                  )}
+                                  <td className="py-2 px-3 text-right">
+                                    <div className="inline-flex items-center gap-1.5 justify-end">
+                                      {p.receipt_url && !isPdfFile ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setZoomReceiptFee(p)}
+                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] cursor-pointer"
+                                          title="Zoom Receipt"
+                                        >
+                                          <ZoomIn className="w-3.5 h-3.5 text-emerald-700" />
+                                          {isAdmin && p.status === 'Pending' && <span>Receipt</span>}
+                                        </button>
+                                      ) : p.receipt_url ? (
+                                        <a
+                                          href={p.receipt_url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-emerald-700 font-bold text-[11px]"
+                                          title="View Receipt PDF"
+                                        >
+                                          <ExternalLink className="w-3.5 h-3.5" />
+                                          {isAdmin && p.status === 'Pending' && <span>PDF</span>}
+                                        </a>
+                                      ) : null}
+
+                                      {isAdmin && permissions.can_manage_claims_fees && p.status === 'Pending' ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() => void handleVerifyOrRejectFee(p, 'Verified')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer disabled:opacity-60"
+                                          >
+                                            {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                                            <span>Verify</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() => void handleVerifyOrRejectFee(p, 'Rejected')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] cursor-pointer disabled:opacity-60"
+                                          >
+                                            <XCircle className="w-3 h-3" />
+                                            <span>Reject</span>
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setHistoryTarget({ table: 'activity_fee_payments', recordId: p.id, title: `${p.student_name} Fee` })}
+                                            className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
+                                            title="View Edit History"
+                                          >
+                                            <History className="w-3.5 h-3.5" />
+                                          </button>
+                                          {(isAdmin || p.user_id === profile.id) && (
+                                            <>
+                                              <button
+                                                type="button"
+                                                onClick={() => openEditFeeModal(p)}
+                                                className="p-1.5 rounded-lg bg-slate-100 text-slate-800 hover:bg-emerald-50 cursor-pointer"
+                                                title="Edit Fee Payment"
+                                              >
+                                                <Edit3 className="w-3.5 h-3.5" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleSoftDeleteFee(p)}
+                                                className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                                title="Delete from web (kept in Supabase)"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            </>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -1661,24 +1587,110 @@ export default function EventOperationsModal({
           className="fixed inset-0 z-[70] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
           onClick={() => setZoomReceiptFee(null)}
         >
-          <div className="max-w-3xl w-full flex flex-col items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            <div className="w-full flex items-center justify-between text-white text-xs px-2">
-              <span className="font-bold truncate">
-                {zoomReceiptFee.student_name} ({zoomReceiptFee.matric_no}) — RM {Number(zoomReceiptFee.amount_paid).toFixed(2)}
-              </span>
-              <button
-                type="button"
-                onClick={() => setZoomReceiptFee(null)}
-                className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+          <div className="max-w-4xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12" onClick={(e) => e.stopPropagation()}>
+            <div className="md:col-span-7 bg-slate-950 flex items-center justify-center p-4 max-h-[80vh]">
+              <img
+                src={zoomReceiptFee.receipt_url}
+                alt={zoomReceiptFee.student_name}
+                className="max-h-[72vh] w-auto max-w-full object-contain rounded-xl bg-white"
+              />
             </div>
-            <img
-              src={zoomReceiptFee.receipt_url}
-              alt={zoomReceiptFee.student_name}
-              className="max-h-[82vh] w-auto max-w-full object-contain rounded-2xl bg-white shadow-2xl"
-            />
+            <div className="md:col-span-5 p-5 flex flex-col justify-between gap-4 text-xs">
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-900">{zoomReceiptFee.student_name}</h4>
+                    <p className="font-mono text-[11px] text-slate-500">{zoomReceiptFee.matric_no}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setZoomReceiptFee(null)}
+                    className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                  <span className="font-bold text-slate-500">Submitted Amount</span>
+                  <span className="text-sm font-extrabold text-emerald-700">RM {Number(zoomReceiptFee.amount_paid).toFixed(2)}</span>
+                </div>
+
+                {isAdmin && permissions.can_manage_claims_fees && zoomReceiptFee.status === 'Pending' && (
+                  <div className="space-y-2.5 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">Confirm Amount (RM)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={feeConfirmAmounts[zoomReceiptFee.id] ?? String(zoomReceiptFee.amount_paid)}
+                        onChange={(e) =>
+                          setFeeConfirmAmounts((prev) => ({ ...prev, [zoomReceiptFee.id]: e.target.value }))
+                        }
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 font-extrabold text-emerald-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">Reject Reason (Optional)</label>
+                      <input
+                        type="text"
+                        value={rejectReasonByFee[zoomReceiptFee.id] ?? ''}
+                        onChange={(e) =>
+                          setRejectReasonByFee((prev) => ({ ...prev, [zoomReceiptFee.id]: e.target.value }))
+                        }
+                        placeholder="e.g. Blurry slip / wrong RM"
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2 pt-3 border-t border-slate-100">
+                {isAdmin && permissions.can_manage_claims_fees && zoomReceiptFee.status === 'Pending' && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={reviewingFeeId === zoomReceiptFee.id}
+                      onClick={async () => {
+                        await handleVerifyOrRejectFee(zoomReceiptFee, 'Verified');
+                        setZoomReceiptFee(null);
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-60"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Verify Fee</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={reviewingFeeId === zoomReceiptFee.id}
+                      onClick={async () => {
+                        await handleVerifyOrRejectFee(zoomReceiptFee, 'Rejected');
+                        setZoomReceiptFee(null);
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold cursor-pointer disabled:opacity-60"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>Reject</span>
+                    </button>
+                  </div>
+                )}
+                {zoomReceiptFee.phone_number && (
+                  <a
+                    href={waLink(
+                      zoomReceiptFee.phone_number,
+                      `Hi ${zoomReceiptFee.student_name}, regarding your RM ${Number(zoomReceiptFee.amount_paid).toFixed(2)} fee receipt for ${event.event_name}.`
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Message Member on WhatsApp</span>
+                  </a>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
