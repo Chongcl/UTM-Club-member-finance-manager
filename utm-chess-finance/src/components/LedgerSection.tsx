@@ -19,6 +19,7 @@ import {
 } from '@/lib/supabase';
 import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
 import { waLink } from '@/lib/whatsapp';
+import type { MemberLookupHint } from '@/lib/memberLookup';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import {
   Search,
@@ -78,6 +79,7 @@ interface LedgerSectionProps {
   onCloseExternalModal?: () => void;
   onSelectClaim?: (claim: Claim) => void;
   onRefresh: (msg: string) => void;
+  onOpenMemberProfile?: (hint: MemberLookupHint) => void;
 }
 
 type FinanceTabView = 'sheet' | 'activity' | 'unpaid' | 'plan';
@@ -418,9 +420,33 @@ export default function LedgerSection({
   onCloseExternalModal,
   onSelectClaim,
   onRefresh,
+  onOpenMemberProfile,
 }: LedgerSectionProps) {
   const [activeView, setActiveView] = useState<FinanceTabView>('sheet');
   const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
+
+  const openProfileForLedgerRow = (row: UnifiedFinanceRow) => {
+    if (!onOpenMemberProfile) return;
+    if (row.rawClaim) {
+      onOpenMemberProfile({
+        userId: row.rawClaim.user_id,
+        matricNo: row.rawClaim.matric_no,
+        name: row.rawClaim.claimant_name,
+      });
+      return;
+    }
+    if (row.rawFee) {
+      onOpenMemberProfile({
+        userId: row.rawFee.user_id,
+        matricNo: row.rawFee.matric_no,
+        name: row.rawFee.student_name,
+      });
+      return;
+    }
+    if (row.personShort && row.personShort !== 'Club') {
+      onOpenMemberProfile({ name: row.personShort });
+    }
+  };
 
   // Sheet filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -1824,7 +1850,18 @@ export default function LedgerSection({
                               )}
                             </div>
                             <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                              <span>{row.personShort}</span>
+                              {onOpenMemberProfile && row.personShort && row.personShort !== 'Club' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openProfileForLedgerRow(row)}
+                                  className="hover:text-emerald-700 hover:underline cursor-pointer text-left font-medium"
+                                  title="View member profile"
+                                >
+                                  {row.personShort}
+                                </button>
+                              ) : (
+                                <span>{row.personShort}</span>
+                              )}
                               <span>·</span>
                               {canEdit ? (
                                 <button
@@ -2340,7 +2377,20 @@ export default function LedgerSection({
                             <tr key={r.uid} className="hover:bg-white">
                               <td className="py-2 px-4 font-mono">{r.date}</td>
                               <td className="py-2 px-4 font-semibold">{r.title}</td>
-                              <td className="py-2 px-4 text-slate-600">{r.personShort}</td>
+                              <td className="py-2 px-4 text-slate-600">
+                                {onOpenMemberProfile && r.personShort && r.personShort !== 'Club' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openProfileForLedgerRow(r)}
+                                    className="hover:text-emerald-700 hover:underline cursor-pointer text-left font-medium"
+                                    title="View member profile"
+                                  >
+                                    {r.personShort}
+                                  </button>
+                                ) : (
+                                  r.personShort
+                                )}
+                              </td>
                               <td className="py-2 px-4 text-slate-600">{r.accountType}</td>
                               <td
                                 className={`py-2 px-4 text-right font-mono font-bold ${
@@ -2409,7 +2459,24 @@ export default function LedgerSection({
                     return (
                       <tr key={item.key} className="hover:bg-slate-50">
                         <td className="py-2.5 px-4 border-r border-slate-200">
-                          <div className="font-bold text-slate-900">{item.rsvp.student_name}</div>
+                          {onOpenMemberProfile ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onOpenMemberProfile({
+                                  userId: item.rsvp.user_id,
+                                  matricNo: item.rsvp.matric_no,
+                                  name: item.rsvp.student_name,
+                                })
+                              }
+                              className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                              title="View student profile"
+                            >
+                              {item.rsvp.student_name}
+                            </button>
+                          ) : (
+                            <div className="font-bold text-slate-900">{item.rsvp.student_name}</div>
+                          )}
                           <div className="text-[11px] font-mono text-slate-500">{item.rsvp.matric_no}</div>
                         </td>
                         <td className="py-2.5 px-4 border-r border-slate-200">

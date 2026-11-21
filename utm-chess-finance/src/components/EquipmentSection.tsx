@@ -45,6 +45,7 @@ import {
   Ban,
   History,
 } from 'lucide-react';
+import type { MemberLookupHint } from '@/lib/memberLookup';
 
 interface EquipmentSectionProps {
   items: EquipmentItem[];
@@ -53,6 +54,7 @@ interface EquipmentSectionProps {
   profile: UserProfile;
   isAdmin: boolean;
   onRefresh: (msg: string) => void;
+  onOpenMemberProfile?: (hint: MemberLookupHint) => void;
 }
 
 type LoanView = 'Pending' | 'Rejected' | 'Cancelled' | 'Reserved' | 'Borrowed' | 'Late' | 'Returned';
@@ -76,6 +78,7 @@ export default function EquipmentSection({
   profile,
   isAdmin,
   onRefresh,
+  onOpenMemberProfile,
 }: EquipmentSectionProps) {
   const todayStr = localDateStr();
 
@@ -1021,7 +1024,24 @@ export default function EquipmentSection({
 
                           {isAdmin && (
                             <td className="py-2.5 px-4">
-                              <div className="font-bold text-slate-800">{loan.borrower_name}</div>
+                              {onOpenMemberProfile ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onOpenMemberProfile({
+                                      userId: loan.user_id,
+                                      matricNo: loan.matric_no,
+                                      name: loan.borrower_name,
+                                    })
+                                  }
+                                  className="font-bold text-slate-800 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                                  title="View borrower profile"
+                                >
+                                  {loan.borrower_name}
+                                </button>
+                              ) : (
+                                <div className="font-bold text-slate-800">{loan.borrower_name}</div>
+                              )}
                               <div className="text-[11px] text-slate-500 font-mono">
                                 {loan.matric_no} • {loan.phone_number}
                               </div>
@@ -1310,8 +1330,31 @@ export default function EquipmentSection({
                               {l.item_name} <span className="text-emerald-700">x{l.quantity}</span>
                             </div>
                             <div className="text-[11px] text-slate-500">
-                              {canSeeWho(l) ? `${l.borrower_name}${l.purpose ? ` • ${l.purpose}` : ''}` : 'Reserved by another member'} •{' '}
-                              {l.borrow_date} → {l.return_date}
+                              {canSeeWho(l) ? (
+                                <>
+                                  {onOpenMemberProfile ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        onOpenMemberProfile({
+                                          userId: l.user_id,
+                                          matricNo: l.matric_no,
+                                          name: l.borrower_name,
+                                        })
+                                      }
+                                      className="font-semibold text-slate-700 hover:text-emerald-700 hover:underline cursor-pointer"
+                                    >
+                                      {l.borrower_name}
+                                    </button>
+                                  ) : (
+                                    <span>{l.borrower_name}</span>
+                                  )}
+                                  {l.purpose ? ` • ${l.purpose}` : ''}
+                                </>
+                              ) : (
+                                'Reserved by another member'
+                              )}{' '}
+                              • {l.borrow_date} → {l.return_date}
                             </div>
                           </div>
                           <span className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${loanBadge(v)}`}>

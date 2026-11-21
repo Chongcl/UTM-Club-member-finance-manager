@@ -49,6 +49,7 @@ import {
   ArrowRight,
   GitCompare,
 } from 'lucide-react';
+import type { MemberLookupHint } from '@/lib/memberLookup';
 
 interface AuditReviewModalProps {
   claim: Claim | null;
@@ -70,6 +71,7 @@ interface AuditReviewModalProps {
   approvalThreshold?: number;
   onClose: () => void;
   onUpdated: (message: string) => void;
+  onOpenMemberProfile?: (hint: MemberLookupHint) => void;
 }
 
 export default function AuditReviewModal({
@@ -88,6 +90,7 @@ export default function AuditReviewModal({
   approvalThreshold = 200,
   onClose,
   onUpdated,
+  onOpenMemberProfile,
 }: AuditReviewModalProps) {
   const [remarks, setRemarks] = useState('');
   const [payoutFile, setPayoutFile] = useState<File | null>(null);
@@ -951,7 +954,24 @@ export default function AuditReviewModal({
                 <div className="bg-emerald-50/70 rounded-2xl p-4 border border-emerald-200 space-y-1.5 text-xs">
                   <div className="flex items-center gap-2 text-slate-800">
                     <User className="w-3.5 h-3.5 text-emerald-700" />
-                    <span className="font-bold">{claim.claimant_name}</span>
+                    {onOpenMemberProfile ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenMemberProfile({
+                            userId: claim.user_id,
+                            matricNo: claim.matric_no,
+                            name: claim.claimant_name,
+                          })
+                        }
+                        className="font-bold hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                        title="View student profile"
+                      >
+                        {claim.claimant_name}
+                      </button>
+                    ) : (
+                      <span className="font-bold">{claim.claimant_name}</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 text-slate-700">
                     <Hash className="w-3.5 h-3.5 text-emerald-700" />

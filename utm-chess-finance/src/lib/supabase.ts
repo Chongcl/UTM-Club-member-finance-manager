@@ -42,6 +42,7 @@ export interface AdminPermissions {
   can_manage_transport: boolean;
   can_manage_finance: boolean;
   can_manage_members: boolean;
+  can_view_sensitive_profiles: boolean;
 }
 
 export const DEFAULT_ADMIN_PERMISSIONS: AdminPermissions = {
@@ -52,6 +53,7 @@ export const DEFAULT_ADMIN_PERMISSIONS: AdminPermissions = {
   can_manage_transport: true,
   can_manage_finance: false,
   can_manage_members: false,
+  can_view_sensitive_profiles: false,
 };
 
 export const FULL_OWNER_PERMISSIONS: AdminPermissions = {
@@ -62,6 +64,7 @@ export const FULL_OWNER_PERMISSIONS: AdminPermissions = {
   can_manage_transport: true,
   can_manage_finance: true,
   can_manage_members: true,
+  can_view_sensitive_profiles: true,
 };
 
 export const PERMISSION_LABELS: {
@@ -76,6 +79,7 @@ export const PERMISSION_LABELS: {
   { key: 'can_manage_transport', label: '5. Carpool & Driver Assignment', desc: 'Assign passengers to drivers and manage trips' },
   { key: 'can_manage_finance', label: '6. Edit Club Finance & Savings', desc: 'Add/edit/delete Money In & Out (Otherwise View-Only)' },
   { key: 'can_manage_members', label: '7. Manage Members & Departments', desc: 'Customize departments and remove regular members' },
+  { key: 'can_view_sensitive_profiles', label: '8. View Confidential Member Profiles', desc: 'See IC, phone, email, dorm, hometown & bank/QR details when inspecting profiles' },
 ];
 
 export interface UserProfile {
@@ -100,6 +104,7 @@ export interface UserProfile {
   bank_qr_url?: string;
   allow_whatsapp_chat?: boolean;
   notifications_read_at?: string;
+  public_chat_read_at?: string;
   created_at: string;
 }
 
@@ -131,8 +136,11 @@ export interface ChatDirectoryMember {
   role: 'member' | 'treasurer' | 'owner';
   member_type: string;
   batch_year: string;
+  course?: string;
+  year_of_study?: string;
   member_status?: string;
   allow_whatsapp_chat?: boolean;
+  created_at?: string;
 }
 
 export interface ChatMessageItem {
@@ -140,6 +148,8 @@ export interface ChatMessageItem {
   room_id: string;
   sender_id: string;
   content: string;
+  is_deleted?: boolean;
+  deleted_by?: string | null;
   created_at: string;
 }
 

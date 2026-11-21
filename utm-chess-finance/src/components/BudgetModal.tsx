@@ -14,6 +14,7 @@ import {
 } from '@/lib/supabase';
 import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
 import { emitClubNotification } from '@/lib/notifications';
+import type { MemberLookupHint } from '@/lib/memberLookup';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import {
   X,
@@ -44,11 +45,11 @@ export interface EditableActivity {
 interface BudgetModalProps {
   isOpen: boolean; onClose: () => void; onSuccess: (message: string) => void;
   initialData?: EditableActivity | null; departments?: string[]; rsvps?: EventRsvp[]; feePayments?: ActivityFeePayment[];
-  profile?: UserProfile | null; logs?: ActivityLogEntry[];
+  profile?: UserProfile | null; logs?: ActivityLogEntry[]; onOpenMemberProfile?: (hint: MemberLookupHint) => void;
 }
 
 export default function BudgetModal({
-  isOpen, onClose, onSuccess, initialData, departments = DEFAULT_DEPARTMENTS, rsvps = [], feePayments = [], profile = null, logs = [],
+  isOpen, onClose, onSuccess, initialData, departments = DEFAULT_DEPARTMENTS, rsvps = [], feePayments = [], profile = null, logs = [], onOpenMemberProfile,
 }: BudgetModalProps) {
   const isEditing = Boolean(initialData?.id);
   const [openSection, setOpenSection] = useState<'none' | 'settings' | 'passes' | 'fees' | 'carpool'>('none');
@@ -373,7 +374,25 @@ export default function BudgetModal({
                           const hasPass = isMemberEligibleForPass(r);
                           return (
                             <tr key={r.id}>
-                              <td className="py-2 px-3 font-bold">{r.student_name}</td>
+                              <td className="py-2 px-3 font-bold">
+                                {onOpenMemberProfile ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onOpenMemberProfile({
+                                        userId: r.user_id,
+                                        matricNo: r.matric_no,
+                                        name: r.student_name,
+                                      })
+                                    }
+                                    className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                                  >
+                                    {r.student_name}
+                                  </button>
+                                ) : (
+                                  r.student_name
+                                )}
+                              </td>
                               <td className="py-2 px-3">{reqFeeNum <= 0 ? '-' : paid ? <span className="text-emerald-700 font-bold">Paid ✓</span> : 'Unpaid'}</td>
                               <td className="py-2 px-3">{r.qr_checked_in ? <span className="text-emerald-700 font-bold"><ShieldCheck className="w-3.5 h-3.5 inline mr-0.5" />Attended</span> : hasPass ? <span className="text-emerald-700 font-bold">✓ Active</span> : <span className="text-slate-400">Locked</span>}</td>
                               <td className="py-2 px-3 text-right">
@@ -420,7 +439,25 @@ export default function BudgetModal({
                       ) : (
                       eventPayments.filter((p) => p.status === feeFilter).map((p) => (
                         <tr key={p.id}>
-                          <td className="py-2 px-3 font-bold">{p.student_name}</td>
+                          <td className="py-2 px-3 font-bold">
+                            {onOpenMemberProfile ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onOpenMemberProfile({
+                                    userId: p.user_id,
+                                    matricNo: p.matric_no,
+                                    name: p.student_name,
+                                  })
+                                }
+                                className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                              >
+                                {p.student_name}
+                              </button>
+                            ) : (
+                              p.student_name
+                            )}
+                          </td>
                           <td className="py-2 px-3 font-bold text-emerald-700">RM {Number(p.amount_paid).toFixed(2)}</td>
                           <td className="py-2 px-3">{p.status}</td>
                           <td className="py-2 px-3 text-right space-x-1">
@@ -557,7 +594,25 @@ export default function BudgetModal({
                     <tbody className="divide-y">
                       {passengers.map((p) => (
                         <tr key={p.id}>
-                          <td className="py-2 px-3 font-bold">{p.student_name}</td>
+                          <td className="py-2 px-3 font-bold">
+                            {onOpenMemberProfile ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onOpenMemberProfile({
+                                    userId: p.user_id,
+                                    matricNo: p.matric_no,
+                                    name: p.student_name,
+                                  })
+                                }
+                                className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                              >
+                                {p.student_name}
+                              </button>
+                            ) : (
+                              p.student_name
+                            )}
+                          </td>
                           <td className="py-2 px-3">{p.dormitory || '-'}</td>
                           <td className="py-2 px-3">{p.transport_type}</td>
                           <td className="py-2 px-3">

@@ -53,18 +53,20 @@ import {
   ZoomIn,
   XCircle,
 } from 'lucide-react';
+import type { MemberLookupHint } from '@/lib/memberLookup';
 
 interface EventOperationsModalProps {
   event: Budget | null; initialTab: 'fee' | 'transport' | 'qr' | 'pass'; profile: UserProfile;
   isAdmin: boolean; permissions: AdminPermissions; rsvps: EventRsvp[]; feePayments: ActivityFeePayment[];
   claims?: Claim[]; logs?: ActivityLogEntry[]; paymentQrUrl?: string; paymentBankInfo?: string;
   onClose: () => void; onOpenScanner?: () => void; onRefresh: (msg: string) => void;
+  onOpenMemberProfile?: (hint: MemberLookupHint) => void;
 }
 
 type TransportSurveyChoice = 'OWN' | 'One-Way' | 'Return Trip' | 'Round Trip' | 'DRIVER';
 
 export default function EventOperationsModal({
-  event, initialTab, profile, isAdmin, permissions, rsvps, feePayments, claims = [], logs = [], paymentQrUrl = '', paymentBankInfo = '', onClose, onOpenScanner, onRefresh,
+  event, initialTab, profile, isAdmin, permissions, rsvps, feePayments, claims = [], logs = [], paymentQrUrl = '', paymentBankInfo = '', onClose, onOpenScanner, onRefresh, onOpenMemberProfile,
 }: EventOperationsModalProps) {
   const [tab, setTab] = useState<'fee' | 'transport' | 'qr' | 'pass'>(initialTab);
   const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
@@ -779,7 +781,25 @@ export default function EventOperationsModal({
                           const hasPass = isMemberEligibleForPass(r);
                           return (
                             <tr key={r.id}>
-                              <td className="py-2 px-3 font-bold">{r.student_name} ({r.matric_no})</td>
+                              <td className="py-2 px-3 font-bold">
+                                {onOpenMemberProfile ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onOpenMemberProfile({
+                                        userId: r.user_id,
+                                        matricNo: r.matric_no,
+                                        name: r.student_name,
+                                      })
+                                    }
+                                    className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                                  >
+                                    {r.student_name} ({r.matric_no})
+                                  </button>
+                                ) : (
+                                  <>{r.student_name} ({r.matric_no})</>
+                                )}
+                              </td>
                               {requiresFee && <td className="py-2 px-3">{paid ? <span className="text-emerald-700 font-bold">Paid ✓</span> : <span className="text-amber-700 font-bold">Unpaid</span>}</td>}
                               <td className="py-2 px-3">{r.qr_checked_in ? <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold text-[10px]"><ShieldCheck className="w-3 h-3 inline mr-0.5" />Attended</span> : hasPass ? <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">✓ Unlocked</span> : <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold text-[10px]">Locked</span>}</td>
                               <td className="py-2 px-3 text-right"><button type="button" onClick={() => handleToggleManualPass(r)} className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${hasPass ? 'bg-rose-50 text-rose-700' : 'bg-emerald-600 text-white'}`}>{hasPass ? 'Lock' : 'Grant Pass'}</button></td>
@@ -807,7 +827,7 @@ export default function EventOperationsModal({
                 <div className="border rounded-2xl overflow-hidden">
                   <table className="w-full text-left border-collapse">
                     <thead><tr className="bg-slate-50 border-b"><th className="py-2 px-3">Student</th><th className="py-2 px-3">Department</th><th className="py-2 px-3 text-right">Time</th></tr></thead>
-                    <tbody className="divide-y">{qrCheckedInList.map((r) => (<tr key={r.id}><td className="py-2 px-3 font-bold">{r.student_name} ({r.matric_no})</td><td className="py-2 px-3">{r.member_type}</td><td className="py-2 px-3 text-right font-mono">{r.qr_checked_in_at ? new Date(r.qr_checked_in_at).toLocaleTimeString() : 'Verified'}</td></tr>))}</tbody>
+                    <tbody className="divide-y">{qrCheckedInList.map((r) => (<tr key={r.id}><td className="py-2 px-3 font-bold">{onOpenMemberProfile ? (<button type="button" onClick={() => onOpenMemberProfile({ userId: r.user_id, matricNo: r.matric_no, name: r.student_name })} className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left">{r.student_name} ({r.matric_no})</button>) : (<>{r.student_name} ({r.matric_no})</>)}</td><td className="py-2 px-3">{r.member_type}</td><td className="py-2 px-3 text-right font-mono">{r.qr_checked_in_at ? new Date(r.qr_checked_in_at).toLocaleTimeString() : 'Verified'}</td></tr>))}</tbody>
                   </table>
                 </div>
               </div>
@@ -1062,7 +1082,23 @@ export default function EventOperationsModal({
                               return (
                                 <tr key={p.id}>
                                   <td className="py-2 px-3">
-                                    <div className="font-bold text-slate-900">{p.student_name}</div>
+                                    {onOpenMemberProfile ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          onOpenMemberProfile({
+                                            userId: p.user_id,
+                                            matricNo: p.matric_no,
+                                            name: p.student_name,
+                                          })
+                                        }
+                                        className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                                      >
+                                        {p.student_name}
+                                      </button>
+                                    ) : (
+                                      <div className="font-bold text-slate-900">{p.student_name}</div>
+                                    )}
                                     <div className="text-[10px] text-slate-400 font-mono">{p.matric_no}</div>
                                   </td>
                                   <td className="py-2 px-3 font-extrabold text-emerald-700">
@@ -1341,7 +1377,23 @@ export default function EventOperationsModal({
                             <div key={d.id} className="p-3 space-y-1.5">
                               <div className="flex items-center justify-between gap-2">
                                 <div>
-                                  <div className="font-bold text-slate-900">{d.student_name}</div>
+                                  {onOpenMemberProfile ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        onOpenMemberProfile({
+                                          userId: d.user_id,
+                                          matricNo: d.matric_no,
+                                          name: d.student_name,
+                                        })
+                                      }
+                                      className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                                    >
+                                      {d.student_name}
+                                    </button>
+                                  ) : (
+                                    <div className="font-bold text-slate-900">{d.student_name}</div>
+                                  )}
                                   <div className="text-[11px] text-slate-500">{d.car_details || 'Vehicle'} • <span className="font-mono">{d.phone_number}</span></div>
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
@@ -1446,7 +1498,23 @@ export default function EventOperationsModal({
                             return (
                               <tr key={p.id}>
                                 <td className="py-2 px-3">
-                                  <div className="font-bold text-slate-900">{p.student_name}</div>
+                                  {onOpenMemberProfile ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        onOpenMemberProfile({
+                                          userId: p.user_id,
+                                          matricNo: p.matric_no,
+                                          name: p.student_name,
+                                        })
+                                      }
+                                      className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                                    >
+                                      {p.student_name}
+                                    </button>
+                                  ) : (
+                                    <div className="font-bold text-slate-900">{p.student_name}</div>
+                                  )}
                                   <div className="font-mono text-[10px] text-slate-500 flex items-center gap-1.5">
                                     <span>{p.phone_number}</span>
                                     {(isCurrentUserDriver || isAdmin) && p.phone_number && (

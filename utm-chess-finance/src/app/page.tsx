@@ -26,6 +26,7 @@ import {
   exportMultiSheetExcel,
   ActivityLogEntry,
   ClubNotificationItem,
+  ChatDirectoryMember,
   DEFAULT_CLAIM_APPROVAL_THRESHOLD,
   logActivity,
 } from '@/lib/supabase';
@@ -43,6 +44,8 @@ import ActivityLogSection from '@/components/ActivityLogSection';
 import RecordHistoryModal, { HistoryModalTarget } from '@/components/RecordHistoryModal';
 import NotificationBell from '@/components/NotificationBell';
 import FloatingChatDock from '@/components/FloatingChatDock';
+import MemberProfileModal from '@/components/MemberProfileModal';
+import { findMemberRecord, MemberLookupHint } from '@/lib/memberLookup';
 import {
   filterActiveRecords,
   softDeleteRecord,
@@ -95,6 +98,7 @@ const NO_PERMISSIONS: AdminPermissions = {
   can_manage_transport: false,
   can_manage_finance: false,
   can_manage_members: false,
+  can_view_sensitive_profiles: false,
 };
 
 const BG_PRESETS = [
@@ -237,6 +241,8 @@ export default function Page() {
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [profileModalMember, setProfileModalMember] = useState<ChatDirectoryMember | UserProfile | null>(null);
+  const [chatDmTargetUserId, setChatDmTargetUserId] = useState<string | null>(null);
   const [editingActivity, setEditingActivity] = useState<EditableActivity | null>(null);
   const [opsModalEvent, setOpsModalEvent] = useState<Budget | null>(null);
   const [opsModalTab, setOpsModalTab] = useState<'fee' | 'transport' | 'qr' | 'pass'>('pass');
@@ -306,6 +312,7 @@ export default function Page() {
         can_manage_transport: p.can_manage_transport ?? DEFAULT_ADMIN_PERMISSIONS.can_manage_transport,
         can_manage_finance: Boolean(p.can_manage_finance),
         can_manage_members: Boolean(p.can_manage_members),
+        can_view_sensitive_profiles: Boolean(p.can_view_sensitive_profiles),
       },
       member_type: String(raw.member_type || 'Member'),
       year_of_study: String(raw.year_of_study || ''),
@@ -321,6 +328,7 @@ export default function Page() {
       bank_qr_url: String(raw.bank_qr_url || ''),
       allow_whatsapp_chat: Boolean(raw.allow_whatsapp_chat),
       notifications_read_at: raw.notifications_read_at ? String(raw.notifications_read_at) : undefined,
+      public_chat_read_at: raw.public_chat_read_at ? String(raw.public_chat_read_at) : undefined,
       created_at: String(raw.created_at || ''),
     };
   };
@@ -384,8 +392,11 @@ export default function Page() {
       if (meProfile.role === 'member') setRoleMode('member');
     }
 
-    const callerIsAdmin = meProfile?.role === 'treasurer' || meProfile?.role === 'owner';
     const callerIsOwner = meProfile?.role === 'owner';
+    const callerCanViewSensitive =
+      callerIsOwner ||
+      (meProfile?.role === 'treasurer' &&
+        Boolean(meProfile.admin_permissions?.can_view_sensitive_profiles));
 
     const [
       bRes,
@@ -409,7 +420,7 @@ export default function Page() {
       supabase.from('claims').select('*').order('created_at', { ascending: false }),
       supabase.from('event_rsvps').select('*'),
       supabase.from('activity_fee_payments').select('*').order('created_at', { ascending: false }),
-      callerIsAdmin
+      callerCanViewSensitive
         ? supabase.from('users').select('*').order('full_name', { ascending: true })
         : supabase.from('users_public').select('*').order('full_name', { ascending: true }),
       supabase.from('ledger_entries').select('*').order('created_at', { ascending: false }),
@@ -1138,6 +1149,25 @@ export default function Page() {
     );
   const uniqueBatches = Array.from(new Set([currentBatch, ...allMembers.map((m) => m.batch_year || '2026/2027')]));
   const filteredMembers = allMembers.filter((m) => batchFilter === 'ALL' || (m.batch_year || '2026/2027') === batchFilter);
+  const canViewSensitiveProfiles = Boolean(
+    isOwner || (isAdminOrOwner && effectivePermissions.can_view_sensitive_profiles)
+  );
+
+  const handleOpenMemberProfile = (hint: MemberLookupHint) => {
+    const matched = findMemberRecord(allMembers, hint);
+    if (matched) {
+      setProfileModalMember(matched);
+      return;
+    }
+    if (hint.name) {
+      showToast(`No registered ClubSync member matched "${hint.name}".`);
+    }
+  };
+
+  const handleOpenMemberDirect = (member: ChatDirectoryMember | UserProfile) => {
+    const matched = allMembers.find((m) => m.id === member.id);
+    setProfileModalMember(matched || member);
+  };
 
   return (
     <div
@@ -1590,6 +1620,7 @@ export default function Page() {
                 profile={profile}
                 isAdmin={isAdminOrOwner && effectivePermissions.can_manage_equipment}
                 logs={activityLogs}
+                onOpenMemberProfile={handleOpenMemberProfile}
                 onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
@@ -1682,9 +1713,20 @@ export default function Page() {
                             </div>
                           </td>
                           <td className="py-3 px-4">
-                            <div className="font-semibold">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleOpenMemberProfile({
+                                  userId: c.user_id,
+                                  matricNo: c.matric_no,
+                                  name: c.claimant_name,
+                                })
+                              }
+                              className="font-semibold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                              title="View member profile"
+                            >
                               {c.claimant_name} ({c.matric_no})
-                            </div>
+                            </button>
                             {bankStr && <div className="text-[11px] font-mono text-slate-500">{bankStr}</div>}
                           </td>
                           <td className="py-3 px-4 font-extrabold">RM {Number(c.amount).toFixed(2)}</td>
@@ -1864,6 +1906,7 @@ export default function Page() {
                 externalOpenModal={quickAdjustFinanceOpen}
                 onCloseExternalModal={() => setQuickAdjustFinanceOpen(false)}
                 onSelectClaim={(c: Claim) => setSelectedClaim(c)}
+                onOpenMemberProfile={handleOpenMemberProfile}
                 onRefresh={(m: string) => {
                   fetchAllData();
                   showToast(m);
@@ -2108,12 +2151,12 @@ export default function Page() {
                       onClick={() => {
                         const csv = [
                           'Name,Matric,Phone,Dorm,Batch,Department,Role',
-                          ...filteredMembers.map(
-                            (m) =>
-                              `"${m.full_name}","${m.matric_no}","${m.phone_number}","${m.dormitory}","${
-                                m.batch_year || currentBatch
-                              }","${m.member_type}","${m.role}"`
-                          ),
+                          ...filteredMembers.map((m) => {
+                            const showSens = canViewSensitiveProfiles || m.id === profile.id;
+                            return `"${m.full_name}","${m.matric_no}","${showSens ? m.phone_number : 'Restricted'}","${showSens ? m.dormitory : 'Restricted'}","${
+                              m.batch_year || currentBatch
+                            }","${m.member_type}","${m.role}"`;
+                          }),
                         ].join('\n');
                         const a = document.createElement('a');
                         a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -2143,20 +2186,32 @@ export default function Page() {
                       {filteredMembers.map((m) => {
                         const isThisOwner = m.role === 'owner' || (ownerUserId !== null && m.id === ownerUserId);
                         const isThisAdmin = m.role === 'treasurer' && !isThisOwner;
-                        const pCount = Object.values(m.admin_permissions || {}).filter(Boolean).length;
+                        const pCount = PERMISSION_LABELS.filter((lbl) =>
+                          Boolean(m.admin_permissions?.[lbl.key])
+                        ).length;
                         const unreturnedLoans = equipmentLoans.filter((l) => l.user_id === m.id && l.status !== 'Returned');
+                        const canSeeMemberContact = canViewSensitiveProfiles || m.id === profile.id;
                         return (
                           <tr key={m.id}>
                             <td className="py-3 px-4">
-                              <div className="font-bold">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenMemberDirect(m)}
+                                className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                                title="View member profile"
+                              >
                                 {m.full_name} ({m.matric_no})
-                              </div>
+                              </button>
                               <div className="text-[11px] text-slate-400">
                                 {m.member_type} • Batch {m.batch_year || currentBatch}
                               </div>
                             </td>
                             <td className="py-3 px-4 font-mono">
-                              {m.phone_number} • {m.dormitory || '-'}
+                              {canSeeMemberContact ? (
+                                `${m.phone_number} • ${m.dormitory || '-'}`
+                              ) : (
+                                <span className="text-slate-400 font-sans italic">Restricted</span>
+                              )}
                             </td>
                             <td className="py-3 px-4">
                               {unreturnedLoans.length === 0 ? (
@@ -2176,7 +2231,7 @@ export default function Page() {
                                 </span>
                               ) : isThisAdmin ? (
                                 <span className="px-2.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-900">
-                                  Admin ({pCount}/7)
+                                  Admin ({pCount}/8)
                                 </span>
                               ) : (
                                 'Member'
@@ -2189,7 +2244,7 @@ export default function Page() {
                                     type="button"
                                     onClick={() => {
                                       setPermModalTarget(m);
-                                      setEditingPerms(m.admin_permissions || DEFAULT_ADMIN_PERMISSIONS);
+                                      setEditingPerms({ ...DEFAULT_ADMIN_PERMISSIONS, ...(m.admin_permissions || {}) });
                                     }}
                                     className="px-2.5 py-1 rounded-lg font-bold bg-emerald-50 text-emerald-900 border border-emerald-200 cursor-pointer"
                                   >
@@ -2511,13 +2566,13 @@ export default function Page() {
                 fetchAllData();
                 showToast('Permissions updated');
               }}
-              className="p-6 space-y-2.5 text-xs"
+              className="p-6 space-y-2.5 text-xs max-h-[75vh] overflow-y-auto"
             >
               {PERMISSION_LABELS.map((item) => (
                 <label key={item.key} className="flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={editingPerms[item.key]}
+                    checked={Boolean(editingPerms[item.key])}
                     onChange={(e) => setEditingPerms((p) => ({ ...p, [item.key]: e.target.checked }))}
                     className="mt-0.5"
                   />
@@ -2569,6 +2624,7 @@ export default function Page() {
         paymentBankInfo={paymentBankInfo}
         onClose={() => setOpsModalEvent(null)}
         onOpenScanner={() => setIsQrScannerOpen(true)}
+        onOpenMemberProfile={handleOpenMemberProfile}
         onRefresh={(m: string) => {
           showToast(m);
           fetchAllData();
@@ -2601,6 +2657,7 @@ export default function Page() {
         isClaimantOwner={isUserClubOwner(selectedClaim?.user_id)}
         approvalThreshold={claimThreshold}
         onClose={() => setSelectedClaim(null)}
+        onOpenMemberProfile={handleOpenMemberProfile}
         onUpdated={(m: string) => {
           showToast(m);
           fetchAllData();
@@ -2618,6 +2675,7 @@ export default function Page() {
         feePayments={activeFeePayments}
         profile={profile}
         logs={activityLogs}
+        onOpenMemberProfile={handleOpenMemberProfile}
         onSuccess={(m: string) => {
           showToast(m);
           fetchAllData();
@@ -2628,6 +2686,23 @@ export default function Page() {
         logs={activityLogs}
         onClose={() => setHistoryTarget(null)}
       />
+      <MemberProfileModal
+        isOpen={Boolean(profileModalMember)}
+        onClose={() => setProfileModalMember(null)}
+        member={profileModalMember}
+        viewerProfile={profile}
+        canViewSensitiveProfiles={canViewSensitiveProfiles}
+        isViewerAdmin={profile.role === 'treasurer' || profile.role === 'owner'}
+        claims={activeClaims}
+        equipmentLoans={activeEquipmentLoans}
+        feePayments={activeFeePayments}
+        eventRsvps={activeRsvps}
+        budgets={activeBudgets}
+        onMessageInChat={(targetUid) => {
+          setChatDmTargetUserId(targetUid);
+          setIsChatOpen(true);
+        }}
+      />
       <FloatingChatDock
         profile={profile}
         departments={departments}
@@ -2635,6 +2710,13 @@ export default function Page() {
         onToggleOpen={setIsChatOpen}
         unreadCount={unreadChatCount}
         onUnreadCountChange={setUnreadChatCount}
+        isAdminMode={isAdminOrOwner}
+        onOpenMemberProfile={(member) => handleOpenMemberDirect(member)}
+        openDmWithUserId={chatDmTargetUserId}
+        onClearOpenDmTarget={() => setChatDmTargetUserId(null)}
+        onUpdatedPublicReadAt={(iso) =>
+          setProfile((prev) => (prev ? { ...prev, public_chat_read_at: iso } : prev))
+        }
       />
     </div>
   );
