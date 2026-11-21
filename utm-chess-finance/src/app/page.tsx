@@ -25,6 +25,7 @@ import {
   isEntryPassMode,
   exportMultiSheetExcel,
   ActivityLogEntry,
+  ClubNotificationItem,
   DEFAULT_CLAIM_APPROVAL_THRESHOLD,
   logActivity,
 } from '@/lib/supabase';
@@ -40,7 +41,8 @@ import QrScannerModal from '@/components/QrScannerModal';
 import LedgerSection, { LedgerEntryItem } from '@/components/LedgerSection';
 import ActivityLogSection from '@/components/ActivityLogSection';
 import RecordHistoryModal, { HistoryModalTarget } from '@/components/RecordHistoryModal';
-import FloatingChatWidget from '@/components/FloatingChatWidget';
+import NotificationBell from '@/components/NotificationBell';
+import FloatingChatDock from '@/components/FloatingChatDock';
 import {
   filterActiveRecords,
   softDeleteRecord,
@@ -225,6 +227,7 @@ export default function Page() {
   const [polls, setPolls] = useState<Poll[]>([]);
   const [pollVotes, setPollVotes] = useState<PollVote[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>([]);
+  const [clubNotifications, setClubNotifications] = useState<ClubNotificationItem[]>([]);
   const [claimThreshold, setClaimThreshold] = useState<number>(DEFAULT_CLAIM_APPROVAL_THRESHOLD);
   const [claimThresholdInput, setClaimThresholdInput] = useState<string>(String(DEFAULT_CLAIM_APPROVAL_THRESHOLD));
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -317,6 +320,7 @@ export default function Page() {
       bank_account_holder: String(raw.bank_account_holder || ''),
       bank_qr_url: String(raw.bank_qr_url || ''),
       allow_whatsapp_chat: Boolean(raw.allow_whatsapp_chat),
+      notifications_read_at: raw.notifications_read_at ? String(raw.notifications_read_at) : undefined,
       created_at: String(raw.created_at || ''),
     };
   };
@@ -399,6 +403,7 @@ export default function Page() {
       pRes,
       pvRes,
       logRes,
+      notifRes,
     ] = await Promise.all([
       supabase.from('budgets').select('*').order('event_date', { ascending: true }),
       supabase.from('claims').select('*').order('created_at', { ascending: false }),
@@ -419,6 +424,7 @@ export default function Page() {
       supabase.from('polls').select('*').order('created_at', { ascending: false }),
       supabase.from('poll_votes').select('*'),
       supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(1000),
+      supabase.from('club_notifications').select('*').order('created_at', { ascending: false }).limit(40),
     ]);
 
     if (bRes.data) setBudgets(bRes.data as Budget[]);
@@ -451,6 +457,7 @@ export default function Page() {
     if (pRes.data) setPolls(pRes.data as Poll[]);
     if (pvRes.data) setPollVotes(pvRes.data as PollVote[]);
     if (logRes.data) setActivityLogs(logRes.data as ActivityLogEntry[]);
+    if (notifRes.data) setClubNotifications(notifRes.data as ClubNotificationItem[]);
 
     if (pinRes.data) {
       const pinRow = pinRes.data as { admin_pin?: string | null; owner_pin?: string | null };
@@ -1173,8 +1180,33 @@ export default function Page() {
           onSelectTab={setActiveTab}
           currentBatch={currentBatch}
           roleMode={isAdminOrOwner ? roleMode : 'member'}
-          unreadChatCount={unreadChatCount}
-          onToggleChat={() => setIsChatOpen((v) => !v)}
+          notificationBell={
+            <NotificationBell
+              profile={profile}
+              isAdminOrOwner={isAdminOrOwner}
+              isOwner={isOwner}
+              permissions={effectivePermissions}
+              claimThreshold={claimThreshold}
+              budgets={activeBudgets}
+              rsvps={activeRsvps}
+              feePayments={activeFeePayments}
+              claims={activeClaims}
+              equipmentLoans={activeEquipmentLoans}
+              notifications={clubNotifications}
+              unreadChatCount={unreadChatCount}
+              darkMode={isDarkCanvas}
+              onNavigateTab={(tab) => setActiveTab(tab)}
+              onOpenEventOps={(budget, eventTab) => {
+                setActiveTab('activities');
+                setOpsModalEvent(budget);
+                setOpsModalTab(eventTab);
+              }}
+              onOpenChat={() => setIsChatOpen(true)}
+              onMarkedRead={(newReadIso) =>
+                setProfile((p) => (p ? { ...p, notifications_read_at: newReadIso } : p))
+              }
+            />
+          }
           darkMode={isDarkCanvas}
           onToggleDarkMode={toggleDarkMode}
           canCustomizeTheme={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
@@ -1209,7 +1241,7 @@ export default function Page() {
         />
 
         {toastMessage && (
-          <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-500/40">
+          <div className="fixed bottom-20 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-500/40">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             <span>{toastMessage}</span>
           </div>
@@ -2565,6 +2597,7 @@ export default function Page() {
         onSelectClaim={(c: Claim) => setSelectedClaim(c)}
         profile={{ ...profile, role: isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? (isOwner ? 'owner' : 'treasurer') : 'member' }}
         isOwner={isOwner}
+        ownerUserId={ownerUserId}
         isClaimantOwner={isUserClubOwner(selectedClaim?.user_id)}
         approvalThreshold={claimThreshold}
         onClose={() => setSelectedClaim(null)}
@@ -2595,7 +2628,7 @@ export default function Page() {
         logs={activityLogs}
         onClose={() => setHistoryTarget(null)}
       />
-      <FloatingChatWidget
+      <FloatingChatDock
         profile={profile}
         departments={departments}
         isOpen={isChatOpen}

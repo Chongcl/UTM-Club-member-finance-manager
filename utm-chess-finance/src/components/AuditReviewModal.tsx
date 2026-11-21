@@ -18,6 +18,7 @@ import {
   softDeleteRecord,
   getRecordHistory,
 } from '@/lib/history';
+import { emitClubNotification } from '@/lib/notifications';
 import {
   DuplicateClaimMatch,
   findDuplicateClaims,
@@ -61,6 +62,8 @@ interface AuditReviewModalProps {
   profile: UserProfile;
   /** True only for the club Owner (President / Advisor) acting in Owner mode. */
   isOwner?: boolean;
+  /** Database UUID of club Owner so Stage 1 verification can notify them. */
+  ownerUserId?: string | null;
   /** True when the claimant who submitted this claim is the club Owner. */
   isClaimantOwner?: boolean;
   /** Claims above this RM amount need Treasurer verification + Owner approval. */
@@ -80,6 +83,7 @@ export default function AuditReviewModal({
   onSelectClaim,
   profile,
   isOwner = false,
+  ownerUserId = null,
   isClaimantOwner = false,
   approvalThreshold = 200,
   onClose,
@@ -244,6 +248,28 @@ export default function AuditReviewModal({
           { field: 'Stage 1 Verification', before: claim.treasurer_verified_by || '(pending)', after: myLabel },
         ]),
       });
+      if (claim.user_id) {
+        void emitClubNotification({
+          targetUserId: claim.user_id,
+          type: 'claim',
+          title: `Claim Stage 1 Verified: ${claim.title}`,
+          body: `RM ${Number(claim.amount).toFixed(2)} verified by Treasurer — awaiting Owner approval.`,
+          targetTab: 'claims',
+          targetId: claim.id,
+          actorName: profile.full_name,
+        });
+      }
+      if (ownerUserId && ownerUserId !== claim.user_id && ownerUserId !== profile.id) {
+        void emitClubNotification({
+          targetUserId: ownerUserId,
+          type: 'claim',
+          title: `Owner Approval Needed: ${claim.title}`,
+          body: `${claim.claimant_name} • RM ${Number(claim.amount).toFixed(2)} passed Treasurer check.`,
+          targetTab: 'claims',
+          targetId: claim.id,
+          actorName: profile.full_name,
+        });
+      }
       onUpdated('Stage 1 done — sent to President / Advisor for final approval.');
       onClose();
     } finally {
@@ -347,6 +373,17 @@ export default function AuditReviewModal({
           { field: 'Review Remarks', before: claim.review_remarks || '', after: remarkText },
         ]),
       });
+      if (claim.user_id) {
+        void emitClubNotification({
+          targetUserId: claim.user_id,
+          type: 'claim',
+          title: `Claim ${decision}: ${claim.title}`,
+          body: `RM ${Number(claim.amount).toFixed(2)}${remarks.trim() ? ` — ${remarks.trim()}` : ''}`,
+          targetTab: 'claims',
+          targetId: claim.id,
+          actorName: profile.full_name,
+        });
+      }
       onUpdated(`Claim ${decision.toLowerCase()}!`);
       onClose();
     } catch (err: unknown) {

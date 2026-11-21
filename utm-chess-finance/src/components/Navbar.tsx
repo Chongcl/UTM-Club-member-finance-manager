@@ -2,14 +2,14 @@
 
 import React, { useState } from 'react';
 import { UserProfile } from '@/lib/supabase';
-import { Menu, X, Calendar, Receipt, UserCheck, Wallet, Users, PlusCircle, Lock, Unlock, KeyRound, LogOut, Layers, Loader2, Package, QrCode, Crown, Moon, Sun, Palette, FileText, ShieldCheck, MessageCircle } from 'lucide-react';
+import { Menu, X, Calendar, Receipt, UserCheck, Wallet, Users, PlusCircle, Lock, Unlock, KeyRound, LogOut, Layers, Loader2, Package, QrCode, Crown, Moon, Sun, Palette, FileText, ShieldCheck } from 'lucide-react';
 
 export type NavTab = 'activities' | 'equipment' | 'claims' | 'profile' | 'ledger' | 'members' | 'logs';
 
 interface NavbarProps {
   profile: UserProfile; clubName: string; logoUrl?: string; activeTab: NavTab; onSelectTab: (tab: NavTab) => void;
   currentBatch?: string; roleMode: 'member' | 'admin' | 'owner'; pendingClaimsCount?: number;
-  unreadChatCount?: number; onToggleChat?: () => void;
+  notificationBell?: React.ReactNode;
   darkMode?: boolean; onToggleDarkMode?: () => void; canCustomizeTheme?: boolean; onOpenThemeStudio?: () => void;
   onUnlockAdmin: (pin: string) => Promise<boolean>;
   onSwitchMode: (target: 'member' | 'admin' | 'owner') => Promise<void>;
@@ -19,7 +19,7 @@ interface NavbarProps {
 
 export default function Navbar({
   profile, clubName, logoUrl = '', activeTab, onSelectTab, currentBatch = '2026/2027', roleMode, pendingClaimsCount = 0,
-  unreadChatCount = 0, onToggleChat,
+  notificationBell,
   darkMode = false, onToggleDarkMode, canCustomizeTheme = false, onOpenThemeStudio,
   onUnlockAdmin, onSwitchMode, onSignOut, onOpenNewClaim, onOpenQrScanner,
   onOpenNewActivity, onOpenNewFinance, switchingRole = false,
@@ -82,16 +82,7 @@ export default function Navbar({
             {onToggleDarkMode && (
               <button type="button" onClick={onToggleDarkMode} className={`p-2 rounded-xl border transition cursor-pointer ${darkMode ? 'bg-white/10 border-white/15 text-amber-300' : 'bg-slate-100 border-slate-200 text-slate-700'}`} title="Toggle Dark / Light Mode">{darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}</button>
             )}
-            {onToggleChat && (
-              <button type="button" onClick={onToggleChat} className={`relative p-2 rounded-xl border transition cursor-pointer ${darkMode ? 'bg-white/10 border-white/15 text-emerald-300 hover:bg-white/15' : 'bg-slate-100 border-slate-200 text-emerald-700 hover:bg-slate-200'}`} title="Club Chat" aria-label="Club Chat">
-                <MessageCircle className="w-4 h-4" />
-                {unreadChatCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-extrabold flex items-center justify-center">
-                    {unreadChatCount > 99 ? '99+' : unreadChatCount}
-                  </span>
-                )}
-              </button>
-            )}
+            {notificationBell}
             <button type="button" onClick={onOpenQrScanner} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-950 hover:bg-slate-900 text-white border border-white/15 shadow-sm cursor-pointer"><QrCode className="w-4 h-4" /><span>Scan QR</span></button>
             <button type="button" onClick={onOpenNewClaim} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500 cursor-pointer"><PlusCircle className="w-4 h-4 text-white" /><span className="hidden sm:inline">Submit Claim</span></button>
           </div>

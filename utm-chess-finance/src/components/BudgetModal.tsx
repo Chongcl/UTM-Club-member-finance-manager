@@ -13,6 +13,7 @@ import {
   isEntryPassMode,
 } from '@/lib/supabase';
 import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
+import { emitClubNotification } from '@/lib/notifications';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import {
   X,
@@ -191,6 +192,14 @@ export default function BudgetModal({
         if (error) {
           await supabase.from('budgets').insert({ ...basePayload, allocated_amount: 0, spent_amount: 0 });
         }
+        void emitClubNotification({
+          targetUserId: null,
+          type: 'activity',
+          title: `New Activity: ${basePayload.event_name}`,
+          body: `${basePayload.event_date}${basePayload.event_time ? ` • ${basePayload.event_time}` : ''} @ ${basePayload.location}`,
+          targetTab: 'activities',
+          actorName: profile?.full_name || '',
+        });
         onSuccess(`Published "${eventName.trim()}"!`);
       }
       onClose();
@@ -436,6 +445,19 @@ export default function BudgetModal({
                                       changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Verified' }]),
                                     });
                                   }
+                                  if (p.user_id) {
+                                    void emitClubNotification({
+                                      targetUserId: p.user_id,
+                                      type: 'fee',
+                                      title: `Fee Payment Verified — ${eventName || 'Activity'}`,
+                                      body: `RM ${Number(p.amount_paid).toFixed(2)} receipt verified.${
+                                        passRule === 'auto_after_payment' ? ' Your Entry Pass QR is now unlocked.' : ''
+                                      }`,
+                                      targetTab: 'activities',
+                                      targetId: eventId,
+                                      actorName: profile?.full_name || '',
+                                    });
+                                  }
                                   onSuccess('Verified!');
                                 }}
                                 className="px-2 py-1 rounded bg-emerald-600 text-white font-bold cursor-pointer"
@@ -456,6 +478,17 @@ export default function BudgetModal({
                                       recordId: p.id,
                                       recordTitle: `${p.student_name} fee`,
                                       changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Rejected' }]),
+                                    });
+                                  }
+                                  if (p.user_id) {
+                                    void emitClubNotification({
+                                      targetUserId: p.user_id,
+                                      type: 'fee',
+                                      title: `Fee Payment Rejected — ${eventName || 'Activity'}`,
+                                      body: `Your RM ${Number(p.amount_paid).toFixed(2)} receipt was rejected. Please re-upload or contact Treasurer.`,
+                                      targetTab: 'activities',
+                                      targetId: eventId,
+                                      actorName: profile?.full_name || '',
                                     });
                                   }
                                   onSuccess('Rejected.');
@@ -528,7 +561,27 @@ export default function BudgetModal({
                           <td className="py-2 px-3">{p.dormitory || '-'}</td>
                           <td className="py-2 px-3">{p.transport_type}</td>
                           <td className="py-2 px-3">
-                            <select value={p.assigned_driver_name || ''} onChange={async (e) => { await supabase.from('event_rsvps').update({ assigned_driver_name: e.target.value }).eq('id', p.id); onSuccess('Assigned!'); }} className="rounded border px-2 py-1 font-bold">
+                            <select value={p.assigned_driver_name || ''} onChange={async (e) => {
+                              const nextDriver = e.target.value;
+                              await supabase.from('event_rsvps').update({ assigned_driver_name: nextDriver }).eq('id', p.id);
+                              if (nextDriver && p.user_id) {
+                                const drv = eventDrivers.find((d) => d.student_name === nextDriver);
+                                void emitClubNotification({
+                                  targetUserId: p.user_id,
+                                  type: 'carpool',
+                                  title: `Carpool Assigned — ${eventName || 'Activity'}`,
+                                  body: `Driver: ${nextDriver}${
+                                    drv?.pickup_time || drv?.pickup_point
+                                      ? ` (${drv.pickup_time || 'Time TBA'} @ ${drv.pickup_point || 'Point TBA'})`
+                                      : ''
+                                  }`,
+                                  targetTab: 'activities',
+                                  targetId: eventId,
+                                  actorName: profile?.full_name || '',
+                                });
+                              }
+                              onSuccess('Assigned!');
+                            }} className="rounded border px-2 py-1 font-bold">
                               <option value="">-- Unassigned --</option>
                               {eventDrivers.map((d) => (<option key={d.id} value={d.student_name}>{d.student_name}</option>))}
                             </select>

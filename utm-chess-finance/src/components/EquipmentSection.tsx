@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, EquipmentItem, EquipmentLoan, UserProfile, ActivityLogEntry, logActivity } from '@/lib/supabase';
 import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
+import { emitClubNotification } from '@/lib/notifications';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import {
   localDateStr,
@@ -590,6 +591,20 @@ export default function EquipmentSection({
         { field: 'Loan Status', before: loan.status, after: decision === 'Approved' ? 'Borrowed' : 'Returned' },
       ]),
     });
+    if (loan.user_id) {
+      void emitClubNotification({
+        targetUserId: loan.user_id,
+        type: 'equipment',
+        title: `Equipment Request ${decision}: ${loan.quantity}x ${loan.item_name}`,
+        body:
+          decision === 'Approved'
+            ? `Approved for ${loan.borrow_date} → ${loan.return_date}. Ready for pickup.`
+            : `Your request for ${loan.quantity}x ${loan.item_name} was rejected.`,
+        targetTab: 'equipment',
+        targetId: loan.id,
+        actorName: profile.full_name,
+      });
+    }
     onRefresh(
       decision === 'Approved'
         ? `Approved ${loan.borrower_name}'s request — ready for pickup.`

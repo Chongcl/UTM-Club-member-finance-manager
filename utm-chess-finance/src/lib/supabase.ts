@@ -99,6 +99,28 @@ export interface UserProfile {
   bank_account_holder?: string;
   bank_qr_url?: string;
   allow_whatsapp_chat?: boolean;
+  notifications_read_at?: string;
+  created_at: string;
+}
+
+export type ClubNotificationType =
+  | 'activity'
+  | 'announcement'
+  | 'poll'
+  | 'equipment'
+  | 'claim'
+  | 'fee'
+  | 'carpool';
+
+export interface ClubNotificationItem {
+  id: string;
+  target_user_id: string | null;
+  type: ClubNotificationType | string;
+  title: string;
+  body: string;
+  target_tab: string;
+  target_id: string;
+  actor_name: string;
   created_at: string;
 }
 

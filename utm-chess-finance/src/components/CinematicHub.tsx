@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, Announcement, Poll, PollVote, UserProfile, ActivityLogEntry, MAX_FILE_SIZE_BYTES } from '@/lib/supabase';
 import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
+import { emitClubNotification } from '@/lib/notifications';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import { Sparkles, ChevronLeft, ChevronRight, ExternalLink, Pin, BarChart2, PlusCircle, Trash2, X, CheckCircle2, Megaphone, Maximize2, Edit3, Eye, EyeOff, History } from 'lucide-react';
 
@@ -129,6 +130,14 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
         });
       } else {
         await supabase.from('announcements').insert(payload);
+        void emitClubNotification({
+          targetUserId: null,
+          type: 'announcement',
+          title: `New Announcement: ${payload.title}`,
+          body: payload.content ? payload.content.slice(0, 140) : payload.subtitle || 'Check club notices.',
+          targetTab: 'activities',
+          actorName: profile.full_name,
+        });
       }
       setPosterFile(null);
       setEditingNotice(null);
@@ -179,6 +188,14 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
     await supabase
       .from('polls')
       .insert({ question: cleanQ, options: opts, show_results: newPollShowNumbers, is_active: true, created_by: profile.full_name });
+    void emitClubNotification({
+      targetUserId: null,
+      type: 'poll',
+      title: `New Poll: ${cleanQ}`,
+      body: `${opts.length} options — cast your vote now!`,
+      targetTab: 'activities',
+      actorName: profile.full_name,
+    });
     setPollQuestion(''); setShowPollModal(false); onRefresh('Poll published!');
   };
 

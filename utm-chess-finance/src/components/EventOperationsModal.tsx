@@ -18,6 +18,7 @@ import {
   logActivity,
 } from '@/lib/supabase';
 import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
+import { emitClubNotification } from '@/lib/notifications';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import { waLink, formatPickupTime } from '@/lib/whatsapp';
 import {
@@ -449,6 +450,27 @@ export default function EventOperationsModal({
           decision === 'Rejected' && reason ? ` — Reason: ${reason}` : ''
         }`
       );
+      if (p.user_id) {
+        void emitClubNotification({
+          targetUserId: p.user_id,
+          type: 'fee',
+          title:
+            decision === 'Verified'
+              ? `Fee Verified — ${event.event_name}`
+              : `Fee Rejected — ${event.event_name}`,
+          body:
+            decision === 'Verified'
+              ? `RM ${confirmedAmt.toFixed(2)} confirmed.${
+                  passRule === 'auto_after_payment' ? ' Your Entry Pass is now unlocked.' : ''
+                }`
+              : reason
+              ? `RM ${confirmedAmt.toFixed(2)} rejected: ${reason}`
+              : `Your RM ${confirmedAmt.toFixed(2)} receipt was rejected.`,
+          targetTab: 'activities',
+          targetId: event.id,
+          actorName: profile.full_name,
+        });
+      }
       onRefresh(
         decision === 'Verified'
           ? `✓ Verified RM ${confirmedAmt.toFixed(2)} for ${p.student_name}${passRule === 'auto_after_payment' ? ' (Entry Pass unlocked)' : ''}!`
@@ -626,6 +648,22 @@ export default function EventOperationsModal({
         ? `${driverName} assigned to pick up ${passenger.student_name} (${passenger.matric_no}) for "${event.event_name}"`
         : `${profile.full_name} released passenger ${passenger.student_name} (${passenger.matric_no}) for "${event.event_name}"`
     );
+    if (driverName && passenger.user_id) {
+      const drv = eventDrivers.find((d) => d.student_name === driverName);
+      void emitClubNotification({
+        targetUserId: passenger.user_id,
+        type: 'carpool',
+        title: `Carpool Assigned — ${event.event_name}`,
+        body: `Driver: ${driverName}${
+          drv?.pickup_time || drv?.pickup_point
+            ? ` (${formatPickupTime(drv.pickup_time) || 'Time TBA'} @ ${drv.pickup_point || 'Point TBA'})`
+            : ''
+        }`,
+        targetTab: 'activities',
+        targetId: event.id,
+        actorName: profile.full_name,
+      });
+    }
     onRefresh(driverName ? `${driverName} assigned to pick up ${passenger.student_name}!` : `Released ${passenger.student_name}.`);
   };
 
