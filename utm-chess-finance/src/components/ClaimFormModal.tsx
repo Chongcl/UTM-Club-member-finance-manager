@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   supabase,
   Budget,
@@ -31,6 +31,7 @@ import {
   Trash2,
   AlertTriangle,
   Receipt,
+  FileText,
   GitCompare,
   ArrowLeft,
   ArrowRight,
@@ -90,6 +91,7 @@ export default function ClaimFormModal({
   const [bankAccountHolder, setBankAccountHolder] = useState('');
   const [claimantQrUrl, setClaimantQrUrl] = useState('');
   const [claimantQrFile, setClaimantQrFile] = useState<File | null>(null);
+  const [localQrPreviewUrl, setLocalQrPreviewUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [localFilePreviewUrl, setLocalFilePreviewUrl] = useState<string | null>(null);
   const [uploadedReceiptUrl, setUploadedReceiptUrl] = useState<string | null>(null);
@@ -99,6 +101,7 @@ export default function ClaimFormModal({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
     if (!file || file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
@@ -113,27 +116,61 @@ export default function ClaimFormModal({
   }, [file]);
 
   useEffect(() => {
+    if (
+      !claimantQrFile ||
+      claimantQrFile.type === 'application/pdf' ||
+      claimantQrFile.name.toLowerCase().endsWith('.pdf')
+    ) {
+      setLocalQrPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(claimantQrFile);
+    setLocalQrPreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [claimantQrFile]);
+
+  useEffect(() => {
     setConfirmNotDuplicate(false);
   }, [amount, expenseDate, merchantName, file]);
 
   useEffect(() => {
-    if (!isOpen) {
-      setUploadedReceiptUrl(null);
-      setCompareMatch(null);
-      setConfirmNotDuplicate(false);
+    if (isOpen && !wasOpenRef.current) {
+      setErrorMsg(null);
       setStep(1);
-      return;
+      setSelectedEventOption(budgets[0]?.id || 'OTHER');
+      setIncludePaymentDetails(true);
+      setBankName(profile.bank_name || '');
+      setBankAccountNo(profile.bank_account_no || '');
+      setBankAccountHolder(profile.bank_account_holder || profile.full_name || '');
+      setClaimantQrUrl(profile.bank_qr_url || '');
+      setClaimantQrFile(null);
+    } else if (!isOpen && wasOpenRef.current) {
+      setStep(1);
+      setErrorMsg(null);
+      setSelectedEventOption(budgets[0]?.id || 'OTHER');
+      setCustomEventName('');
+      setTitle('');
+      setAmount('');
+      setMerchantName('');
+      setDescription('');
+      setLineItems([{ id: 'row-1', shop: '', amount: '' }]);
+      setExtraFileNames([]);
+      setFile(null);
+      setUploadedReceiptUrl(null);
+      setScannedData(null);
+      setConfirmNotDuplicate(false);
+      setCompareMatch(null);
+      setIncludePaymentDetails(true);
+      setBankName('');
+      setBankAccountNo('');
+      setBankAccountHolder('');
+      setClaimantQrUrl('');
+      setClaimantQrFile(null);
     }
-    setErrorMsg(null);
-    if (budgets.length > 0 && !budgets.some((b) => b.id === selectedEventOption) && !customEventName) {
-      setSelectedEventOption(budgets[0].id);
-    }
-    setBankName(profile.bank_name || '');
-    setBankAccountNo(profile.bank_account_no || '');
-    setBankAccountHolder(profile.bank_account_holder || profile.full_name || '');
-    setClaimantQrUrl(profile.bank_qr_url || '');
-    setClaimantQrFile(null);
-  }, [isOpen, profile, budgets, selectedEventOption, customEventName]);
+    wasOpenRef.current = isOpen;
+  }, [isOpen, profile, budgets]);
 
   if (!isOpen) return null;
 
@@ -283,18 +320,6 @@ export default function ClaimFormModal({
         includePaymentDetails && bankAccountNo.trim()
           ? `${bankName.trim() || 'Bank/DuitNow'} • ${bankAccountNo.trim()} (${bankAccountHolder.trim() || profile.full_name})`
           : '';
-
-      if (includePaymentDetails && (bankAccountNo.trim() || finalClaimantQr)) {
-        void supabase
-          .from('users')
-          .update({
-            bank_name: bankName.trim(),
-            bank_account_no: bankAccountNo.trim(),
-            bank_account_holder: bankAccountHolder.trim() || profile.full_name,
-            bank_qr_url: finalClaimantQr,
-          })
-          .eq('id', profile.id);
-      }
 
       let receiptUrl = uploadedReceiptUrl || '';
       if (!receiptUrl) {
@@ -762,52 +787,120 @@ export default function ClaimFormModal({
                     <span>{includePaymentDetails ? 'Include' : 'Skip'}</span>
                   </button>
                 </div>
-                {includePaymentDetails && (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                      <input
-                        type="text"
-                        value={bankName}
-                        onChange={(e) => setBankName(e.target.value)}
-                        placeholder="Bank / eWallet"
-                        className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
-                      />
-                      <input
-                        type="text"
-                        value={bankAccountNo}
-                        onChange={(e) => setBankAccountNo(e.target.value)}
-                        placeholder="Account / Phone"
-                        className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-mono font-bold"
-                      />
-                      <input
-                        type="text"
-                        value={bankAccountHolder}
-                        onChange={(e) => setBankAccountHolder(e.target.value)}
-                        placeholder="Holder Name"
-                        className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
-                      />
-                    </div>
-                    <div className="pt-1 text-xs space-y-1">
-                      <label className="block font-bold text-emerald-900">
-                        DuitNow QR (Optional)
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*,application/pdf"
-                        onChange={(e) => setClaimantQrFile(e.target.files?.[0] || null)}
-                        className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
-                      />
-                      {claimantQrUrl && !claimantQrFile && (
-                        <div className="flex items-center justify-between bg-white px-3 py-1.5 rounded-xl border text-[11px]">
-                          <span className="text-emerald-800 font-bold">✓ Profile QR attached</span>
-                          <button type="button" onClick={() => setClaimantQrUrl('')} className="text-rose-600 font-bold cursor-pointer">
-                            Remove
-                          </button>
+                {includePaymentDetails && (() => {
+                  const profileBankName = (profile.bank_name || '').trim();
+                  const profileBankAccountNo = (profile.bank_account_no || '').trim();
+                  const profileBankHolder = (profile.bank_account_holder || profile.full_name || '').trim();
+                  const profileBankQrUrl = (profile.bank_qr_url || '').trim();
+                  const hasProfilePayment = Boolean(profileBankName || profileBankAccountNo || profileBankQrUrl);
+                  const isUsingCustomPayment =
+                    bankName.trim() !== profileBankName ||
+                    bankAccountNo.trim() !== profileBankAccountNo ||
+                    bankAccountHolder.trim() !== profileBankHolder ||
+                    Boolean(claimantQrFile) ||
+                    claimantQrUrl.trim() !== profileBankQrUrl;
+
+                  const activeQrIsPdf = claimantQrFile
+                    ? claimantQrFile.type === 'application/pdf' ||
+                      claimantQrFile.name.toLowerCase().endsWith('.pdf')
+                    : claimantQrUrl.toLowerCase().split('?')[0].endsWith('.pdf');
+                  const activeQrImageSrc = claimantQrFile ? localQrPreviewUrl : claimantQrUrl || null;
+                  const hasActiveQr = Boolean(claimantQrFile || claimantQrUrl);
+
+                  return (
+                    <>
+                      {(isUsingCustomPayment || hasProfilePayment) && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                          <span className={isUsingCustomPayment ? 'text-amber-800 font-semibold' : 'text-emerald-800 font-medium'}>
+                            {isUsingCustomPayment
+                              ? "Custom for this claim only — your Profile won't be changed"
+                              : 'Auto-filled from your Profile'}
+                          </span>
+                          {isUsingCustomPayment && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBankName(profile.bank_name || '');
+                                setBankAccountNo(profile.bank_account_no || '');
+                                setBankAccountHolder(profile.bank_account_holder || profile.full_name || '');
+                                setClaimantQrUrl(profile.bank_qr_url || '');
+                                setClaimantQrFile(null);
+                              }}
+                              className="text-emerald-700 hover:underline font-bold cursor-pointer"
+                            >
+                              Reset to Profile
+                            </button>
+                          )}
                         </div>
                       )}
-                    </div>
-                  </>
-                )}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                        <input
+                          type="text"
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                          placeholder="Bank / eWallet"
+                          className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
+                        />
+                        <input
+                          type="text"
+                          value={bankAccountNo}
+                          onChange={(e) => setBankAccountNo(e.target.value)}
+                          placeholder="Account / Phone"
+                          className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-mono font-bold"
+                        />
+                        <input
+                          type="text"
+                          value={bankAccountHolder}
+                          onChange={(e) => setBankAccountHolder(e.target.value)}
+                          placeholder="Holder Name"
+                          className="rounded-xl border border-emerald-300 bg-white px-3 py-2 font-semibold"
+                        />
+                      </div>
+                      <div className="pt-1 text-xs space-y-2">
+                        <label className="block font-bold text-emerald-900">
+                          DuitNow QR (Optional)
+                        </label>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          onChange={(e) => setClaimantQrFile(e.target.files?.[0] || null)}
+                          className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+                        />
+                        {hasActiveQr && (
+                          <div className="flex items-center justify-between gap-3 bg-white px-3 py-2 rounded-xl border border-emerald-200 text-[11px]">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {activeQrIsPdf ? (
+                                <div className="w-14 h-14 rounded-lg border bg-emerald-50 flex flex-col items-center justify-center text-emerald-800 shrink-0">
+                                  <FileText className="w-5 h-5" />
+                                  <span className="text-[9px] font-extrabold">PDF</span>
+                                </div>
+                              ) : activeQrImageSrc ? (
+                                <img
+                                  src={activeQrImageSrc}
+                                  alt="Active DuitNow QR"
+                                  className="w-14 h-14 object-contain rounded-lg border bg-white shrink-0"
+                                />
+                              ) : null}
+                              <span className="text-emerald-900 font-bold truncate">
+                                {claimantQrFile ? claimantQrFile.name : '✓ Profile QR attached'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setClaimantQrFile(null);
+                                setClaimantQrUrl('');
+                              }}
+                              className="text-rose-600 hover:underline font-bold shrink-0 cursor-pointer"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               <div>

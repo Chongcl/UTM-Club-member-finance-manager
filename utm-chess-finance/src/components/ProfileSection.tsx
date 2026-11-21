@@ -22,6 +22,8 @@ import {
   Landmark,
   Download,
   Trash2,
+  FileText,
+  AlertCircle,
 } from 'lucide-react';
 
 interface ProfileSectionProps {
@@ -57,7 +59,25 @@ export default function ProfileSection({
   const [bankAccountHolder, setBankAccountHolder] = useState(profile.bank_account_holder || profile.full_name || '');
   const [bankQrUrl, setBankQrUrl] = useState(profile.bank_qr_url || '');
   const [bankQrFile, setBankQrFile] = useState<File | null>(null);
+  const [localBankQrPreviewUrl, setLocalBankQrPreviewUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (
+      !bankQrFile ||
+      bankQrFile.type === 'application/pdf' ||
+      bankQrFile.name.toLowerCase().endsWith('.pdf')
+    ) {
+      setLocalBankQrPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(bankQrFile);
+    setLocalBankQrPreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [bankQrFile]);
 
   useEffect(() => {
     setFullName(profile.full_name || '');
@@ -69,25 +89,6 @@ export default function ProfileSection({
     setIcNo(profile.ic_no || '');
     setDormitory(profile.dormitory || '');
     setHometown(profile.hometown || '');
-
-    const savedLocal =
-      typeof window !== 'undefined'
-        ? localStorage.getItem(`clubsync_bank_${profile.id}`)
-        : null;
-    if (savedLocal) {
-      try {
-        const parsed = JSON.parse(savedLocal);
-        setBankName(profile.bank_name || parsed.bank_name || '');
-        setBankAccountNo(profile.bank_account_no || parsed.bank_account_no || '');
-        setBankAccountHolder(
-          profile.bank_account_holder || parsed.bank_account_holder || profile.full_name || ''
-        );
-        setBankQrUrl(profile.bank_qr_url || parsed.bank_qr_url || '');
-        return;
-      } catch {
-        /* ignore */
-      }
-    }
     setBankName(profile.bank_name || '');
     setBankAccountNo(profile.bank_account_no || '');
     setBankAccountHolder(profile.bank_account_holder || profile.full_name || '');
@@ -96,19 +97,24 @@ export default function ProfileSection({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError(null);
     setSaving(true);
     try {
       let finalQrUrl = bankQrUrl.trim();
-      if (bankQrFile && bankQrFile.size <= MAX_FILE_SIZE_BYTES) {
+      if (bankQrFile) {
+        if (bankQrFile.size > MAX_FILE_SIZE_BYTES) {
+          setSaveError('QR file must be under 50 MB.');
+          return;
+        }
         const ext = bankQrFile.name.split('.').pop() || 'png';
         const path = `member-qr/${profile.id}-${Date.now()}.${ext}`;
         const { error: upErr } = await supabase.storage.from('receipts').upload(path, bankQrFile);
-        if (!upErr) {
-          finalQrUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
+        if (upErr) {
+          setSaveError(upErr.message || 'Could not upload QR file. Please try again.');
+          return;
         }
+        finalQrUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
       }
-      setBankQrUrl(finalQrUrl);
-      setBankQrFile(null);
 
       const bankData = {
         bank_name: bankName.trim(),
@@ -116,9 +122,6 @@ export default function ProfileSection({
         bank_account_holder: bankAccountHolder.trim() || fullName.trim(),
         bank_qr_url: finalQrUrl,
       };
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`clubsync_bank_${profile.id}`, JSON.stringify(bankData));
-      }
 
       const coreUpdates = {
         full_name: fullName.trim(),
@@ -135,8 +138,12 @@ export default function ProfileSection({
       const fullUpdates = { ...coreUpdates, ...bankData };
       const { error } = await supabase.from('users').update(fullUpdates).eq('id', profile.id);
       if (error) {
-        await supabase.from('users').update(coreUpdates).eq('id', profile.id);
+        setSaveError(error.message || 'Could not save Profile & Bank details to Supabase.');
+        return;
       }
+
+      setBankQrUrl(finalQrUrl);
+      setBankQrFile(null);
       onUpdated(fullUpdates, 'Profile, Bank & Reimbursement QR saved!');
     } finally {
       setSaving(false);
@@ -329,36 +336,72 @@ export default function ProfileSection({
                 onChange={(e) => setBankQrFile(e.target.files?.[0] || null)}
                 className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
               />
-              {bankQrUrl && (
-                <div className="p-3 rounded-xl bg-white border border-emerald-200 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    {!bankQrUrl.toLowerCase().split('?')[0].endsWith('.pdf') && (
-                      <img src={bankQrUrl} alt="My QR" className="w-14 h-14 object-contain rounded-lg border" />
-                    )}
-                    <span className="font-bold text-emerald-900">Saved Personal Payment QR</span>
+              {(bankQrFile || bankQrUrl) && (() => {
+                const isPdfQr = bankQrFile
+                  ? bankQrFile.type === 'application/pdf' || bankQrFile.name.toLowerCase().endsWith('.pdf')
+                  : bankQrUrl.toLowerCase().split('?')[0].endsWith('.pdf');
+                const previewSrc = bankQrFile ? localBankQrPreviewUrl : bankQrUrl || null;
+                return (
+                  <div className="p-3 rounded-xl bg-white border border-emerald-200 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {isPdfQr ? (
+                        <div className="w-14 h-14 rounded-lg border bg-emerald-50 flex flex-col items-center justify-center text-emerald-800 shrink-0">
+                          <FileText className="w-5 h-5" />
+                          <span className="text-[9px] font-extrabold">PDF</span>
+                        </div>
+                      ) : previewSrc ? (
+                        <img
+                          src={previewSrc}
+                          alt="My QR"
+                          className="w-14 h-14 object-contain rounded-lg border bg-white shrink-0"
+                        />
+                      ) : null}
+                      <div className="min-w-0">
+                        <span className="font-bold text-emerald-900 block truncate">
+                          {bankQrFile ? bankQrFile.name : 'Saved Personal Payment QR'}
+                        </span>
+                        {bankQrFile && (
+                          <span className="text-[10px] text-amber-700 font-semibold">
+                            Preview — click Save Profile to apply
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {!bankQrFile && bankQrUrl && (
+                        <button
+                          type="button"
+                          onClick={() => downloadFileFromUrl(bankQrUrl, `${matricNo}_Payment_QR`)}
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-bold cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5 inline mr-1" />
+                          Download
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBankQrFile(null);
+                          setBankQrUrl('');
+                        }}
+                        className="p-1.5 rounded-lg bg-rose-50 text-rose-700 cursor-pointer"
+                        title="Remove QR"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => downloadFileFromUrl(bankQrUrl, `${matricNo}_Payment_QR`)}
-                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-bold cursor-pointer"
-                    >
-                      <Download className="w-3.5 h-3.5 inline mr-1" />
-                      Download
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBankQrUrl('')}
-                      className="p-1.5 rounded-lg bg-rose-50 text-rose-700 cursor-pointer"
-                      title="Remove QR"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </div>
+
+          {saveError && (
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{saveError}</span>
+            </div>
+          )}
 
           <div className="pt-2 flex justify-end">
             <button
