@@ -1153,12 +1153,37 @@ export default function Page() {
     isOwner || (isAdminOrOwner && effectivePermissions.can_view_sensitive_profiles)
   );
 
-  const handleOpenMemberProfile = (hint: MemberLookupHint) => {
+  const handleOpenMemberProfile = async (hint: MemberLookupHint) => {
     const matched = findMemberRecord(allMembers, hint);
     if (matched) {
       setProfileModalMember(matched);
       return;
     }
+
+    if (hint.userId) {
+      const { data } = await supabase
+        .from('users_public')
+        .select('*')
+        .eq('id', hint.userId)
+        .maybeSingle();
+      if (data) {
+        setProfileModalMember(normalizeProfile(data as Record<string, unknown>));
+        return;
+      }
+    }
+
+    if (hint.matricNo?.trim()) {
+      const { data } = await supabase
+        .from('users_public')
+        .select('*')
+        .ilike('matric_no', hint.matricNo.trim())
+        .maybeSingle();
+      if (data) {
+        setProfileModalMember(normalizeProfile(data as Record<string, unknown>));
+        return;
+      }
+    }
+
     if (hint.name) {
       showToast(`No registered ClubSync member matched "${hint.name}".`);
     }
@@ -1722,7 +1747,7 @@ export default function Page() {
                                   name: c.claimant_name,
                                 })
                               }
-                              className="font-semibold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                              className="font-semibold text-emerald-900 hover:text-emerald-700 underline decoration-emerald-300 underline-offset-2 cursor-pointer text-left"
                               title="View member profile"
                             >
                               {c.claimant_name} ({c.matric_no})
@@ -2197,7 +2222,7 @@ export default function Page() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenMemberDirect(m)}
-                                className="font-bold text-slate-900 hover:text-emerald-700 hover:underline cursor-pointer text-left"
+                                className="font-bold text-emerald-900 hover:text-emerald-700 underline decoration-emerald-300 underline-offset-2 cursor-pointer text-left"
                                 title="View member profile"
                               >
                                 {m.full_name} ({m.matric_no})
@@ -2239,6 +2264,15 @@ export default function Page() {
                             </td>
                             <td className="py-3 px-4 text-right">
                               <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenMemberDirect(m)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold bg-slate-100 hover:bg-emerald-50 text-slate-800 hover:text-emerald-900 border border-slate-200 cursor-pointer"
+                                  title="Inspect member profile"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>View Profile</span>
+                                </button>
                                 {isOwner && isThisAdmin && (
                                   <button
                                     type="button"

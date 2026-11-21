@@ -25,6 +25,7 @@ import {
   PinOff,
   Trash2,
   Hash,
+  User,
 } from 'lucide-react';
 
 interface FloatingChatDockProps {
@@ -207,9 +208,7 @@ export default function FloatingChatDock({
       const [dirRes, myPartRes, pubRpcRes] = await Promise.all([
         supabase
           .from('users_public')
-          .select(
-            'id, full_name, matric_no, role, member_type, batch_year, course, year_of_study, member_status, allow_whatsapp_chat, created_at'
-          )
+          .select('*')
           .order('full_name', { ascending: true }),
         supabase
           .from('chat_participants')
@@ -376,9 +375,7 @@ export default function FloatingChatDock({
       if (!target) {
         const { data } = await supabase
           .from('users_public')
-          .select(
-            'id, full_name, matric_no, role, member_type, batch_year, course, year_of_study, member_status, allow_whatsapp_chat, created_at'
-          )
+          .select('*')
           .eq('id', openDmWithUserId)
           .maybeSingle();
         if (data) {
@@ -1014,6 +1011,17 @@ export default function FloatingChatDock({
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
+              {onOpenMemberProfile && (
+                <button
+                  type="button"
+                  onClick={() => onOpenMemberProfile(activeTarget)}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold cursor-pointer"
+                  title="Inspect member profile"
+                >
+                  <User className="w-3 h-3" />
+                  <span>Profile</span>
+                </button>
+              )}
               {activeTarget.allow_whatsapp_chat && (
                 <button
                   type="button"
@@ -1322,13 +1330,26 @@ export default function FloatingChatDock({
                           </div>
                         </div>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleOpenMemberChat(m)}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 font-bold text-[11px] shrink-0 cursor-pointer transition"
-                      >
-                        Message
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {onOpenMemberProfile && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenMemberProfile(m)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] cursor-pointer transition"
+                            title="View member profile"
+                          >
+                            <User className="w-3 h-3" />
+                            <span>Profile</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void handleOpenMemberChat(m)}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-700 font-bold text-[11px] cursor-pointer transition"
+                        >
+                          Message
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
