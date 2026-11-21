@@ -168,7 +168,11 @@ export default function Page() {
   const [logoUrl, setLogoUrl] = useState('');
   const [currentBatch, setCurrentBatch] = useState('2026/2027');
   const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
-  const [physicalCash, setPhysicalCash] = useState<number>(0);
+  const [openingBankBalance, setOpeningBankBalance] = useState<number>(0);
+  const [openingCashBalance, setOpeningCashBalance] = useState<number>(0);
+  const [openingBalanceDate, setOpeningBalanceDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
   const [bgStyle, setBgStyle] = useState('emerald-aurora');
   const [bgImageUrl, setBgImageUrl] = useState('');
@@ -458,11 +462,12 @@ export default function Page() {
           setClaimThresholdInput(String(thresh));
         }
       }
-      if (sRes.data.physical_cash !== null && sRes.data.physical_cash !== undefined) {
-        const cashVal = Number(sRes.data.physical_cash);
-        if (!isNaN(cashVal) && cashVal >= 0) {
-          setPhysicalCash(cashVal);
-        }
+      const openBank = Number(sRes.data.opening_bank_balance ?? 0);
+      const openCash = Number(sRes.data.opening_cash_balance ?? 0);
+      setOpeningBankBalance(!isNaN(openBank) ? openBank : 0);
+      setOpeningCashBalance(!isNaN(openCash) ? openCash : 0);
+      if (sRes.data.opening_balance_date) {
+        setOpeningBalanceDate(String(sRes.data.opening_balance_date).split('T')[0]);
       }
       const cName = String(sRes.data.club_name || 'ClubSync');
       const bYear = String(sRes.data.current_batch || '2026/2027');
@@ -685,7 +690,7 @@ export default function Page() {
     const evAttending = evRsvps.filter((r) => r.attendance === 'Attending');
     const evApprovedClaims = evClaims.filter((c) => c.status === 'Approved');
     const feesTotal = evPayments
-      .filter((f) => f.status !== 'Rejected')
+      .filter((f) => f.status === 'Verified')
       .reduce((s, f) => s + Number(f.amount_paid), 0);
     const reimbursedTotal = evApprovedClaims.reduce((s, c) => s + Number(c.amount), 0);
 
@@ -1779,10 +1784,30 @@ export default function Page() {
                 profile={profile}
                 logs={activityLogs}
                 canEdit={effectivePermissions.can_manage_finance}
-                physicalCash={physicalCash}
-                onUpdatePhysicalCash={async (val: number) => {
-                  setPhysicalCash(val);
-                  await supabase.from('club_settings').update({ physical_cash: val }).eq('id', 1);
+                openingBank={openingBankBalance}
+                openingCash={openingCashBalance}
+                openingDate={openingBalanceDate}
+                onSaveOpeningBalance={async ({ bank, cash, date }) => {
+                  setOpeningBankBalance(bank);
+                  setOpeningCashBalance(cash);
+                  setOpeningBalanceDate(date);
+                  const { error } = await supabase
+                    .from('club_settings')
+                    .update({
+                      opening_bank_balance: bank,
+                      opening_cash_balance: cash,
+                      opening_balance_date: date,
+                    })
+                    .eq('id', 1);
+                  if (error) throw error;
+                  void logActivity(
+                    profile,
+                    'Finance',
+                    'Updated Starting Club Savings',
+                    `${profile.full_name} (${profile.matric_no}) set Starting Savings to Bank RM ${bank.toFixed(2)} + Cash RM ${cash.toFixed(2)} (${date})`
+                  );
+                  await fetchAllData();
+                  showToast(`Starting Savings saved: RM ${(bank + cash).toFixed(2)}`);
                 }}
                 externalOpenModal={quickAdjustFinanceOpen}
                 onCloseExternalModal={() => setQuickAdjustFinanceOpen(false)}

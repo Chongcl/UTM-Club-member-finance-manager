@@ -119,6 +119,7 @@ import {
   isSupabaseConfigured,
   UserProfile,
   Budget,
+  BudgetPlanItem,
   EventRsvp,
   ActivityFeePayment,
   Claim,
@@ -157,6 +158,7 @@ import {
   softDeleteRecord,
   computeFieldChanges,
   recordEditHistory,
+  SoftDeletedItem,
 } from '@/lib/history';
 import { normalizeEquipmentItem, normalizeEquipmentLoan } from '@/lib/equipment';
 import {
@@ -278,9 +280,8 @@ export default function Page() {
   const [clubName, setClubName] = useState('ClubSync');
   const [logoUrl, setLogoUrl] = useState('');
   const [currentBatch, setCurrentBatch] = useState('2026/2027');
-  const [adminPinSetting, setAdminPinSetting] = useState('EXEC-2026');
-  const [ownerPinSetting, setOwnerPinSetting] = useState('OWNER-2026');
   const [ownerUserId, setOwnerUserId] = useState<string | null>(null);
+  const [physicalCash, setPhysicalCash] = useState<number>(0);
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
   const [bgStyle, setBgStyle] = useState('emerald-aurora');
   const [bgImageUrl, setBgImageUrl] = useState('');
@@ -291,8 +292,8 @@ export default function Page() {
 
   const [clubNameInput, setClubNameInput] = useState('ClubSync');
   const [newBatchInput, setNewBatchInput] = useState('2026/2027');
-  const [newAdminPinInput, setNewAdminPinInput] = useState('EXEC-2026');
-  const [newOwnerPinInput, setNewOwnerPinInput] = useState('OWNER-2026');
+  const [newAdminPinInput, setNewAdminPinInput] = useState('');
+  const [newOwnerPinInput, setNewOwnerPinInput] = useState('');
   const [departmentsText, setDepartmentsText] = useState(DEFAULT_DEPARTMENTS.join('\n'));
 
   const [showThemeStudio, setShowThemeStudio] = useState(false);
@@ -325,6 +326,7 @@ export default function Page() {
   const [feePayments, setFeePayments] = useState<ActivityFeePayment[]>([]);
   const [allMembers, setAllMembers] = useState<UserProfile[]>([]);
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntryItem[]>([]);
+  const [budgetPlanItems, setBudgetPlanItems] = useState<BudgetPlanItem[]>([]);
   const [equipmentItems, setEquipmentItems] = useState<EquipmentItem[]>([]);
   const [equipmentLoans, setEquipmentLoans] = useState<EquipmentLoan[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -348,27 +350,6 @@ export default function Page() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setDarkMode(localStorage.getItem('clubsync_dark') === 'true');
-      const savedStyle = localStorage.getItem('clubsync_bg_style');
-      const savedImg = localStorage.getItem('clubsync_bg_image');
-      const savedLogo = localStorage.getItem('clubsync_logo_url');
-      const savedPayQr = localStorage.getItem('clubsync_payment_qr');
-      const savedPayBank = localStorage.getItem('clubsync_payment_bank');
-      const savedThresh = localStorage.getItem('clubsync_claim_threshold');
-      if (savedStyle) setBgStyle(savedStyle);
-      if (savedImg) setBgImageUrl(savedImg);
-      if (savedLogo) {
-        setLogoUrl(savedLogo);
-        setLogoUrlInput(savedLogo);
-      }
-      if (savedPayQr) setPaymentQrUrl(savedPayQr);
-      if (savedPayBank) setPaymentBankInfo(savedPayBank);
-      if (savedThresh !== null) {
-        const parsed = parseFloat(savedThresh);
-        if (!isNaN(parsed) && parsed >= 0) {
-          setClaimThreshold(parsed);
-          setClaimThresholdInput(String(parsed));
-        }
-      }
     }
   }, []);
 
@@ -391,12 +372,10 @@ export default function Page() {
     const nextThresh = !isNaN(parsed) && parsed >= 0 ? parsed : DEFAULT_CLAIM_APPROVAL_THRESHOLD;
     setClaimThreshold(nextThresh);
     setClaimThresholdInput(String(nextThresh));
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('clubsync_claim_threshold', String(nextThresh));
-    }
     const { error } = await supabase
       .from('club_settings')
-      .upsert({ id: 1, claim_approval_threshold: nextThresh });
+      .update({ claim_approval_threshold: nextThresh })
+      .eq('id', 1);
     if (profile) {
       void logActivity(
         profile,
@@ -406,7 +385,7 @@ export default function Page() {
       );
     }
     if (error) {
-      showToast(`Saved locally (RM ${nextThresh.toFixed(0)}). Add DB column to sync all devices.`);
+      showToast(error.message || 'Could not update threshold in Supabase.');
     } else {
       showToast(`2-stage threshold saved: RM ${nextThresh.toFixed(0)}`);
     }
@@ -491,14 +470,54 @@ export default function Page() {
   }, []);
 
   const fetchAllData = useCallback(async () => {
-    const [bRes, cRes, rRes, fRes, mRes, lRes, sRes, eqIRes, eqLRes, annRes, pRes, pvRes, logRes] = await Promise.all([
+    let activeUid = sessionUserId;
+    if (!activeUid) {
+      const { data: authData } = await supabase.auth.getUser();
+      activeUid = authData.user?.id || null;
+    }
+
+    const meRes = activeUid
+      ? await supabase.from('users').select('*').eq('id', activeUid).maybeSingle()
+      : { data: null };
+    const meProfile = meRes.data ? normalizeProfile(meRes.data as Record<string, unknown>) : null;
+    if (meProfile) {
+      setProfile(meProfile);
+      if (meProfile.role === 'member') setRoleMode('member');
+    }
+
+    const callerIsAdmin = meProfile?.role === 'treasurer' || meProfile?.role === 'owner';
+    const callerIsOwner = meProfile?.role === 'owner';
+
+    const [
+      bRes,
+      cRes,
+      rRes,
+      fRes,
+      mRes,
+      lRes,
+      bpRes,
+      sRes,
+      pinRes,
+      eqIRes,
+      eqLRes,
+      annRes,
+      pRes,
+      pvRes,
+      logRes,
+    ] = await Promise.all([
       supabase.from('budgets').select('*').order('event_date', { ascending: true }),
       supabase.from('claims').select('*').order('created_at', { ascending: false }),
       supabase.from('event_rsvps').select('*'),
       supabase.from('activity_fee_payments').select('*').order('created_at', { ascending: false }),
-      supabase.from('users').select('*').order('full_name', { ascending: true }),
+      callerIsAdmin
+        ? supabase.from('users').select('*').order('full_name', { ascending: true })
+        : supabase.from('users_public').select('*').order('full_name', { ascending: true }),
       supabase.from('ledger_entries').select('*').order('created_at', { ascending: false }),
-      supabase.from('club_settings').select('*').eq('id', 1).maybeSingle(),
+      supabase.from('budget_plan_items').select('*').order('created_at', { ascending: true }),
+      supabase.from('club_settings_public').select('*').eq('id', 1).maybeSingle(),
+      callerIsOwner
+        ? supabase.from('club_settings').select('admin_pin, owner_pin').eq('id', 1).maybeSingle()
+        : Promise.resolve({ data: null }),
       supabase.from('equipment_items').select('*').order('item_name', { ascending: true }),
       supabase.from('equipment_loans').select('*').order('created_at', { ascending: false }),
       supabase.from('announcements').select('*').order('created_at', { ascending: false }),
@@ -506,22 +525,22 @@ export default function Page() {
       supabase.from('poll_votes').select('*'),
       supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(1000),
     ]);
+
     if (bRes.data) setBudgets(bRes.data as Budget[]);
     if (cRes.data) setClaims(cRes.data as Claim[]);
     if (rRes.data) setRsvps(rRes.data as EventRsvp[]);
     if (fRes.data) setFeePayments(fRes.data as ActivityFeePayment[]);
     if (mRes.data) {
-      const list = (mRes.data as Record<string, unknown>[]).map(normalizeProfile);
-      setAllMembers(list);
-      if (sessionUserId) {
-        const me = list.find((u) => u.id === sessionUserId);
-        if (me) {
-          setProfile(me);
-          if (me.role === 'member') setRoleMode('member');
-        }
-      }
+      const publicOrAdminList = (mRes.data as Record<string, unknown>[]).map(normalizeProfile);
+      const mergedList = meProfile
+        ? publicOrAdminList.map((u) => (u.id === meProfile.id ? meProfile : u))
+        : publicOrAdminList;
+      setAllMembers(mergedList);
+    } else if (meProfile) {
+      setAllMembers([meProfile]);
     }
     if (lRes.data) setLedgerEntries(lRes.data as LedgerEntryItem[]);
+    if (bpRes.data) setBudgetPlanItems(bpRes.data as BudgetPlanItem[]);
     const normalizedLoans = eqLRes.data
       ? (eqLRes.data as Record<string, unknown>[]).map(normalizeEquipmentLoan)
       : [];
@@ -537,21 +556,29 @@ export default function Page() {
     if (pRes.data) setPolls(pRes.data as Poll[]);
     if (pvRes.data) setPollVotes(pvRes.data as PollVote[]);
     if (logRes.data) setActivityLogs(logRes.data as ActivityLogEntry[]);
+
+    if (pinRes.data) {
+      const pinRow = pinRes.data as { admin_pin?: string | null; owner_pin?: string | null };
+      if (pinRow.admin_pin) setNewAdminPinInput(String(pinRow.admin_pin));
+      if (pinRow.owner_pin) setNewOwnerPinInput(String(pinRow.owner_pin));
+    }
+
     if (sRes.data) {
       if (sRes.data.claim_approval_threshold !== null && sRes.data.claim_approval_threshold !== undefined) {
         const thresh = Number(sRes.data.claim_approval_threshold);
         if (!isNaN(thresh) && thresh >= 0) {
           setClaimThreshold(thresh);
           setClaimThresholdInput(String(thresh));
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('clubsync_claim_threshold', String(thresh));
-          }
+        }
+      }
+      if (sRes.data.physical_cash !== null && sRes.data.physical_cash !== undefined) {
+        const cashVal = Number(sRes.data.physical_cash);
+        if (!isNaN(cashVal) && cashVal >= 0) {
+          setPhysicalCash(cashVal);
         }
       }
       const cName = String(sRes.data.club_name || 'ClubSync');
       const bYear = String(sRes.data.current_batch || '2026/2027');
-      const aPin = String(sRes.data.admin_pin || 'EXEC-2026');
-      const oPin = String(sRes.data.owner_pin || 'OWNER-2026');
       const depts = Array.isArray(sRes.data.departments)
         ? (sRes.data.departments as string[]).filter(Boolean)
         : DEFAULT_DEPARTMENTS;
@@ -559,38 +586,14 @@ export default function Page() {
       setClubNameInput(cName);
       setCurrentBatch(bYear);
       setNewBatchInput(bYear);
-      setAdminPinSetting(aPin);
-      setNewAdminPinInput(aPin);
-      setOwnerPinSetting(oPin);
-      setNewOwnerPinInput(oPin);
       setOwnerUserId(sRes.data.owner_user_id ? String(sRes.data.owner_user_id) : null);
-
-      if (sRes.data.payment_qr_url) {
-        setPaymentQrUrl(String(sRes.data.payment_qr_url));
-        if (typeof window !== 'undefined') localStorage.setItem('clubsync_payment_qr', String(sRes.data.payment_qr_url));
-      }
-      if (sRes.data.payment_bank_info) {
-        setPaymentBankInfo(String(sRes.data.payment_bank_info));
-        if (typeof window !== 'undefined') localStorage.setItem('clubsync_payment_bank', String(sRes.data.payment_bank_info));
-      }
-
-      const localStyle = typeof window !== 'undefined' ? localStorage.getItem('clubsync_bg_style') : null;
-      const localImg = typeof window !== 'undefined' ? localStorage.getItem('clubsync_bg_image') : null;
-      const localLogo = typeof window !== 'undefined' ? localStorage.getItem('clubsync_logo_url') : null;
-
-      if (!localStyle && sRes.data.bg_style) {
-        setBgStyle(String(sRes.data.bg_style));
-        if (typeof window !== 'undefined') localStorage.setItem('clubsync_bg_style', String(sRes.data.bg_style));
-      }
-      if (!localImg && sRes.data.bg_image_url) {
-        setBgImageUrl(String(sRes.data.bg_image_url));
-        if (typeof window !== 'undefined') localStorage.setItem('clubsync_bg_image', String(sRes.data.bg_image_url));
-      }
-      if (!localLogo && sRes.data.logo_url) {
-        setLogoUrl(String(sRes.data.logo_url));
-        setLogoUrlInput(String(sRes.data.logo_url));
-        if (typeof window !== 'undefined') localStorage.setItem('clubsync_logo_url', String(sRes.data.logo_url));
-      }
+      setPaymentQrUrl(sRes.data.payment_qr_url ? String(sRes.data.payment_qr_url) : '');
+      setPaymentBankInfo(sRes.data.payment_bank_info ? String(sRes.data.payment_bank_info) : '');
+      setBgStyle(sRes.data.bg_style ? String(sRes.data.bg_style) : 'emerald-aurora');
+      setBgImageUrl(sRes.data.bg_image_url ? String(sRes.data.bg_image_url) : '');
+      const dbLogo = sRes.data.logo_url ? String(sRes.data.logo_url) : '';
+      setLogoUrl(dbLogo);
+      setLogoUrlInput(dbLogo);
       if (depts.length > 0) {
         setDepartments((prev) => (prev.join('|') === depts.join('|') ? prev : depts));
         setDepartmentsText(depts.join('\n'));
@@ -681,15 +684,112 @@ export default function Page() {
     fetchAllData();
   };
 
-  const activeBudgets = filterActiveRecords('budgets', budgets, activityLogs);
-  const activeClaims = filterActiveRecords('claims', claims, activityLogs);
-  const activeFeePayments = filterActiveRecords('activity_fee_payments', feePayments, activityLogs);
-  const activeEquipmentItems = filterActiveRecords('equipment_items', equipmentItems, activityLogs);
-  const activeEquipmentLoans = filterActiveRecords('equipment_loans', equipmentLoans, activityLogs);
-  const activeLedgerEntries = filterActiveRecords('ledger_entries', ledgerEntries, activityLogs);
-  const activeAnnouncements = filterActiveRecords('announcements', announcements, activityLogs);
-  const activePolls = filterActiveRecords('polls', polls, activityLogs);
-  const activeRsvps = filterActiveRecords('event_rsvps', rsvps, activityLogs);
+  const activeBudgets = filterActiveRecords('budgets', budgets);
+  const activeClaims = filterActiveRecords('claims', claims);
+  const activeFeePayments = filterActiveRecords('activity_fee_payments', feePayments);
+  const activeEquipmentItems = filterActiveRecords('equipment_items', equipmentItems);
+  const activeEquipmentLoans = filterActiveRecords('equipment_loans', equipmentLoans);
+  const activeLedgerEntries = filterActiveRecords('ledger_entries', ledgerEntries);
+  const activeBudgetPlanItems = budgetPlanItems.filter((p) => !p.deleted_at);
+  const activeAnnouncements = filterActiveRecords('announcements', announcements);
+  const activePolls = filterActiveRecords('polls', polls);
+  const activeRsvps = filterActiveRecords('event_rsvps', rsvps);
+
+  const deletedRecords: SoftDeletedItem[] = [
+    ...budgets
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'budgets' as const,
+        recordId: r.id,
+        title: r.event_name || 'Activity',
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Activities' as const,
+      })),
+    ...claims
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'claims' as const,
+        recordId: r.id,
+        title: `${r.title} (${r.claimant_name})`,
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Claims' as const,
+      })),
+    ...feePayments
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'activity_fee_payments' as const,
+        recordId: r.id,
+        title: `${r.student_name} (RM ${Number(r.amount_paid).toFixed(2)})`,
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Fees' as const,
+      })),
+    ...equipmentItems
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'equipment_items' as const,
+        recordId: r.id,
+        title: r.item_name || 'Equipment',
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Equipment' as const,
+      })),
+    ...equipmentLoans
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'equipment_loans' as const,
+        recordId: r.id,
+        title: `${r.borrower_name} — ${r.item_name}`,
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Equipment' as const,
+      })),
+    ...ledgerEntries
+      .filter((r) => Boolean((r as { deleted_at?: string | null }).deleted_at))
+      .map((r) => {
+        const rec = r as LedgerEntryItem & { deleted_at?: string | null; deleted_by?: string | null };
+        return {
+          table: 'ledger_entries' as const,
+          recordId: rec.id,
+          title: `${rec.title} (RM ${Number(rec.amount).toFixed(2)})`,
+          deletedAt: rec.deleted_at || rec.created_at,
+          deletedBy: rec.deleted_by || 'Admin',
+          category: 'Finance' as const,
+        };
+      }),
+    ...announcements
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'announcements' as const,
+        recordId: r.id,
+        title: r.title || 'Poster / Announcement',
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Activities' as const,
+      })),
+    ...polls
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'polls' as const,
+        recordId: r.id,
+        title: r.question || 'Poll',
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Activities' as const,
+      })),
+    ...rsvps
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'event_rsvps' as const,
+        recordId: r.id,
+        title: `${r.student_name} (${r.matric_no})`,
+        deletedAt: r.deleted_at || '',
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Activities' as const,
+      })),
+  ].sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
 
   const handleExportSingleEventExcel = async (ev: Budget) => {
     const evPayments = activeFeePayments.filter((f) => f.budget_id === ev.id);
@@ -784,39 +884,20 @@ export default function Page() {
 
   const handleUnlockAdmin = async (pin: string): Promise<boolean> => {
     if (!profile) return false;
-    const normalizedPin = pin.trim().toUpperCase();
-    if (
-      normalizedPin === ownerPinSetting.trim().toUpperCase() ||
-      normalizedPin === 'OWNER-2026'
-    ) {
-      await supabase.from('users').update({ role: 'treasurer' }).eq('role', 'owner').neq('id', profile.id);
-      await supabase
-        .from('users')
-        .update({ role: 'owner', admin_permissions: FULL_OWNER_PERMISSIONS })
-        .eq('id', profile.id);
-      await supabase.from('club_settings').update({ owner_user_id: profile.id }).eq('id', 1);
-      setProfile((prev) => (prev ? { ...prev, role: 'owner', admin_permissions: FULL_OWNER_PERMISSIONS } : null));
-      setRoleMode('owner');
-      localStorage.setItem(`clubsync_mode_${profile.id}`, 'owner');
-      fetchAllData();
-      showToast('Owner Mode unlocked');
-      return true;
+    const trimmedPin = pin.trim();
+    if (!trimmedPin) return false;
+    const { data, error } = await supabase.rpc('verify_role_passcode', { pin_input: trimmedPin });
+    const res = (data || {}) as { ok?: boolean; role?: 'owner' | 'admin' | null };
+    if (error || !res?.ok || !res.role) return false;
+
+    const targetMode: 'owner' | 'admin' = res.role === 'owner' ? 'owner' : 'admin';
+    setRoleMode(targetMode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`clubsync_mode_${profile.id}`, targetMode);
     }
-    if (
-      normalizedPin === adminPinSetting.trim().toUpperCase() ||
-      normalizedPin === 'EXEC-2026'
-    ) {
-      if (profile.role === 'member') {
-        await supabase.from('users').update({ role: 'treasurer', admin_permissions: DEFAULT_ADMIN_PERMISSIONS }).eq('id', profile.id);
-        setProfile((prev) => (prev ? { ...prev, role: 'treasurer', admin_permissions: DEFAULT_ADMIN_PERMISSIONS } : null));
-      }
-      setRoleMode('admin');
-      localStorage.setItem(`clubsync_mode_${profile.id}`, 'admin');
-      fetchAllData();
-      showToast('Admin Mode unlocked');
-      return true;
-    }
-    return false;
+    await fetchAllData();
+    showToast(targetMode === 'owner' ? 'Owner Mode unlocked' : 'Admin Mode unlocked');
+    return true;
   };
 
   const handleSwitchMode = async (target: 'member' | 'admin' | 'owner') => {
@@ -852,18 +933,14 @@ export default function Page() {
       setLogoUrl(finalLogoUrl);
       setLogoUrlInput(finalLogoUrl);
 
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('clubsync_bg_style', chosenStyle);
-        localStorage.setItem('clubsync_bg_image', finalBgUrl);
-        localStorage.setItem('clubsync_logo_url', finalLogoUrl);
-      }
-
-      await supabase.from('club_settings').upsert({
-        id: 1,
-        bg_style: chosenStyle,
-        bg_image_url: finalBgUrl,
-        logo_url: finalLogoUrl,
-      });
+      await supabase
+        .from('club_settings')
+        .update({
+          bg_style: chosenStyle,
+          bg_image_url: finalBgUrl,
+          logo_url: finalLogoUrl,
+        })
+        .eq('id', 1);
 
       setBgFile(null);
       setLogoFile(null);
@@ -1302,10 +1379,7 @@ export default function Page() {
 
                     const reqFee = Number(ev.registration_fee || 0);
                     const requiresFee = reqFee > 0;
-                    const savedMode =
-                      (typeof window !== 'undefined' ? localStorage.getItem(`clubsync_qrmode_${ev.id}`) : null) ||
-                      ev.ticket_qr_mode ||
-                      (requiresFee ? 'entry_pass' : 'scan_attendance');
+                    const savedMode = ev.ticket_qr_mode || (requiresFee ? 'entry_pass' : 'scan_attendance');
                     const hasEntryPass = isEntryPassMode(savedMode);
 
                     return (
@@ -1811,12 +1885,18 @@ export default function Page() {
                 entries={activeLedgerEntries}
                 events={activeBudgets.map((b) => ({ id: b.id, event_name: b.event_name }))}
                 budgets={activeBudgets}
+                budgetPlanItems={activeBudgetPlanItems}
                 rsvps={activeRsvps}
                 claims={activeClaims}
                 feePayments={activeFeePayments}
                 profile={profile}
                 logs={activityLogs}
                 canEdit={effectivePermissions.can_manage_finance}
+                physicalCash={physicalCash}
+                onUpdatePhysicalCash={async (val: number) => {
+                  setPhysicalCash(val);
+                  await supabase.from('club_settings').update({ physical_cash: val }).eq('id', 1);
+                }}
                 externalOpenModal={quickAdjustFinanceOpen}
                 onCloseExternalModal={() => setQuickAdjustFinanceOpen(false)}
                 onSelectClaim={(c: Claim) => setSelectedClaim(c)}
@@ -1951,46 +2031,43 @@ export default function Page() {
                           }
                           setPaymentQrUrl(finalPayQr);
                           setPaymentQrFile(null);
-                          if (typeof window !== 'undefined') {
-                            localStorage.setItem('clubsync_payment_qr', finalPayQr);
-                            localStorage.setItem('clubsync_payment_bank', paymentBankInfo.trim());
-                          }
 
                           const depts = departmentsText
                             .split('\n')
                             .map((s) => s.trim())
                             .filter(Boolean);
-                          const corePayload: Record<string, unknown> = {
-                            id: 1,
+                          const updatePayload: Record<string, unknown> = {
                             departments: depts.length ? depts : DEFAULT_DEPARTMENTS,
+                            payment_qr_url: finalPayQr,
+                            payment_bank_info: paymentBankInfo.trim(),
                           };
-                          if (isOwner) {
-                            corePayload.club_name = clubNameInput.trim() || 'ClubSync';
-                            corePayload.current_batch = newBatchInput.trim();
-                            corePayload.admin_pin = newAdminPinInput.trim();
-                            corePayload.owner_pin = newOwnerPinInput.trim();
-                          }
                           const parsedThresh = parseFloat(claimThresholdInput);
                           const nextThresh =
                             !isNaN(parsedThresh) && parsedThresh >= 0
                               ? parsedThresh
                               : DEFAULT_CLAIM_APPROVAL_THRESHOLD;
-                          if (isOwner && typeof window !== 'undefined') {
-                            localStorage.setItem('clubsync_claim_threshold', String(nextThresh));
+                          if (isOwner) {
+                            updatePayload.club_name = clubNameInput.trim() || 'ClubSync';
+                            updatePayload.current_batch = newBatchInput.trim();
+                            updatePayload.claim_approval_threshold = nextThresh;
                           }
-                          const fullPayload: Record<string, unknown> = {
-                            ...corePayload,
-                            payment_qr_url: finalPayQr,
-                            payment_bank_info: paymentBankInfo.trim(),
-                            ...(isOwner ? { claim_approval_threshold: nextThresh } : {}),
-                          };
-                          const { error } = await supabase.from('club_settings').upsert(fullPayload);
-                          if (error) {
-                            await supabase.from('club_settings').upsert(corePayload);
-                            if (isOwner) {
-                              await supabase
-                                .from('club_settings')
-                                .upsert({ id: 1, claim_approval_threshold: nextThresh });
+                          const { error: settingsErr } = await supabase
+                            .from('club_settings')
+                            .update(updatePayload)
+                            .eq('id', 1);
+                          if (settingsErr) {
+                            showToast(settingsErr.message || 'Could not update settings.');
+                            return;
+                          }
+                          if (isOwner && newAdminPinInput.trim() && newOwnerPinInput.trim()) {
+                            const { data: pinRpcRes } = await supabase.rpc('update_club_passcodes', {
+                              new_admin_pin: newAdminPinInput.trim(),
+                              new_owner_pin: newOwnerPinInput.trim(),
+                            });
+                            const pinStatus = pinRpcRes as { ok?: boolean; error?: string } | null;
+                            if (pinStatus && pinStatus.ok === false) {
+                              showToast(pinStatus.error || 'Could not update passcodes.');
+                              return;
                             }
                           }
                           if (isOwner) {
@@ -2271,6 +2348,7 @@ export default function Page() {
           {activeTab === 'logs' && isAdminOrOwner && (
             <ActivityLogSection
               logs={activityLogs}
+              deletedRecords={deletedRecords}
               profile={profile}
               onRefresh={(m: string) => {
                 fetchAllData();
@@ -2551,6 +2629,7 @@ export default function Page() {
         departments={departments}
         logs={activityLogs}
         allClaims={activeClaims}
+        claimantProfile={allMembers.find((u) => u.id === selectedClaim?.user_id)}
         onSelectClaim={(c: Claim) => setSelectedClaim(c)}
         profile={{ ...profile, role: isAdminOrOwner && effectivePermissions.can_manage_claims_fees ? (isOwner ? 'owner' : 'treasurer') : 'member' }}
         isOwner={isOwner}
@@ -2598,9 +2677,9 @@ import {
   stripHistoryTag,
   parseHistoryMetaFromLog,
   getAllHistoryEvents,
-  getCurrentlyDeletedEvents,
   restoreSoftDeletedRecord,
   tableDisplayLabel,
+  SoftDeletedItem,
 } from '@/lib/history';
 import {
   ShieldCheck,
@@ -2626,6 +2705,7 @@ import {
 
 interface ActivityLogSectionProps {
   logs: ActivityLogEntry[];
+  deletedRecords?: SoftDeletedItem[];
   profile?: UserProfile;
   onRefresh: (msg: string) => void;
 }
@@ -2678,14 +2758,14 @@ function formatLogTime(iso: string) {
   });
 }
 
-export default function ActivityLogSection({ logs, profile, onRefresh }: ActivityLogSectionProps) {
+export default function ActivityLogSection({ logs, deletedRecords = [], profile, onRefresh }: ActivityLogSectionProps) {
   const [viewMode, setViewMode] = useState<'all' | 'edits' | 'deleted'>('all');
   const [catFilter, setCatFilter] = useState<'ALL' | ActivityLogCategory>('ALL');
   const [search, setSearch] = useState('');
   const [restoringKey, setRestoringKey] = useState<string | null>(null);
 
   const allEditEvents = getAllHistoryEvents(logs).filter((ev) => ev.action === 'edited');
-  const currentlyDeleted = getCurrentlyDeletedEvents(logs);
+  const currentlyDeleted = deletedRecords;
 
   const matchesSearch = (parts: (string | undefined | null)[]) => {
     if (!search.trim()) return true;
@@ -2711,14 +2791,12 @@ export default function ActivityLogSection({ logs, profile, onRefresh }: Activit
     ]);
   });
 
-  const filteredDeleted = currentlyDeleted.filter((ev) => {
-    if (catFilter !== 'ALL' && ev.category !== catFilter) return false;
+  const filteredDeleted = currentlyDeleted.filter((item) => {
+    if (catFilter !== 'ALL' && item.category !== catFilter) return false;
     return matchesSearch([
-      ev.actorName,
-      ev.actorMatric,
-      ev.recordTitle,
-      tableDisplayLabel(ev.table),
-      ev.summary,
+      item.deletedBy,
+      item.title,
+      tableDisplayLabel(item.table),
     ]);
   });
 
@@ -2993,33 +3071,26 @@ export default function ActivityLogSection({ logs, profile, onRefresh }: Activit
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {filteredDeleted.map((ev) => {
-                  const rowKey = `${ev.table}:${ev.recordId}`;
+                {filteredDeleted.map((item) => {
+                  const rowKey = `${item.table}:${item.recordId}`;
                   const isRestoring = restoringKey === rowKey;
                   const canRestore = Boolean(
-                    profile &&
-                      (profile.role === 'owner' ||
-                        profile.role === 'treasurer' ||
-                        (ev.actorMatric && profile.matric_no === ev.actorMatric))
+                    profile && (profile.role === 'owner' || profile.role === 'treasurer')
                   );
                   return (
                     <div key={rowKey} className="p-4 flex flex-wrap items-center justify-between gap-3 text-xs hover:bg-rose-50/30">
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-rose-100 text-rose-900 border border-rose-200">
-                            {tableDisplayLabel(ev.table)}
+                            {tableDisplayLabel(item.table)}
                           </span>
-                          <span className="font-extrabold text-slate-900">{ev.recordTitle}</span>
-                          <span className="text-[11px] font-mono text-slate-400">ID: {ev.recordId.slice(0, 8)}</span>
+                          <span className="font-extrabold text-slate-900">{item.title}</span>
+                          <span className="text-[11px] font-mono text-slate-400">ID: {item.recordId.slice(0, 8)}</span>
                         </div>
                         <p className="text-slate-600 break-words">
                           Hidden by{' '}
-                          <span className="font-bold text-slate-800">
-                            {ev.actorRole ? `${ev.actorRole} ` : ''}
-                            {ev.actorName}
-                            {ev.actorMatric ? ` (${ev.actorMatric})` : ''}
-                          </span>{' '}
-                          at {formatLogTime(ev.timestamp)}
+                          <span className="font-bold text-slate-800">{item.deletedBy || 'Admin'}</span>{' '}
+                          at {formatLogTime(item.deletedAt)}
                         </p>
                       </div>
                       {canRestore && (
@@ -3032,12 +3103,12 @@ export default function ActivityLogSection({ logs, profile, onRefresh }: Activit
                             try {
                               await restoreSoftDeletedRecord({
                                 actor: profile,
-                                category: (ev.category as ActivityLogCategory) || 'Settings',
-                                table: ev.table,
-                                recordId: ev.recordId,
-                                recordTitle: ev.recordTitle,
+                                category: item.category,
+                                table: item.table,
+                                recordId: item.recordId,
+                                recordTitle: item.title,
                               });
-                              onRefresh(`Restored ${tableDisplayLabel(ev.table)} "${ev.recordTitle}" back to web view.`);
+                              onRefresh(`Restored ${tableDisplayLabel(item.table)} "${item.title}" back to web view.`);
                             } finally {
                               setRestoringKey(null);
                             }
@@ -3120,6 +3191,7 @@ interface AuditReviewModalProps {
   departments?: string[];
   logs?: ActivityLogEntry[];
   allClaims?: Claim[];
+  claimantProfile?: UserProfile;
   onSelectClaim?: (claim: Claim) => void;
   profile: UserProfile;
   /** True only for the club Owner (President / Advisor) acting in Owner mode. */
@@ -3139,6 +3211,7 @@ export default function AuditReviewModal({
   departments = DEFAULT_DEPARTMENTS,
   logs = [],
   allClaims = [],
+  claimantProfile,
   onSelectClaim,
   profile,
   isOwner = false,
@@ -3151,6 +3224,8 @@ export default function AuditReviewModal({
   const [payoutFile, setPayoutFile] = useState<File | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [fullImageOpen, setFullImageOpen] = useState(false);
+  const [fullQrOpen, setFullQrOpen] = useState(false);
+  const [rightTab, setRightTab] = useState<'overview' | 'payout' | 'history'>('overview');
   const [processing, setProcessing] = useState<'Approved' | 'Rejected' | 'ProofOnly' | 'Verified' | null>(
     null
   );
@@ -3182,6 +3257,8 @@ export default function AuditReviewModal({
       setPayoutFile(null);
       setErrorMsg(null);
       setFullImageOpen(false);
+      setFullQrOpen(false);
+      setRightTab('overview');
       setIsEditingClaim(false);
       setConfirmDeleteClaim(false);
       setCompareMatch(null);
@@ -3235,28 +3312,24 @@ export default function AuditReviewModal({
     claim.receipt_url?.toLowerCase().split('?')[0].endsWith('.pdf') ||
     claim.receipt_url?.startsWith('data:application/pdf');
 
-  // Extract reimbursement bank info from claim.payment_info or description
-  const extractedBankInfo =
-    claim.payment_info ||
-    (claim.description?.includes('Reimburse To:')
-      ? claim.description.split('Reimburse To:')[1]?.trim()
-      : '');
+  // Extract reimbursement bank info & DuitNow QR from claim or claimant profile fallback
+  const rawDescBank = claim.description?.includes('Reimburse To:')
+    ? claim.description.split('Reimburse To:')[1]?.split('[Items:')[0]?.trim() || ''
+    : '';
+  const profileBankFallback = claimantProfile?.bank_account_no
+    ? `${claimantProfile.bank_name || 'Bank/DuitNow'} • ${claimantProfile.bank_account_no} (${
+        claimantProfile.bank_account_holder || claimantProfile.full_name
+      })`
+    : '';
+  const extractedBankInfo = claim.payment_info || rawDescBank || profileBankFallback;
 
-  const localProofRaw =
-    typeof window !== 'undefined'
-      ? localStorage.getItem(`clubsync_claim_proof_${claim.id}`)
-      : null;
-  let localProof: { url: string; name: string; paid_at: string } | null = null;
-  if (localProofRaw) {
-    try {
-      localProof = JSON.parse(localProofRaw);
-    } catch {
-      /* ignore */
-    }
-  }
+  const resolvedClaimantQrUrl = claim.claimant_qr_url || claimantProfile?.bank_qr_url || '';
+  const isClaimantQrPdf =
+    resolvedClaimantQrUrl.toLowerCase().split('?')[0].endsWith('.pdf') ||
+    resolvedClaimantQrUrl.startsWith('data:application/pdf');
 
-  const proofUrl = claim.payout_proof_url || localProof?.url || '';
-  const proofName = claim.payout_proof_name || localProof?.name || 'Reimbursement_Proof';
+  const proofUrl = claim.payout_proof_url || '';
+  const proofName = claim.payout_proof_name || 'Reimbursement_Proof';
 
   const uploadProofFileIfPresent = async (): Promise<{ url: string; name: string } | null> => {
     if (!payoutFile) return null;
@@ -3268,16 +3341,6 @@ export default function AuditReviewModal({
     const { error } = await supabase.storage.from('receipts').upload(path, payoutFile);
     if (error) throw error;
     const publicUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(
-        `clubsync_claim_proof_${claim.id}`,
-        JSON.stringify({
-          url: publicUrl,
-          name: payoutFile.name,
-          paid_at: new Date().toISOString(),
-        })
-      );
-    }
     return { url: publicUrl, name: payoutFile.name };
   };
 
@@ -3940,184 +4003,305 @@ export default function AuditReviewModal({
                 </div>
               </div>
             )}
-
-            {proofUrl && (
-              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-center justify-between gap-2">
-                <div>
-                  <span className="text-[10px] font-extrabold uppercase text-emerald-700 block">
-                    ✓ Official Proof of Paid / Reimbursement
-                  </span>
-                  <span className="text-xs font-bold text-slate-900 break-all">
-                    {proofName}
-                  </span>
-                </div>
-                <a
-                  href={proofUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0"
-                >
-                  View Proof <ExternalLink className="w-3 h-3 inline ml-0.5" />
-                </a>
-              </div>
-            )}
           </div>
 
           <div className="space-y-4">
-            <div className="bg-emerald-50/70 rounded-2xl p-4 border border-emerald-200 space-y-1.5 text-xs">
-              <div className="flex items-center gap-2 text-slate-800">
-                <User className="w-3.5 h-3.5 text-emerald-700" />
-                <span className="font-bold">{claim.claimant_name}</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-700">
-                <Hash className="w-3.5 h-3.5 text-emerald-700" />
-                <span className="font-mono font-semibold">{claim.matric_no}</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-700">
-                <Phone className="w-3.5 h-3.5 text-emerald-700" />
-                <span className="font-mono">{claim.phone_number}</span>
-              </div>
-            </div>
-
-            {isOwnerClaim ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 space-y-1.5 text-xs">
-                <div className="flex items-center gap-1.5 font-extrabold text-emerald-950">
-                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                  <span>Owner&apos;s Claim — Direct Treasurer Approval</span>
-                </div>
-                <p className="text-emerald-800 leading-relaxed">
-                  Since the club Owner cannot approve their own claim, once a Treasurer (Admin) approves this claim, it is immediately marked as Approved.
-                </p>
-              </div>
-            ) : needsTwoStage && (
-              <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3.5 space-y-2.5 text-xs">
-                <div className="flex items-center gap-1.5 font-extrabold text-indigo-950">
-                  <ShieldCheck className="w-4 h-4 text-indigo-700" />
-                  <span>High-value claim — 2-stage approval (above RM {approvalThreshold.toFixed(0)})</span>
-                </div>
-                <ol className="space-y-2">
-                  <li className="flex items-start gap-2">
-                    {stage1Done ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    ) : claim.status === 'Rejected' ? (
-                      <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                    ) : (
-                      <Clock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                    )}
-                    <div>
-                      <div className="font-bold text-slate-900">1. Treasurer verification</div>
-                      <div className="text-slate-600">
-                        {stage1Done
-                          ? `Verified by ${verifiedBy}${
-                              claim.treasurer_verified_at
-                                ? ` • ${new Date(claim.treasurer_verified_at).toLocaleString()}`
-                                : ''
-                            }`
-                          : 'Waiting for a Treasurer / Admin to check the receipt'}
-                      </div>
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    {claim.status === 'Approved' ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    ) : claim.status === 'Rejected' ? (
-                      <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                    ) : (
-                      <Clock className={`w-4 h-4 shrink-0 mt-0.5 ${stage1Done ? 'text-amber-500' : 'text-slate-300'}`} />
-                    )}
-                    <div>
-                      <div className="font-bold text-slate-900">2. President / Advisor approval</div>
-                      <div className="text-slate-600">
-                        {claim.status === 'Approved'
-                          ? `Approved by ${finalBy || claim.reviewed_by || 'Owner'}`
-                          : claim.status === 'Rejected'
-                          ? `Rejected by ${claim.reviewed_by || 'reviewer'}`
-                          : stage1Done
-                          ? 'Waiting for the Owner (President / Advisor) to approve'
-                          : 'Unlocks after Treasurer verification'}
-                      </div>
-                    </div>
-                  </li>
-                </ol>
-              </div>
-            )}
-
-            {extractedBankInfo && (
-              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs">
-                <div>
-                  <div className="font-extrabold text-amber-950 flex items-center gap-1">
-                    <Landmark className="w-3.5 h-3.5 text-amber-700" />
-                    <span>Reimburse To (Bank / DuitNow / TNG):</span>
-                  </div>
-                  <div className="font-mono font-bold text-slate-900 mt-0.5">
-                    {extractedBankInfo}
-                  </div>
-                </div>
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl text-xs">
+              <button
+                type="button"
+                onClick={() => setRightTab('overview')}
+                className={`flex-1 py-2 px-3 rounded-xl font-bold cursor-pointer transition ${
+                  rightTab === 'overview'
+                    ? 'bg-white text-emerald-950 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Overview
+              </button>
+              {isTreasurer && (
                 <button
                   type="button"
-                  onClick={() => navigator.clipboard.writeText(extractedBankInfo)}
-                  className="px-2.5 py-1.5 rounded-xl bg-amber-200/80 hover:bg-amber-300 text-amber-950 font-bold text-[11px] shrink-0 cursor-pointer"
+                  onClick={() => setRightTab('payout')}
+                  className={`flex-1 py-2 px-3 rounded-xl font-bold cursor-pointer transition ${
+                    rightTab === 'payout'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  <Copy className="w-3 h-3 inline mr-1" />
-                  Copy
+                  Pay &amp; Approve
                 </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setRightTab('history')}
+                className={`flex-1 py-2 px-3 rounded-xl font-bold cursor-pointer transition ${
+                  rightTab === 'history'
+                    ? 'bg-white text-emerald-950 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                History ({claimHistory.length})
+              </button>
+            </div>
+
+            {rightTab === 'overview' && (
+              <div className="space-y-4">
+                <div className="bg-emerald-50/70 rounded-2xl p-4 border border-emerald-200 space-y-1.5 text-xs">
+                  <div className="flex items-center gap-2 text-slate-800">
+                    <User className="w-3.5 h-3.5 text-emerald-700" />
+                    <span className="font-bold">{claim.claimant_name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Hash className="w-3.5 h-3.5 text-emerald-700" />
+                    <span className="font-mono font-semibold">{claim.matric_no}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Phone className="w-3.5 h-3.5 text-emerald-700" />
+                    <span className="font-mono">{claim.phone_number}</span>
+                  </div>
+                </div>
+
+                {isOwnerClaim ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 space-y-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 font-extrabold text-emerald-950">
+                      <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                      <span>Owner&apos;s Claim — Direct Treasurer Approval</span>
+                    </div>
+                    <p className="text-emerald-800 leading-relaxed">
+                      Once a Treasurer (Admin) approves this claim, it is immediately marked as Approved.
+                    </p>
+                  </div>
+                ) : (
+                  needsTwoStage && (
+                    <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-3.5 space-y-2.5 text-xs">
+                      <div className="flex items-center gap-1.5 font-extrabold text-indigo-950">
+                        <ShieldCheck className="w-4 h-4 text-indigo-700" />
+                        <span>2-stage approval (above RM {approvalThreshold.toFixed(0)})</span>
+                      </div>
+                      <ol className="space-y-2">
+                        <li className="flex items-start gap-2">
+                          {stage1Done ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          ) : claim.status === 'Rejected' ? (
+                            <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                          ) : (
+                            <Clock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                          )}
+                          <div>
+                            <div className="font-bold text-slate-900">1. Treasurer verification</div>
+                            <div className="text-slate-600">
+                              {stage1Done
+                                ? `Verified by ${verifiedBy}${
+                                    claim.treasurer_verified_at
+                                      ? ` • ${new Date(claim.treasurer_verified_at).toLocaleString()}`
+                                      : ''
+                                  }`
+                                : 'Waiting for Treasurer to verify receipt'}
+                            </div>
+                          </div>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          {claim.status === 'Approved' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          ) : claim.status === 'Rejected' ? (
+                            <XCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                          ) : (
+                            <Clock
+                              className={`w-4 h-4 shrink-0 mt-0.5 ${
+                                stage1Done ? 'text-amber-500' : 'text-slate-300'
+                              }`}
+                            />
+                          )}
+                          <div>
+                            <div className="font-bold text-slate-900">2. President / Advisor approval</div>
+                            <div className="text-slate-600">
+                              {claim.status === 'Approved'
+                                ? `Approved by ${finalBy || claim.reviewed_by || 'Owner'}`
+                                : claim.status === 'Rejected'
+                                ? `Rejected by ${claim.reviewed_by || 'reviewer'}`
+                                : stage1Done
+                                ? 'Waiting for Owner approval'
+                                : 'Unlocks after Treasurer verification'}
+                            </div>
+                          </div>
+                        </li>
+                      </ol>
+                    </div>
+                  )
+                )}
+
+                <div className="rounded-2xl border border-emerald-200 p-4 space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Event:</span>
+                    <span className="font-bold text-slate-900">
+                      {budget?.event_name || 'Club Expense'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Department:</span>
+                    <span className="font-bold text-emerald-800">{claim.category}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Amount:</span>
+                    <span className="text-sm font-extrabold text-emerald-900">
+                      RM {Number(claim.amount).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Merchant &amp; Date:</span>
+                    <span className="font-semibold text-slate-800">
+                      {claim.merchant_name} ({claim.expense_date})
+                    </span>
+                  </div>
+                  {parsedClaimDesc.items.length > 0 && (
+                    <div className="pt-2 border-t border-emerald-100 space-y-1.5">
+                      <div className="text-[11px] font-extrabold text-emerald-900">
+                        Itemized Receipt Breakdown ({parsedClaimDesc.items.length} receipts)
+                      </div>
+                      <div className="rounded-xl bg-emerald-50/70 border border-emerald-200 divide-y divide-emerald-100">
+                        {parsedClaimDesc.items.map((item, idx) => (
+                          <div
+                            key={`itemized-${idx}`}
+                            className="flex items-center justify-between px-2.5 py-1.5 text-[11px]"
+                          >
+                            <span className="font-semibold text-slate-800">
+                              #{idx + 1} {item.shop}
+                            </span>
+                            <span className="font-extrabold text-emerald-900">
+                              RM {item.amount.toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {parsedClaimDesc.cleanDescription && (
+                    <p className="text-slate-600 pt-2 border-t border-emerald-100">
+                      {parsedClaimDesc.cleanDescription}
+                    </p>
+                  )}
+                </div>
+
+                {proofUrl && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-center justify-between gap-2 text-xs">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-extrabold uppercase text-emerald-700 block">
+                        ✓ Proof of Paid / Reimbursement
+                      </span>
+                      <span className="font-bold text-slate-900 truncate block">{proofName}</span>
+                    </div>
+                    <a
+                      href={proofUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shrink-0"
+                    >
+                      View Proof <ExternalLink className="w-3 h-3 inline ml-0.5" />
+                    </a>
+                  </div>
+                )}
+
+                {isTreasurer && claim.status === 'Pending' && (
+                  <button
+                    type="button"
+                    onClick={() => setRightTab('payout')}
+                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Proceed to Pay &amp; Approve →
+                  </button>
+                )}
               </div>
             )}
 
-            <div className="rounded-2xl border border-emerald-200 p-4 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Event:</span>
-                <span className="font-bold text-slate-900">
-                  {budget?.event_name || 'Club Expense'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Department:</span>
-                <span className="font-bold text-emerald-800">{claim.category}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Amount:</span>
-                <span className="text-sm font-extrabold text-emerald-900">
-                  RM {Number(claim.amount).toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Merchant &amp; Date:</span>
-                <span className="font-semibold text-slate-800">
-                  {claim.merchant_name} ({claim.expense_date})
-                </span>
-              </div>
-              {parsedClaimDesc.items.length > 0 && (
-                <div className="pt-2 border-t border-emerald-100 space-y-1.5">
-                  <div className="text-[11px] font-extrabold text-emerald-900">
-                    Itemized Receipt Breakdown ({parsedClaimDesc.items.length} receipts)
-                  </div>
-                  <div className="rounded-xl bg-emerald-50/70 border border-emerald-200 divide-y divide-emerald-100">
-                    {parsedClaimDesc.items.map((item, idx) => (
-                      <div
-                        key={`itemized-${idx}`}
-                        className="flex items-center justify-between px-2.5 py-1.5 text-[11px]"
-                      >
-                        <span className="font-semibold text-slate-800">
-                          #{idx + 1} {item.shop}
-                        </span>
-                        <span className="font-extrabold text-emerald-900">
-                          RM {item.amount.toFixed(2)}
-                        </span>
+            {rightTab === 'payout' && isTreasurer && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-3 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                        <Landmark className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Reimburse To</span>
                       </div>
-                    ))}
+                      <div className="font-mono font-bold text-slate-900 mt-1 break-all">
+                        {extractedBankInfo || 'No bank account text provided.'}
+                      </div>
+                    </div>
+                    {extractedBankInfo && (
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard.writeText(extractedBankInfo)}
+                        className="px-2.5 py-1.5 rounded-xl bg-amber-200/80 hover:bg-amber-300 text-amber-950 font-bold text-[11px] shrink-0 cursor-pointer"
+                      >
+                        <Copy className="w-3 h-3 inline mr-1" />
+                        Copy
+                      </button>
+                    )}
                   </div>
-                </div>
-              )}
-              {parsedClaimDesc.cleanDescription && (
-                <p className="text-slate-600 pt-2 border-t border-emerald-100">
-                  {parsedClaimDesc.cleanDescription}
-                </p>
-              )}
-            </div>
 
-            {isTreasurer && (
-              <div className="space-y-3">
+                  {resolvedClaimantQrUrl ? (
+                    <div className="pt-2.5 border-t border-amber-200/80 flex flex-wrap items-center gap-3">
+                      {isClaimantQrPdf ? (
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-5 h-5 text-amber-800" />
+                          <span className="font-bold text-amber-950">Claimant DuitNow QR (PDF)</span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setFullQrOpen(true)}
+                          className="p-1.5 bg-white rounded-xl border border-amber-200 shadow-2xs shrink-0 cursor-zoom-in"
+                          title="Click to zoom Claimant DuitNow QR"
+                        >
+                          <img
+                            src={resolvedClaimantQrUrl}
+                            alt={`${claim.claimant_name} DuitNow QR`}
+                            className="w-28 h-28 object-contain rounded-lg"
+                          />
+                        </button>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {!isClaimantQrPdf ? (
+                          <button
+                            type="button"
+                            onClick={() => setFullQrOpen(true)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 border border-amber-200 text-amber-950 font-bold text-[11px] cursor-pointer"
+                          >
+                            <ZoomIn className="w-3.5 h-3.5" />
+                            <span>View Full QR</span>
+                          </button>
+                        ) : (
+                          <a
+                            href={resolvedClaimantQrUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 border border-amber-200 text-amber-950 font-bold text-[11px]"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Open PDF QR</span>
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void downloadFileFromUrl(
+                              resolvedClaimantQrUrl,
+                              `${claim.claimant_name}_DuitNow_QR.${isClaimantQrPdf ? 'pdf' : 'jpg'}`
+                            )
+                          }
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download QR</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="pt-2 border-t border-amber-200/80 text-[11px] text-amber-800">
+                      No DuitNow QR uploaded by claimant.
+                    </div>
+                  )}
+                </div>
+
                 <label className="flex flex-col items-center justify-center gap-1.5 p-3.5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-50 cursor-pointer text-center">
                   <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
                     <UploadCloud className="w-4 h-4" />
@@ -4172,7 +4356,6 @@ export default function AuditReviewModal({
                         </div>
                       );
 
-                      // ---- Prevent self-approval on all own claims (except completing an already Treasurer-verified claim) ----
                       if (isOwnClaim) {
                         if (stage1Done && verifiedBy !== myLabel) {
                           return (
@@ -4205,7 +4388,6 @@ export default function AuditReviewModal({
                         );
                       }
 
-                      // ---- Normal claims or Owner claims: single approval by Treasurer (Admin) ----
                       if (!needsTwoStage) {
                         return (
                           <div className="grid grid-cols-2 gap-2.5">
@@ -4221,13 +4403,12 @@ export default function AuditReviewModal({
                               ) : (
                                 <CheckCircle2 className="w-4 h-4" />
                               )}
-                              <span>Approve &amp; Save Proof</span>
+                              <span>Approve &amp; Mark Paid</span>
                             </button>
                           </div>
                         );
                       }
 
-                      // ---- High-value non-Owner claims: Stage 1 (Treasurer) then Stage 2 (Owner) ----
                       if (!stage1Done) {
                         if (isOwner) {
                           return (
@@ -4273,7 +4454,7 @@ export default function AuditReviewModal({
                               ) : (
                                 <CheckCircle2 className="w-4 h-4" />
                               )}
-                              <span>Final Approve &amp; Save Proof</span>
+                              <span>Final Approve &amp; Mark Paid</span>
                             </button>
                           </div>
                         );
@@ -4307,51 +4488,97 @@ export default function AuditReviewModal({
               </div>
             )}
 
-            {/* Edit & Audit History for this Claim */}
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2 text-xs">
-              <div className="flex items-center justify-between font-extrabold text-slate-800">
-                <span className="flex items-center gap-1.5">
-                  <History className="w-3.5 h-3.5 text-emerald-700" />
-                  <span>Edit History ({claimHistory.length})</span>
-                </span>
-              </div>
-              {claimHistory.length === 0 ? (
-                <p className="text-[11px] text-slate-400">No edits recorded yet.</p>
-              ) : (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {claimHistory.map((ev) => (
-                    <div key={ev.id} className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1">
-                      <div className="flex justify-between gap-2 text-[11px]">
-                        <span className="font-bold text-slate-900">
-                          {ev.actorName} ({ev.action})
-                        </span>
-                        <span className="font-mono text-slate-400">
-                          {new Date(ev.timestamp).toLocaleString()}
-                        </span>
-                      </div>
-                      {ev.changes.length > 0 ? (
-                        <div className="space-y-1">
-                          {ev.changes.map((c, idx) => (
-                            <div key={idx} className="flex flex-wrap items-center gap-1 text-[10px]">
-                              <span className="font-bold text-slate-700">{c.field}:</span>
-                              <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 line-through">{c.before}</span>
-                              <ArrowRight className="w-2.5 h-2.5 text-slate-400" />
-                              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold">{c.after}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-[11px] text-slate-600">{ev.summary}</p>
-                      )}
-                    </div>
-                  ))}
+            {rightTab === 'history' && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between font-extrabold text-slate-800">
+                  <span className="flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Edit History ({claimHistory.length})</span>
+                  </span>
                 </div>
-              )}
-            </div>
+                {claimHistory.length === 0 ? (
+                  <p className="text-[11px] text-slate-400">No edits recorded yet.</p>
+                ) : (
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {claimHistory.map((ev) => (
+                      <div key={ev.id} className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1">
+                        <div className="flex justify-between gap-2 text-[11px]">
+                          <span className="font-bold text-slate-900">
+                            {ev.actorName} ({ev.action})
+                          </span>
+                          <span className="font-mono text-slate-400">
+                            {new Date(ev.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+                        {ev.changes.length > 0 ? (
+                          <div className="space-y-1">
+                            {ev.changes.map((c, idx) => (
+                              <div key={idx} className="flex flex-wrap items-center gap-1 text-[10px]">
+                                <span className="font-bold text-slate-700">{c.field}:</span>
+                                <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 line-through">{c.before}</span>
+                                <ArrowRight className="w-2.5 h-2.5 text-slate-400" />
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-bold">{c.after}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-slate-600">{ev.summary}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         )}
       </div>
+
+      {fullQrOpen && resolvedClaimantQrUrl && !isClaimantQrPdf && (
+        <div
+          className="fixed inset-0 z-[65] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
+          onClick={() => setFullQrOpen(false)}
+        >
+          <div
+            className="max-w-md w-full bg-white rounded-3xl p-5 flex flex-col items-center gap-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between text-slate-900">
+              <div>
+                <div className="text-sm font-extrabold">{claim.claimant_name}</div>
+                <div className="text-[11px] font-mono text-slate-500">DuitNow / TNG QR</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFullQrOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
+                aria-label="Close full QR"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <img
+              src={resolvedClaimantQrUrl}
+              alt={`${claim.claimant_name} DuitNow QR`}
+              className="w-72 h-72 object-contain rounded-2xl border border-amber-200 p-2 bg-white"
+            />
+            <button
+              type="button"
+              onClick={() =>
+                void downloadFileFromUrl(
+                  resolvedClaimantQrUrl,
+                  `${claim.claimant_name}_DuitNow_QR.jpg`
+                )
+              }
+              className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download QR Image</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {fullImageOpen && !isPdf && claim.receipt_url && (
         <div
@@ -4605,7 +4832,7 @@ export interface EditableActivity {
   id?: string; event_name: string; category: string; event_date?: string; event_time?: string;
   location?: string; registration_fee?: number; driver_allowance_per_trip?: number;
   driver_recruitment_open?: boolean; qr_code_token?: string; ticket_qr_mode?: TicketQrMode;
-  description: string; status?: 'Active' | 'Closed';
+  pass_approval_rule?: PassApprovalRule; description: string; status?: 'Active' | 'Closed';
 }
 
 interface BudgetModalProps {
@@ -4636,6 +4863,7 @@ export default function BudgetModal({
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [localPassOverrides, setLocalPassOverrides] = useState<Record<string, boolean>>({});
+  const [feeFilter, setFeeFilter] = useState<'Pending' | 'Verified' | 'Rejected'>('Pending');
 
   // Only initialize when modal opens or switches to a different activity ID (prevents auto-jump when granting passes!)
   const lastInitIdRef = useRef<string | null>(null);
@@ -4661,15 +4889,16 @@ export default function BudgetModal({
       setDriverAllowance(String(initialData.driver_allowance_per_trip ?? 5.0));
       setDriverRecruitmentOpen(initialData.driver_recruitment_open ?? true);
       const savedMode =
-        (typeof window !== 'undefined' && initialData.id ? localStorage.getItem(`clubsync_qrmode_${initialData.id}`) : null) ||
         initialData.ticket_qr_mode ||
         (Number(feeVal) > 0 ? 'entry_pass' : 'scan_attendance');
       setUseEntryPass(isEntryPassMode(savedMode));
 
       const savedRule =
-        (typeof window !== 'undefined' && initialData.id ? (localStorage.getItem(`clubsync_passrule_${initialData.id}`) as PassApprovalRule | null) : null) ||
+        initialData.pass_approval_rule ||
         (savedMode === 'manual_only' ? 'manual_only' : 'auto_after_payment');
       setPassRule(savedRule);
+      const hasPendingFees = feePayments.some((f) => f.budget_id === initialData.id && f.status === 'Pending');
+      setFeeFilter(hasPendingFees ? 'Pending' : 'Verified');
 
       setQrToken(initialData.qr_code_token || (initialData.id ? initialData.id.slice(0, 6).toUpperCase() : 'EV2026'));
       setStatus(initialData.status || 'Active');
@@ -4722,11 +4951,10 @@ export default function BudgetModal({
         description: description.trim(), status,
       };
       if (isEditing && eventId) {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(`clubsync_qrmode_${eventId}`, modeValue);
-          localStorage.setItem(`clubsync_passrule_${eventId}`, passRule);
-        }
-        const { error } = await supabase.from('budgets').update({ ...basePayload, ticket_qr_mode: modeValue }).eq('id', eventId);
+        const { error } = await supabase
+          .from('budgets')
+          .update({ ...basePayload, ticket_qr_mode: modeValue, pass_approval_rule: passRule })
+          .eq('id', eventId);
         if (error) await supabase.from('budgets').update(basePayload).eq('id', eventId);
         if (profile && initialData) {
           const changes = computeFieldChanges([
@@ -4752,16 +4980,11 @@ export default function BudgetModal({
         }
         onSuccess(`Saved "${eventName.trim()}"!`);
       } else {
-        const { data: created, error } = await supabase.from('budgets').insert({ ...basePayload, ticket_qr_mode: modeValue, allocated_amount: 0, spent_amount: 0 }).select('*').single();
+        const { error } = await supabase
+          .from('budgets')
+          .insert({ ...basePayload, ticket_qr_mode: modeValue, pass_approval_rule: passRule, allocated_amount: 0, spent_amount: 0 });
         if (error) {
-          const { data: fallback } = await supabase.from('budgets').insert({ ...basePayload, allocated_amount: 0, spent_amount: 0 }).select('*').single();
-          if (fallback && typeof window !== 'undefined') {
-            localStorage.setItem(`clubsync_qrmode_${fallback.id}`, modeValue);
-            localStorage.setItem(`clubsync_passrule_${fallback.id}`, passRule);
-          }
-        } else if (created && typeof window !== 'undefined') {
-          localStorage.setItem(`clubsync_qrmode_${created.id}`, modeValue);
-          localStorage.setItem(`clubsync_passrule_${created.id}`, passRule);
+          await supabase.from('budgets').insert({ ...basePayload, allocated_amount: 0, spent_amount: 0 });
         }
         onSuccess(`Published "${eventName.trim()}"!`);
       }
@@ -4954,58 +5177,89 @@ export default function BudgetModal({
 
             {/* 3. HIDDEN FEE PAYMENTS PANEL */}
             {openSection === 'fees' && isEditing && (
-              <div className="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+              <div className="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex p-1 rounded-xl bg-white border border-slate-200 gap-1">
+                    {(['Pending', 'Verified', 'Rejected'] as const).map((st) => {
+                      const cnt = eventPayments.filter((f) => f.status === st).length;
+                      return (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setFeeFilter(st)}
+                          className={`px-3 py-1 rounded-lg font-bold text-[11px] cursor-pointer ${
+                            feeFilter === st ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          {st} ({cnt})
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <div className="border bg-white rounded-xl overflow-hidden max-h-[220px] overflow-y-auto">
                   <table className="w-full text-left border-collapse">
                     <thead><tr className="bg-slate-50 border-b"><th className="py-2 px-3">Student</th><th className="py-2 px-3">Amount</th><th className="py-2 px-3">Status</th><th className="py-2 px-3 text-right">Action</th></tr></thead>
                     <tbody className="divide-y">
-                      {eventPayments.map((p) => (
+                      {eventPayments.filter((p) => p.status === feeFilter).length === 0 ? (
+                        <tr><td colSpan={4} className="py-5 text-center text-slate-400">No {feeFilter.toLowerCase()} fees.</td></tr>
+                      ) : (
+                      eventPayments.filter((p) => p.status === feeFilter).map((p) => (
                         <tr key={p.id}>
                           <td className="py-2 px-3 font-bold">{p.student_name}</td>
                           <td className="py-2 px-3 font-bold text-emerald-700">RM {Number(p.amount_paid).toFixed(2)}</td>
                           <td className="py-2 px-3">{p.status}</td>
                           <td className="py-2 px-3 text-right space-x-1">
-                            <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 rounded bg-slate-100"><ExternalLink className="w-3 h-3 inline" /></a>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await supabase.from('activity_fee_payments').update({ status: 'Verified' }).eq('id', p.id);
-                                if (profile) {
-                                  void recordEditHistory({
-                                    actor: profile,
-                                    category: 'Fees',
-                                    table: 'activity_fee_payments',
-                                    recordId: p.id,
-                                    recordTitle: `${p.student_name} fee`,
-                                    changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Verified' }]),
-                                  });
-                                }
-                                onSuccess('Verified!');
-                              }}
-                              className="px-2 py-1 rounded bg-emerald-600 text-white font-bold cursor-pointer"
-                            >
-                              Verify
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await supabase.from('activity_fee_payments').update({ status: 'Rejected' }).eq('id', p.id);
-                                if (profile) {
-                                  void recordEditHistory({
-                                    actor: profile,
-                                    category: 'Fees',
-                                    table: 'activity_fee_payments',
-                                    recordId: p.id,
-                                    recordTitle: `${p.student_name} fee`,
-                                    changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Rejected' }]),
-                                  });
-                                }
-                                onSuccess('Rejected.');
-                              }}
-                              className="px-2 py-1 rounded bg-rose-50 text-rose-700 font-bold cursor-pointer"
-                            >
-                              Reject
-                            </button>
+                            {p.receipt_url && (
+                              <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 rounded bg-slate-100"><ExternalLink className="w-3 h-3 inline" /></a>
+                            )}
+                            {p.status !== 'Verified' && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await supabase.from('activity_fee_payments').update({ status: 'Verified' }).eq('id', p.id);
+                                  if (passRule === 'auto_after_payment' && p.user_id) {
+                                    await supabase.from('event_rsvps').update({ pass_approved: true }).eq('budget_id', eventId).eq('user_id', p.user_id);
+                                  }
+                                  if (profile) {
+                                    void recordEditHistory({
+                                      actor: profile,
+                                      category: 'Fees',
+                                      table: 'activity_fee_payments',
+                                      recordId: p.id,
+                                      recordTitle: `${p.student_name} fee`,
+                                      changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Verified' }]),
+                                    });
+                                  }
+                                  onSuccess('Verified!');
+                                }}
+                                className="px-2 py-1 rounded bg-emerald-600 text-white font-bold cursor-pointer"
+                              >
+                                Verify
+                              </button>
+                            )}
+                            {p.status !== 'Rejected' && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await supabase.from('activity_fee_payments').update({ status: 'Rejected' }).eq('id', p.id);
+                                  if (profile) {
+                                    void recordEditHistory({
+                                      actor: profile,
+                                      category: 'Fees',
+                                      table: 'activity_fee_payments',
+                                      recordId: p.id,
+                                      recordTitle: `${p.student_name} fee`,
+                                      changes: computeFieldChanges([{ field: 'Status', before: p.status, after: 'Rejected' }]),
+                                    });
+                                  }
+                                  onSuccess('Rejected.');
+                                }}
+                                className="px-2 py-1 rounded bg-rose-50 text-rose-700 font-bold cursor-pointer"
+                              >
+                                Reject
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => setHistoryTarget({ table: 'activity_fee_payments', recordId: p.id, title: `${p.student_name} Fee` })}
@@ -5033,7 +5287,8 @@ export default function BudgetModal({
                             </button>
                           </td>
                         </tr>
-                      ))}
+                      ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -5134,16 +5389,6 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptionsText, setPollOptionsText] = useState('Option A\nOption B\nOption C');
   const [newPollShowNumbers, setNewPollShowNumbers] = useState(true);
-  const [hiddenPollsMap, setHiddenPollsMap] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem('clubsync_hidden_polls');
-      if (raw) {
-        try { setHiddenPollsMap(JSON.parse(raw)); } catch { /* ignore */ }
-      }
-    }
-  }, []);
 
   useEffect(() => {
     if (carouselSlides.length <= 1 || selectedPoster || showNoticeModal) return;
@@ -5180,26 +5425,19 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
     setShowNoticeModal(true);
   };
 
-  const isPollNumbersHidden = (poll: Poll) => {
-    if (poll.question.startsWith('[HIDE_NUM]')) return true;
-    if (hiddenPollsMap[poll.id] !== undefined) return hiddenPollsMap[poll.id];
-    if (poll.show_results === false) return true;
-    return false;
-  };
+  const isPollNumbersHidden = (poll: Poll) =>
+    poll.show_results === false || poll.question.startsWith('[HIDE_NUM]');
 
   const cleanPollQuestion = (q: string) => q.replace(/^\[HIDE_NUM\]\s*/, '');
 
   const togglePollNumbersVisibility = async (poll: Poll) => {
-    const currentlyHidden = isPollNumbersHidden(poll);
-    const nextHidden = !currentlyHidden;
-    const updatedMap = { ...hiddenPollsMap, [poll.id]: nextHidden };
-    setHiddenPollsMap(updatedMap);
-    if (typeof window !== 'undefined') localStorage.setItem('clubsync_hidden_polls', JSON.stringify(updatedMap));
-
+    const nextShow = isPollNumbersHidden(poll);
     const cleanQ = cleanPollQuestion(poll.question);
-    const encodedQ = nextHidden ? `[HIDE_NUM] ${cleanQ}` : cleanQ;
-    await supabase.from('polls').update({ question: encodedQ }).eq('id', poll.id);
-    onRefresh(nextHidden ? 'Live poll numbers hidden from members.' : 'Live poll numbers visible to everyone.');
+    await supabase
+      .from('polls')
+      .update({ question: cleanQ, show_results: nextShow })
+      .eq('id', poll.id);
+    onRefresh(nextShow ? 'Live poll numbers visible to everyone.' : 'Live poll numbers hidden from members.');
   };
 
   const handleSaveNotice = async (e: React.FormEvent) => {
@@ -5269,11 +5507,14 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
     e.preventDefault();
     const opts = pollOptionsText.split('\n').map((s) => s.trim()).filter(Boolean);
     if (!pollQuestion.trim() || opts.length < 2) return;
-    const finalQuestion = newPollShowNumbers ? pollQuestion.trim() : `[HIDE_NUM] ${pollQuestion.trim()}`;
+    const cleanQ = pollQuestion.trim();
     if (editingPoll) {
-      await supabase.from('polls').update({ question: finalQuestion, options: opts }).eq('id', editingPoll.id);
+      await supabase
+        .from('polls')
+        .update({ question: cleanQ, options: opts, show_results: newPollShowNumbers })
+        .eq('id', editingPoll.id);
       const changes = computeFieldChanges([
-        { field: 'Question', before: cleanPollQuestion(editingPoll.question), after: pollQuestion.trim() },
+        { field: 'Question', before: cleanPollQuestion(editingPoll.question), after: cleanQ },
         { field: 'Options', before: (editingPoll.options || []).join(', '), after: opts.join(', ') },
         { field: 'Show Live Numbers', before: !isPollNumbersHidden(editingPoll), after: newPollShowNumbers },
       ]);
@@ -5282,7 +5523,7 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
         category: 'Activities',
         table: 'polls',
         recordId: editingPoll.id,
-        recordTitle: pollQuestion.trim(),
+        recordTitle: cleanQ,
         changes,
       });
       setEditingPoll(null);
@@ -5291,7 +5532,9 @@ export default function CinematicHub({ announcements, polls, pollVotes, logs = [
       onRefresh('Poll updated!');
       return;
     }
-    await supabase.from('polls').insert({ question: finalQuestion, options: opts, is_active: true, created_by: profile.full_name });
+    await supabase
+      .from('polls')
+      .insert({ question: cleanQ, options: opts, show_results: newPollShowNumbers, is_active: true, created_by: profile.full_name });
     setPollQuestion(''); setShowPollModal(false); onRefresh('Poll published!');
   };
 
@@ -5656,33 +5899,10 @@ export default function ClaimFormModal({
     if (budgets.length > 0 && !budgets.some((b) => b.id === selectedEventOption) && !customEventName) {
       setSelectedEventOption(budgets[0].id);
     }
-    let savedBank = {
-      bank_name: profile.bank_name || '',
-      bank_account_no: profile.bank_account_no || '',
-      bank_account_holder: profile.bank_account_holder || profile.full_name || '',
-      bank_qr_url: profile.bank_qr_url || '',
-    };
-    if (typeof window !== 'undefined') {
-      const raw = localStorage.getItem(`clubsync_bank_${profile.id}`);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          savedBank = {
-            bank_name: profile.bank_name || parsed.bank_name || '',
-            bank_account_no: profile.bank_account_no || parsed.bank_account_no || '',
-            bank_account_holder:
-              profile.bank_account_holder || parsed.bank_account_holder || profile.full_name || '',
-            bank_qr_url: profile.bank_qr_url || parsed.bank_qr_url || '',
-          };
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-    setBankName(savedBank.bank_name);
-    setBankAccountNo(savedBank.bank_account_no);
-    setBankAccountHolder(savedBank.bank_account_holder);
-    setClaimantQrUrl(savedBank.bank_qr_url);
+    setBankName(profile.bank_name || '');
+    setBankAccountNo(profile.bank_account_no || '');
+    setBankAccountHolder(profile.bank_account_holder || profile.full_name || '');
+    setClaimantQrUrl(profile.bank_qr_url || '');
     setClaimantQrFile(null);
   }, [isOpen, profile, budgets, selectedEventOption, customEventName]);
 
@@ -5835,16 +6055,16 @@ export default function ClaimFormModal({
           ? `${bankName.trim() || 'Bank/DuitNow'} • ${bankAccountNo.trim()} (${bankAccountHolder.trim() || profile.full_name})`
           : '';
 
-      if (typeof window !== 'undefined' && includePaymentDetails) {
-        localStorage.setItem(
-          `clubsync_bank_${profile.id}`,
-          JSON.stringify({
+      if (includePaymentDetails && (bankAccountNo.trim() || finalClaimantQr)) {
+        void supabase
+          .from('users')
+          .update({
             bank_name: bankName.trim(),
             bank_account_no: bankAccountNo.trim(),
             bank_account_holder: bankAccountHolder.trim() || profile.full_name,
             bank_qr_url: finalClaimantQr,
           })
-        );
+          .eq('id', profile.id);
       }
 
       let receiptUrl = uploadedReceiptUrl || '';
@@ -5924,19 +6144,13 @@ export default function ClaimFormModal({
         corePayload,
       ];
 
-      let insertedId: string | null = null;
       let lastErr: unknown = null;
       let saved = false;
 
       for (const payload of candidates) {
-        const { data: insData, error: insErr } = await supabase
-          .from('claims')
-          .insert(payload)
-          .select('id')
-          .maybeSingle();
+        const { error: insErr } = await supabase.from('claims').insert(payload);
         if (!insErr) {
           saved = true;
-          insertedId = insData?.id ? String(insData.id) : null;
           break;
         }
         lastErr = insErr;
@@ -5944,10 +6158,6 @@ export default function ClaimFormModal({
 
       if (!saved) {
         throw lastErr || new Error('Could not save claim to the database.');
-      }
-
-      if (insertedId && finalClaimantQr && typeof window !== 'undefined') {
-        localStorage.setItem(`clubsync_claimant_qr_${insertedId}`, finalClaimantQr);
       }
 
       void logActivity(
@@ -8526,6 +8736,8 @@ import {
   Edit3,
   Trash2,
   History,
+  ZoomIn,
+  XCircle,
 } from 'lucide-react';
 
 interface EventOperationsModalProps {
@@ -8576,7 +8788,12 @@ export default function EventOperationsModal({
   const [qrToken, setQrToken] = useState('');
   const [hasEntryPass, setHasEntryPass] = useState(false);
   const [passRule, setPassRule] = useState<PassApprovalRule>('auto_after_payment');
+  const [feeStatusFilter, setFeeStatusFilter] = useState<'Pending' | 'Verified' | 'Rejected'>('Pending');
   const [localPassOverrides, setLocalPassOverrides] = useState<Record<string, boolean>>({});
+  const [reviewingFeeId, setReviewingFeeId] = useState<string | null>(null);
+  const [feeConfirmAmounts, setFeeConfirmAmounts] = useState<Record<string, string>>({});
+  const [rejectReasonByFee, setRejectReasonByFee] = useState<Record<string, string>>({});
+  const [zoomReceiptFee, setZoomReceiptFee] = useState<ActivityFeePayment | null>(null);
 
   const lastEventIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -8595,25 +8812,20 @@ export default function EventOperationsModal({
     setAmountPaid(String(feeVal));
     setQrToken(event.qr_code_token || event.id.slice(0, 6).toUpperCase());
 
-    const evQr = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_payqr_${event.id}`) : null;
-    const evBank = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_paybank_${event.id}`) : null;
-    const evShow = typeof window !== 'undefined' ? localStorage.getItem(`clubsync_ev_showqr_${event.id}`) : null;
+    setActivePayQrUrl(event.payment_qr_url ?? paymentQrUrl);
+    setActivePayBankInfo(event.payment_bank_info ?? paymentBankInfo);
+    setShowQrToMembers(event.show_payment_qr ?? true);
 
-    setActivePayQrUrl(evQr !== null ? evQr : paymentQrUrl);
-    setActivePayBankInfo(evBank !== null ? evBank : paymentBankInfo);
-    setShowQrToMembers(evShow !== null ? evShow !== 'false' : true);
-
-    const savedMode =
-      (typeof window !== 'undefined' ? localStorage.getItem(`clubsync_qrmode_${event.id}`) : null) ||
-      event.ticket_qr_mode ||
-      (feeVal > 0 ? 'entry_pass' : 'scan_attendance');
+    const savedMode = event.ticket_qr_mode || (feeVal > 0 ? 'entry_pass' : 'scan_attendance');
     const entryPassActive = isEntryPassMode(savedMode);
     setHasEntryPass(entryPassActive);
 
-    const savedRule =
-      (typeof window !== 'undefined' ? (localStorage.getItem(`clubsync_passrule_${event.id}`) as PassApprovalRule | null) : null) ||
-      (savedMode === 'manual_only' ? 'manual_only' : 'auto_after_payment');
+    const savedRule: PassApprovalRule =
+      event.pass_approval_rule || (savedMode === 'manual_only' ? 'manual_only' : 'auto_after_payment');
     setPassRule(savedRule);
+    const hasPending = feePayments.some((f) => f.budget_id === event.id && f.status === 'Pending');
+    setFeeStatusFilter(hasPending ? 'Pending' : 'Verified');
+    setZoomReceiptFee(null);
 
     if (initialTab === 'pass' && !entryPassActive) setTab(isAdmin ? 'qr' : 'transport');
     else if (initialTab === 'fee' && feeVal <= 0 && !isAdmin) setTab('transport');
@@ -8627,7 +8839,7 @@ export default function EventOperationsModal({
     setPickupTime(cur?.pickup_time || '');
     setPickupPoint(cur?.pickup_point || '');
     setDormitoryInput(cur?.dormitory || profile.dormitory || '');
-  }, [event, initialTab, isAdmin, rsvps, profile.id, profile.dormitory, paymentQrUrl, paymentBankInfo]);
+  }, [event, initialTab, isAdmin, rsvps, feePayments, profile.id, profile.dormitory, paymentQrUrl, paymentBankInfo]);
 
   if (!event) return null;
 
@@ -8638,6 +8850,7 @@ export default function EventOperationsModal({
   const passengers = attendingRsvps.filter((r) => r.transport_type !== 'None' && !r.is_driver);
   const eventDrivers = attendingRsvps.filter((r) => r.is_driver);
   const eventPayments = feePayments.filter((f) => f.budget_id === event.id);
+  const pendingFeePayments = eventPayments.filter((f) => f.status === 'Pending');
   const eventClaims = claims.filter((c) => c.budget_id === event.id);
   const visibleFeePayments = isAdmin ? eventPayments : eventPayments.filter((p) => p.user_id === profile.id);
   const allowancePerTrip = Number(event.driver_allowance_per_trip || 0);
@@ -8668,8 +8881,8 @@ export default function EventOperationsModal({
     if (localPassOverrides[rsvp.id] !== undefined) return localPassOverrides[rsvp.id];
     if (passRule === 'manual_only') return rsvp.pass_approved === true;
     if (requiresFee) {
-      const hasPaid = eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Verified');
-      return hasPaid || rsvp.pass_approved === true;
+      const hasVerifiedPaid = eventPayments.some((f) => f.user_id === rsvp.user_id && f.status === 'Verified');
+      return hasVerifiedPaid || rsvp.pass_approved === true;
     }
     return rsvp.pass_approved === true;
   };
@@ -8707,18 +8920,14 @@ export default function EventOperationsModal({
       }
       setActivePayQrUrl(finalUrl);
       setAdminQrFile(null);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`clubsync_ev_payqr_${event.id}`, finalUrl);
-        localStorage.setItem(`clubsync_ev_paybank_${event.id}`, activePayBankInfo.trim());
-        localStorage.setItem(`clubsync_ev_showqr_${event.id}`, String(showQrToMembers));
-        localStorage.setItem('clubsync_payment_qr', finalUrl);
-        localStorage.setItem('clubsync_payment_bank', activePayBankInfo.trim());
-      }
-      await supabase.from('club_settings').upsert({
-        id: 1,
-        payment_qr_url: finalUrl,
-        payment_bank_info: activePayBankInfo.trim(),
-      });
+      await supabase
+        .from('budgets')
+        .update({
+          payment_qr_url: finalUrl || null,
+          payment_bank_info: activePayBankInfo.trim() || null,
+          show_payment_qr: showQrToMembers,
+        })
+        .eq('id', event.id);
       setAdminQrSetupOpen(false);
       onRefresh(showQrToMembers ? 'Payment QR & Bank details displayed to members!' : 'Payment QR hidden from members.');
     } finally {
@@ -8863,20 +9072,77 @@ export default function EventOperationsModal({
         await supabase.from('activity_fee_payments').insert({
           budget_id: event.id, user_id: profile.id, student_name: profile.full_name,
           matric_no: profile.matric_no, phone_number: profile.phone_number, amount_paid: numAmt,
-          receipt_url: receiptUrl, receipt_file_name: feeFile.name, status: 'Verified',
+          receipt_url: receiptUrl, receipt_file_name: feeFile.name, status: 'Pending',
         });
         setFeeFile(null);
-        if (hasEntryPass) setTab('pass');
         void logActivity(
           profile,
           'Fees',
-          'Activity fee paid',
-          `${profile.full_name} (${profile.matric_no}) paid RM ${numAmt.toFixed(2)} fee for "${event.event_name}"`
+          'Activity fee submitted (Pending)',
+          `${profile.full_name} (${profile.matric_no}) submitted RM ${numAmt.toFixed(2)} fee receipt for "${event.event_name}" (Pending verification)`
         );
-        onRefresh('Fee payment submitted!');
+        onRefresh('Fee receipt submitted! Pending Treasurer verification.');
       }
     } finally {
       setSubmittingFee(false);
+    }
+  };
+
+  const handleVerifyOrRejectFee = async (p: ActivityFeePayment, decision: 'Verified' | 'Rejected') => {
+    if (!isAdmin || !permissions.can_manage_claims_fees) return;
+    const rawConfirm = feeConfirmAmounts[p.id];
+    const confirmedAmt = rawConfirm !== undefined && !isNaN(parseFloat(rawConfirm)) && parseFloat(rawConfirm) > 0
+      ? parseFloat(rawConfirm)
+      : Number(p.amount_paid);
+    const reason = (rejectReasonByFee[p.id] || '').trim();
+
+    setReviewingFeeId(p.id);
+    try {
+      const { error } = await supabase
+        .from('activity_fee_payments')
+        .update({ status: decision, amount_paid: confirmedAmt })
+        .eq('id', p.id);
+      if (error) {
+        onRefresh(error.message || 'Could not update fee payment.');
+        return;
+      }
+
+      if (decision === 'Verified' && passRule === 'auto_after_payment' && p.user_id) {
+        await supabase
+          .from('event_rsvps')
+          .update({ pass_approved: true })
+          .eq('budget_id', event.id)
+          .eq('user_id', p.user_id);
+      }
+
+      const changes = computeFieldChanges([
+        { field: 'Status', before: p.status, after: decision },
+        { field: 'Amount Paid (RM)', before: Number(p.amount_paid).toFixed(2), after: confirmedAmt.toFixed(2) },
+        ...(decision === 'Rejected' && reason ? [{ field: 'Reject Reason', before: '', after: reason }] : []),
+      ]);
+      void recordEditHistory({
+        actor: profile,
+        category: 'Fees',
+        table: 'activity_fee_payments',
+        recordId: p.id,
+        recordTitle: `${p.student_name} — ${event.event_name}`,
+        changes,
+      });
+      void logActivity(
+        profile,
+        'Fees',
+        decision === 'Verified' ? 'Fee payment verified' : 'Fee payment rejected',
+        `${profile.full_name} (${profile.matric_no}) ${decision.toLowerCase()} RM ${confirmedAmt.toFixed(2)} fee from ${p.student_name} (${p.matric_no}) for "${event.event_name}"${
+          decision === 'Rejected' && reason ? ` — Reason: ${reason}` : ''
+        }`
+      );
+      onRefresh(
+        decision === 'Verified'
+          ? `✓ Verified RM ${confirmedAmt.toFixed(2)} for ${p.student_name}${passRule === 'auto_after_payment' ? ' (Entry Pass unlocked)' : ''}!`
+          : `Rejected fee receipt from ${p.student_name}.`
+      );
+    } finally {
+      setReviewingFeeId(null);
     }
   };
 
@@ -9088,7 +9354,14 @@ export default function EventOperationsModal({
                 <button type="button" onClick={() => setTab('qr')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'qr' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Venue QR ({qrCheckedInList.length})</button>
               )}
               {(requiresFee || isAdmin) && (
-                <button type="button" onClick={() => setTab('fee')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'fee' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Fee (RM {reqFee.toFixed(0)})</button>
+                <button type="button" onClick={() => setTab('fee')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer inline-flex items-center gap-1.5 ${tab === 'fee' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>
+                  <span>Fee (RM {reqFee.toFixed(0)})</span>
+                  {isAdmin && permissions.can_manage_claims_fees && pendingFeePayments.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-amber-400 text-slate-950">
+                      {pendingFeePayments.length}
+                    </span>
+                  )}
+                </button>
               )}
               <button type="button" onClick={() => setTab('transport')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'transport' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Carpool ({passengers.length}P / {eventDrivers.length}D)</button>
             </div>
@@ -9113,12 +9386,20 @@ export default function EventOperationsModal({
                     <Lock className="w-8 h-8 text-amber-300 mx-auto" />
                     <p className="text-xs font-extrabold">Entry Pass Locked</p>
                     {requiresFee && passRule === 'auto_after_payment' ? (
-                      <>
-                        <p className="text-[11px] text-emerald-100">Pay the RM {reqFee.toFixed(2)} activity fee to unlock your Entry Pass QR automatically:</p>
-                        <button type="button" onClick={() => setTab('fee')} className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold cursor-pointer">
-                          Pay RM {reqFee.toFixed(2)} Fee →
-                        </button>
-                      </>
+                      eventPayments.some((f) => f.user_id === profile.id && f.status === 'Pending') ? (
+                        <p className="text-[11px] text-amber-200 font-semibold">
+                          ⏳ Receipt submitted — waiting for Treasurer verification to unlock your Entry Pass QR.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-[11px] text-emerald-100">
+                            Pay RM {reqFee.toFixed(2)} and await Treasurer verification to unlock your Entry Pass QR:
+                          </p>
+                          <button type="button" onClick={() => setTab('fee')} className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold cursor-pointer">
+                            Pay RM {reqFee.toFixed(2)} Fee →
+                          </button>
+                        </>
+                      )
                     ) : (
                       <p className="text-[11px] text-emerald-100">Your Entry Pass QR will appear here once granted by the Admin.</p>
                     )}
@@ -9264,7 +9545,11 @@ export default function EventOperationsModal({
 
                 <form onSubmit={handlePayFeeSubmit} className="bg-slate-50 border rounded-2xl p-5 space-y-3">
                   <h3 className="text-sm font-extrabold">Fee Payment (RM {reqFee.toFixed(2)})</h3>
-                  {hasEntryPass && passRule === 'auto_after_payment' && <p className="text-[11px] text-emerald-700 font-semibold">Your Entry Pass QR unlocks automatically after payment submission.</p>}
+                  {hasEntryPass && passRule === 'auto_after_payment' && (
+                    <p className="text-[11px] text-emerald-700 font-semibold">
+                      Your Entry Pass QR unlocks once the Treasurer verifies your receipt.
+                    </p>
+                  )}
 
                   {showQrToMembers && (activePayQrUrl || activePayBankInfo) && (
                     <div className="p-4 rounded-2xl bg-white border-2 border-emerald-200 space-y-2.5 text-center shadow-xs">
@@ -9363,65 +9648,179 @@ export default function EventOperationsModal({
                 </form>
               </div>
               <div className="lg:col-span-3 space-y-3">
-                <h3 className="text-sm font-extrabold">{isAdmin ? `All Fee Submissions (${visibleFeePayments.length})` : `My Fee Receipt (${visibleFeePayments.length})`}</h3>
-                <div className="border rounded-2xl overflow-hidden">
-                  <table className="w-full text-left border-collapse">
-                    <thead><tr className="bg-slate-50 border-b"><th className="py-2 px-3">Student</th><th className="py-2 px-3">Amount</th><th className="py-2 px-3">Status</th><th className="py-2 px-3 text-right">Actions</th></tr></thead>
-                    <tbody className="divide-y">
-                      {visibleFeePayments.length === 0 ? (
-                        <tr><td colSpan={4} className="py-6 text-center text-slate-400">No payment submission yet.</td></tr>
-                      ) : (
-                        visibleFeePayments.map((p) => (
-                          <tr key={p.id}>
-                            <td className="py-2 px-3">
-                              <div className="font-bold">{p.student_name}</div>
-                              <div className="text-[10px] text-slate-400 font-mono">{p.matric_no}</div>
-                            </td>
-                            <td className="py-2 px-3 font-extrabold text-emerald-700">RM {Number(p.amount_paid).toFixed(2)}</td>
-                            <td className="py-2 px-3"><span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">{p.status}</span></td>
-                            <td className="py-2 px-3 text-right">
-                              <div className="inline-flex items-center gap-1 justify-end">
-                                {p.receipt_url && (
-                                  <a href={p.receipt_url} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-slate-100 text-emerald-700 hover:bg-slate-200" title="View Receipt">
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                  </a>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => setHistoryTarget({ table: 'activity_fee_payments', recordId: p.id, title: `${p.student_name} Fee` })}
-                                  className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
-                                  title="View Edit History"
-                                >
-                                  <History className="w-3.5 h-3.5" />
-                                </button>
-                                {(isAdmin || p.user_id === profile.id) && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => openEditFeeModal(p)}
-                                      className="p-1.5 rounded-lg bg-slate-100 text-slate-800 hover:bg-emerald-50 cursor-pointer"
-                                      title="Edit Fee Payment"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSoftDeleteFee(p)}
-                                      className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
-                                      title="Delete from web (kept in Supabase)"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-extrabold">
+                    {isAdmin ? `Fee Submissions (${visibleFeePayments.length})` : `My Fee Receipt (${visibleFeePayments.length})`}
+                  </h3>
+                  {isAdmin && (
+                    <div className="inline-flex bg-slate-100 p-1 rounded-xl gap-1">
+                      {(['Pending', 'Verified', 'Rejected'] as const).map((statusTab) => {
+                        const count = visibleFeePayments.filter((f) => f.status === statusTab).length;
+                        const active = feeStatusFilter === statusTab;
+                        return (
+                          <button
+                            key={statusTab}
+                            type="button"
+                            onClick={() => setFeeStatusFilter(statusTab)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition ${
+                              active
+                                ? statusTab === 'Pending'
+                                  ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                                  : statusTab === 'Verified'
+                                  ? 'bg-emerald-600 text-white shadow-2xs'
+                                  : 'bg-rose-600 text-white shadow-2xs'
+                                : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            {statusTab} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
+
+                {(() => {
+                  const displayedFees = isAdmin
+                    ? visibleFeePayments.filter((f) => f.status === feeStatusFilter)
+                    : visibleFeePayments;
+                  return (
+                    <div className="border rounded-2xl overflow-hidden">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b">
+                            <th className="py-2 px-3">Student</th>
+                            <th className="py-2 px-3">Amount</th>
+                            {(!isAdmin || feeStatusFilter !== 'Pending') && <th className="py-2 px-3">Status</th>}
+                            <th className="py-2 px-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {displayedFees.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="py-6 text-center text-slate-400">
+                                {isAdmin ? `No ${feeStatusFilter.toLowerCase()} fee submissions.` : 'No payment submission yet.'}
+                              </td>
+                            </tr>
+                          ) : (
+                            displayedFees.map((p) => {
+                              const isBusy = reviewingFeeId === p.id;
+                              const isPdfFile =
+                                p.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
+                                p.receipt_url?.toLowerCase().split('?')[0].endsWith('.pdf');
+                              return (
+                                <tr key={p.id}>
+                                  <td className="py-2 px-3">
+                                    <div className="font-bold text-slate-900">{p.student_name}</div>
+                                    <div className="text-[10px] text-slate-400 font-mono">{p.matric_no}</div>
+                                  </td>
+                                  <td className="py-2 px-3 font-extrabold text-emerald-700">
+                                    RM {Number(p.amount_paid).toFixed(2)}
+                                  </td>
+                                  {(!isAdmin || feeStatusFilter !== 'Pending') && (
+                                    <td className="py-2 px-3">
+                                      <span
+                                        className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                          p.status === 'Verified'
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : p.status === 'Rejected'
+                                            ? 'bg-rose-100 text-rose-700'
+                                            : 'bg-amber-100 text-amber-900'
+                                        }`}
+                                      >
+                                        {p.status}
+                                      </span>
+                                    </td>
+                                  )}
+                                  <td className="py-2 px-3 text-right">
+                                    <div className="inline-flex items-center gap-1.5 justify-end">
+                                      {p.receipt_url && !isPdfFile ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setZoomReceiptFee(p)}
+                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] cursor-pointer"
+                                          title="Zoom Receipt"
+                                        >
+                                          <ZoomIn className="w-3.5 h-3.5 text-emerald-700" />
+                                          {isAdmin && p.status === 'Pending' && <span>Receipt</span>}
+                                        </button>
+                                      ) : p.receipt_url ? (
+                                        <a
+                                          href={p.receipt_url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-emerald-700 font-bold text-[11px]"
+                                          title="View Receipt PDF"
+                                        >
+                                          <ExternalLink className="w-3.5 h-3.5" />
+                                          {isAdmin && p.status === 'Pending' && <span>PDF</span>}
+                                        </a>
+                                      ) : null}
+
+                                      {isAdmin && permissions.can_manage_claims_fees && p.status === 'Pending' ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() => void handleVerifyOrRejectFee(p, 'Verified')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] cursor-pointer disabled:opacity-60"
+                                          >
+                                            {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                                            <span>Verify</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={isBusy}
+                                            onClick={() => void handleVerifyOrRejectFee(p, 'Rejected')}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] cursor-pointer disabled:opacity-60"
+                                          >
+                                            <XCircle className="w-3 h-3" />
+                                            <span>Reject</span>
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setHistoryTarget({ table: 'activity_fee_payments', recordId: p.id, title: `${p.student_name} Fee` })}
+                                            className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer"
+                                            title="View Edit History"
+                                          >
+                                            <History className="w-3.5 h-3.5" />
+                                          </button>
+                                          {(isAdmin || p.user_id === profile.id) && (
+                                            <>
+                                              <button
+                                                type="button"
+                                                onClick={() => openEditFeeModal(p)}
+                                                className="p-1.5 rounded-lg bg-slate-100 text-slate-800 hover:bg-emerald-50 cursor-pointer"
+                                                title="Edit Fee Payment"
+                                              >
+                                                <Edit3 className="w-3.5 h-3.5" />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleSoftDeleteFee(p)}
+                                                className="p-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                                                title="Delete from web (kept in Supabase)"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            </>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -9870,6 +10269,119 @@ export default function EventOperationsModal({
         </div>
       )}
 
+      {zoomReceiptFee && zoomReceiptFee.receipt_url && (
+        <div
+          className="fixed inset-0 z-[70] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
+          onClick={() => setZoomReceiptFee(null)}
+        >
+          <div className="max-w-4xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12" onClick={(e) => e.stopPropagation()}>
+            <div className="md:col-span-7 bg-slate-950 flex items-center justify-center p-4 max-h-[80vh]">
+              <img
+                src={zoomReceiptFee.receipt_url}
+                alt={zoomReceiptFee.student_name}
+                className="max-h-[72vh] w-auto max-w-full object-contain rounded-xl bg-white"
+              />
+            </div>
+            <div className="md:col-span-5 p-5 flex flex-col justify-between gap-4 text-xs">
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-900">{zoomReceiptFee.student_name}</h4>
+                    <p className="font-mono text-[11px] text-slate-500">{zoomReceiptFee.matric_no}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setZoomReceiptFee(null)}
+                    className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                  <span className="font-bold text-slate-500">Submitted Amount</span>
+                  <span className="text-sm font-extrabold text-emerald-700">RM {Number(zoomReceiptFee.amount_paid).toFixed(2)}</span>
+                </div>
+
+                {isAdmin && permissions.can_manage_claims_fees && zoomReceiptFee.status === 'Pending' && (
+                  <div className="space-y-2.5 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">Confirm Amount (RM)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={feeConfirmAmounts[zoomReceiptFee.id] ?? String(zoomReceiptFee.amount_paid)}
+                        onChange={(e) =>
+                          setFeeConfirmAmounts((prev) => ({ ...prev, [zoomReceiptFee.id]: e.target.value }))
+                        }
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 font-extrabold text-emerald-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">Reject Reason (Optional)</label>
+                      <input
+                        type="text"
+                        value={rejectReasonByFee[zoomReceiptFee.id] ?? ''}
+                        onChange={(e) =>
+                          setRejectReasonByFee((prev) => ({ ...prev, [zoomReceiptFee.id]: e.target.value }))
+                        }
+                        placeholder="e.g. Blurry slip / wrong RM"
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2 pt-3 border-t border-slate-100">
+                {isAdmin && permissions.can_manage_claims_fees && zoomReceiptFee.status === 'Pending' && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={reviewingFeeId === zoomReceiptFee.id}
+                      onClick={async () => {
+                        await handleVerifyOrRejectFee(zoomReceiptFee, 'Verified');
+                        setZoomReceiptFee(null);
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-60"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Verify Fee</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={reviewingFeeId === zoomReceiptFee.id}
+                      onClick={async () => {
+                        await handleVerifyOrRejectFee(zoomReceiptFee, 'Rejected');
+                        setZoomReceiptFee(null);
+                      }}
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold cursor-pointer disabled:opacity-60"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>Reject</span>
+                    </button>
+                  </div>
+                )}
+                {zoomReceiptFee.phone_number && (
+                  <a
+                    href={waLink(
+                      zoomReceiptFee.phone_number,
+                      `Hi ${zoomReceiptFee.student_name}, regarding your RM ${Number(zoomReceiptFee.amount_paid).toFixed(2)} fee receipt for ${event.event_name}.`
+                    )}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Message Member on WhatsApp</span>
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <RecordHistoryModal
         target={historyTarget}
         logs={logs}
@@ -9888,6 +10400,7 @@ import {
   supabase,
   UserProfile,
   Budget,
+  BudgetPlanItem,
   EventRsvp,
   Claim,
   ActivityFeePayment,
@@ -9940,12 +10453,15 @@ interface LedgerSectionProps {
   entries: LedgerEntryItem[];
   events?: { id: string; event_name: string }[];
   budgets?: Budget[];
+  budgetPlanItems?: BudgetPlanItem[];
   rsvps?: EventRsvp[];
   claims: Claim[];
   feePayments?: ActivityFeePayment[];
   logs?: ActivityLogEntry[];
   profile: UserProfile;
   canEdit?: boolean;
+  physicalCash?: number;
+  onUpdatePhysicalCash?: (val: number) => Promise<void>;
   externalOpenModal?: boolean;
   onCloseExternalModal?: () => void;
   onSelectClaim?: (claim: Claim) => void;
@@ -9978,16 +10494,6 @@ interface UnifiedFinanceRow {
   rawFee?: ActivityFeePayment;
 }
 
-interface PlannerRow {
-  id: string;
-  budgetId: string; // 'ALL' or budget.id
-  entryType: 'IN' | 'OUT';
-  item: string;
-  category: string;
-  plannedAmount: string;
-  notes: string;
-}
-
 interface ParsedPasteRow {
   entry_date: string;
   entry_type: 'IN' | 'OUT';
@@ -10018,9 +10524,6 @@ const OUT_CATEGORIES = [
 ];
 
 const ALL_CATEGORIES = Array.from(new Set([...IN_CATEGORIES, ...OUT_CATEGORIES]));
-
-const PHYSICAL_CASH_STORAGE_KEY = 'clubsync_physical_cash_v1';
-const PLANNER_STORAGE_KEY = 'clubsync_budget_planner_v1';
 
 const ACTIVITY_PALETTE = [
   'bg-emerald-100 text-emerald-900 border-emerald-200',
@@ -10166,12 +10669,15 @@ export default function LedgerSection({
   entries,
   events = [],
   budgets = [],
+  budgetPlanItems = [],
   rsvps = [],
   claims,
   feePayments = [],
   logs = [],
   profile,
   canEdit = true,
+  physicalCash = 0,
+  onUpdatePhysicalCash,
   externalOpenModal = false,
   onCloseExternalModal,
   onSelectClaim,
@@ -10184,8 +10690,7 @@ export default function LedgerSection({
   const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
 
   // Physical cash split (bank balance = currentSavingsBalance - physicalCash)
-  const [physicalCash, setPhysicalCash] = useState<number>(0);
-  const [physicalCashInput, setPhysicalCashInput] = useState<string>('0.00');
+  const [physicalCashInput, setPhysicalCashInput] = useState<string>(Number(physicalCash || 0).toFixed(2));
 
   // Master spreadsheet filters & sort
   const [filterEvent, setFilterEvent] = useState<string>('ALL');
@@ -10224,12 +10729,12 @@ export default function LedgerSection({
 
   // Budget Planner state
   const [plannerBudgetId, setPlannerBudgetId] = useState<string>(budgets[0]?.id || 'ALL');
-  const [plannerRows, setPlannerRows] = useState<PlannerRow[]>([]);
   const [newPlanType, setNewPlanType] = useState<'IN' | 'OUT'>('OUT');
   const [newPlanItem, setNewPlanItem] = useState('');
   const [newPlanCategory, setNewPlanCategory] = useState(OUT_CATEGORIES[0]);
   const [newPlanAmount, setNewPlanAmount] = useState('');
   const [newPlanNotes, setNewPlanNotes] = useState('');
+  const [savingPlanItem, setSavingPlanItem] = useState(false);
 
   // Fee edit modal
   const [editingFeeItem, setEditingFeeItem] = useState<ActivityFeePayment | null>(null);
@@ -10254,29 +10759,8 @@ export default function LedgerSection({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const savedCash = parseFloat(localStorage.getItem(PHYSICAL_CASH_STORAGE_KEY) || '0');
-    if (!isNaN(savedCash) && savedCash >= 0) {
-      setPhysicalCash(savedCash);
-      setPhysicalCashInput(savedCash.toFixed(2));
-    }
-    const rawPlanner = localStorage.getItem(PLANNER_STORAGE_KEY);
-    if (rawPlanner) {
-      try {
-        const parsed = JSON.parse(rawPlanner);
-        if (Array.isArray(parsed)) setPlannerRows(parsed as PlannerRow[]);
-      } catch {
-        /* ignore */
-      }
-    }
-  }, []);
-
-  const persistPlannerRows = (next: PlannerRow[]) => {
-    setPlannerRows(next);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(PLANNER_STORAGE_KEY, JSON.stringify(next));
-    }
-  };
+    setPhysicalCashInput(Number(physicalCash || 0).toFixed(2));
+  }, [physicalCash]);
 
   // --- Exact Unified KPI Totals (matches Master Spreadsheet rows 1:1) ---
   const verifiedFeesList = useMemo(
@@ -10637,9 +11121,8 @@ export default function LedgerSection({
 
       if (modalMode === 'SET_SAVINGS' && !editingEntry) {
         const nextCash = Math.max(0, parseFloat(physicalCashInput) || 0);
-        setPhysicalCash(nextCash);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(PHYSICAL_CASH_STORAGE_KEY, nextCash.toFixed(2));
+        if (onUpdatePhysicalCash) {
+          await onUpdatePhysicalCash(nextCash);
         }
 
         const diff = Number((num - currentSavingsBalance).toFixed(2));
@@ -11220,17 +11703,20 @@ export default function LedgerSection({
 
   // --- Budget Planner filtered lines & actuals comparison ---
   const scopedPlannerRows = useMemo(
-    () => plannerRows.filter((p) => plannerBudgetId === 'ALL' || p.budgetId === plannerBudgetId),
-    [plannerRows, plannerBudgetId]
+    () =>
+      budgetPlanItems.filter(
+        (p) => !p.deleted_at && (plannerBudgetId === 'ALL' || p.budget_id === plannerBudgetId)
+      ),
+    [budgetPlanItems, plannerBudgetId]
   );
 
   const plannerTotals = useMemo(() => {
     const plannedIn = scopedPlannerRows
-      .filter((r) => r.entryType === 'IN')
-      .reduce((s, r) => s + (parseFloat(r.plannedAmount) || 0), 0);
+      .filter((r) => r.entry_type === 'IN')
+      .reduce((s, r) => s + (Number(r.planned_amount) || 0), 0);
     const plannedOut = scopedPlannerRows
-      .filter((r) => r.entryType === 'OUT')
-      .reduce((s, r) => s + (parseFloat(r.plannedAmount) || 0), 0);
+      .filter((r) => r.entry_type === 'OUT')
+      .reduce((s, r) => s + (Number(r.planned_amount) || 0), 0);
 
     const actualRows = unifiedRows.filter((r) =>
       plannerBudgetId === 'ALL' ? true : r.budgetId === plannerBudgetId || (plannerBudgetId === 'GENERAL' && isGeneralEventName(r.eventName))
@@ -11239,6 +11725,76 @@ export default function LedgerSection({
     const actualOut = actualRows.filter((r) => r.entryType === 'OUT').reduce((s, r) => s + r.amount, 0);
     return { plannedIn, plannedOut, actualIn, actualOut };
   }, [scopedPlannerRows, unifiedRows, plannerBudgetId]);
+
+  const handleAddPlanItem = async () => {
+    if (!canEdit || savingPlanItem) return;
+    const n = parseFloat(newPlanAmount);
+    if (!newPlanItem.trim() || isNaN(n) || n <= 0) return;
+    setSavingPlanItem(true);
+    try {
+      const { error } = await supabase.from('budget_plan_items').insert({
+        budget_id: plannerBudgetId,
+        entry_type: newPlanType,
+        item: newPlanItem.trim(),
+        category: newPlanCategory,
+        planned_amount: n,
+        notes: newPlanNotes.trim(),
+        created_by: profile.id,
+      });
+      if (error) {
+        onRefresh(error.message || 'Could not add budget plan item.');
+        return;
+      }
+      void logActivity(
+        profile,
+        'Finance',
+        'Added Budget Plan Item',
+        `${profile.full_name} (${profile.matric_no}) planned "${newPlanItem.trim()}" (${newPlanType} RM ${n.toFixed(2)})`
+      );
+      setNewPlanItem('');
+      setNewPlanAmount('');
+      setNewPlanNotes('');
+      onRefresh(`Added "${newPlanItem.trim()}" to Budget Plan!`);
+    } finally {
+      setSavingPlanItem(false);
+    }
+  };
+
+  const handleUpdatePlanItem = async (
+    row: BudgetPlanItem,
+    patch: { item?: string; planned_amount?: number }
+  ) => {
+    if (!canEdit) return;
+    const { error } = await supabase.from('budget_plan_items').update(patch).eq('id', row.id);
+    if (error) {
+      onRefresh(error.message || 'Could not update budget plan item.');
+      return;
+    }
+    onRefresh('Updated Budget Plan line.');
+  };
+
+  const handleDeletePlanItem = async (row: BudgetPlanItem) => {
+    if (!canEdit) return;
+    if (!window.confirm(`Remove planned line "${row.item}" from view?`)) return;
+    const { error } = await supabase
+      .from('budget_plan_items')
+      .update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: `${profile.full_name} (${profile.matric_no})`,
+      })
+      .eq('id', row.id);
+    if (error) {
+      onRefresh(error.message || 'Could not delete budget plan item.');
+      return;
+    }
+    void logActivity(
+      profile,
+      'Finance',
+      'Deleted Budget Plan Item',
+      `${profile.full_name} (${profile.matric_no}) removed planned line "${row.item}" (RM ${Number(row.planned_amount).toFixed(2)})`
+    );
+    onRefresh(`Removed "${row.item}" from Budget Plan.`);
+  };
 
   const parsedPastePreview = useMemo(() => parseSpreadsheetPaste(pasteText), [pasteText]);
   const activeCategoryList = entryType === 'IN' ? IN_CATEGORIES : OUT_CATEGORIES;
@@ -11269,6 +11825,11 @@ export default function LedgerSection({
               <span>Money In</span>
             </div>
             <div className="font-extrabold text-emerald-700">+RM {totalIn.toFixed(2)}</div>
+            {pendingFeesTotal > 0 && (
+              <div className="text-[11px] font-bold text-amber-700">
+                Pending Verification: RM {pendingFeesTotal.toFixed(2)}
+              </div>
+            )}
           </div>
           <div>
             <div className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
@@ -12328,28 +12889,11 @@ export default function LedgerSection({
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    const n = parseFloat(newPlanAmount);
-                    if (!newPlanItem.trim() || isNaN(n) || n <= 0) return;
-                    persistPlannerRows([
-                      ...plannerRows,
-                      {
-                        id: `plan-${Date.now()}`,
-                        budgetId: plannerBudgetId,
-                        entryType: newPlanType,
-                        item: newPlanItem.trim(),
-                        category: newPlanCategory,
-                        plannedAmount: n.toFixed(2),
-                        notes: newPlanNotes.trim(),
-                      },
-                    ]);
-                    setNewPlanItem('');
-                    setNewPlanAmount('');
-                    setNewPlanNotes('');
-                  }}
-                  className="md:col-span-2 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                  disabled={savingPlanItem}
+                  onClick={() => void handleAddPlanItem()}
+                  className="md:col-span-2 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-60"
                 >
-                  + Add Line
+                  {savingPlanItem ? 'Saving...' : '+ Add Line'}
                 </button>
               </div>
             )}
@@ -12376,46 +12920,48 @@ export default function LedgerSection({
                     </tr>
                   ) : (
                     scopedPlannerRows.map((p) => {
-                      const plannedVal = parseFloat(p.plannedAmount) || 0;
+                      const plannedVal = Number(p.planned_amount) || 0;
                       const actualCat = unifiedRows
                         .filter(
                           (r) =>
-                            r.entryType === p.entryType &&
-                            (p.budgetId === 'ALL'
+                            r.entryType === p.entry_type &&
+                            (p.budget_id === 'ALL'
                               ? true
-                              : p.budgetId === 'GENERAL'
+                              : p.budget_id === 'GENERAL'
                               ? isGeneralEventName(r.eventName)
-                              : r.budgetId === p.budgetId) &&
+                              : r.budgetId === p.budget_id) &&
                             r.category.toLowerCase() === p.category.toLowerCase()
                         )
                         .reduce((s, r) => s + r.amount, 0);
-                      const diff = p.entryType === 'IN' ? actualCat - plannedVal : plannedVal - actualCat;
+                      const diff = p.entry_type === 'IN' ? actualCat - plannedVal : plannedVal - actualCat;
 
                       return (
                         <tr key={p.id}>
                           <td className="py-2.5 px-4">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                p.entryType === 'IN'
+                                p.entry_type === 'IN'
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : 'bg-rose-100 text-rose-700'
                               }`}
                             >
-                              {p.entryType === 'IN' ? 'Income' : 'Expense'}
+                              {p.entry_type === 'IN' ? 'Income' : 'Expense'}
                             </span>
                           </td>
                           <td className="py-2.5 px-4 font-bold">
                             {canEdit ? (
                               <input
                                 type="text"
-                                value={p.item}
-                                onChange={(e) =>
-                                  persistPlannerRows(
-                                    plannerRows.map((x) =>
-                                      x.id === p.id ? { ...x, item: e.target.value } : x
-                                    )
-                                  )
-                                }
+                                defaultValue={p.item}
+                                onBlur={(e) => {
+                                  const nextItem = e.target.value.trim();
+                                  if (nextItem && nextItem !== p.item) {
+                                    void handleUpdatePlanItem(p, { item: nextItem });
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                }}
                                 className="w-full rounded-lg border border-slate-200 px-2 py-1 font-bold"
                               />
                             ) : (
@@ -12428,14 +12974,16 @@ export default function LedgerSection({
                               <input
                                 type="number"
                                 step="0.01"
-                                value={p.plannedAmount}
-                                onChange={(e) =>
-                                  persistPlannerRows(
-                                    plannerRows.map((x) =>
-                                      x.id === p.id ? { ...x, plannedAmount: e.target.value } : x
-                                    )
-                                  )
-                                }
+                                defaultValue={plannedVal.toFixed(2)}
+                                onBlur={(e) => {
+                                  const nextVal = parseFloat(e.target.value);
+                                  if (!isNaN(nextVal) && nextVal >= 0 && Math.abs(nextVal - plannedVal) > 0.001) {
+                                    void handleUpdatePlanItem(p, { planned_amount: nextVal });
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                }}
                                 className="w-24 ml-auto block rounded-lg border border-slate-200 px-2 py-1 text-right font-extrabold"
                               />
                             ) : (
@@ -12456,9 +13004,7 @@ export default function LedgerSection({
                             <td className="py-2.5 px-4 text-right">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  persistPlannerRows(plannerRows.filter((x) => x.id !== p.id))
-                                }
+                                onClick={() => void handleDeletePlanItem(p)}
                                 className="p-1 text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -15424,6 +15970,8 @@ export function normalizeEquipmentLoan(raw: Record<string, unknown>): EquipmentL
     approval_status: approvalStatus,
     approved_by: raw.approved_by ? String(raw.approved_by) : null,
     approved_at: raw.approved_at ? String(raw.approved_at) : null,
+    deleted_at: raw.deleted_at ? String(raw.deleted_at) : null,
+    deleted_by: raw.deleted_by ? String(raw.deleted_by) : null,
     created_at: String(raw.created_at || ''),
   };
 }
@@ -15454,6 +16002,8 @@ export function normalizeEquipmentItem(
     location: String(raw.location || 'Club Storage Room'),
     notes: String(raw.notes ?? raw.remarks ?? ''),
     requires_approval: Boolean(raw.requires_approval),
+    deleted_at: raw.deleted_at ? String(raw.deleted_at) : null,
+    deleted_by: raw.deleted_by ? String(raw.deleted_by) : null,
     created_at: String(raw.created_at || ''),
   };
 }
@@ -15719,7 +16269,15 @@ interface StoredMetaPayload {
   changes?: FieldChange[];
 }
 
-const SOFT_DELETE_STORAGE_KEY = 'clubsync_soft_deleted_v1';
+export interface SoftDeletedItem {
+  table: TrackedTable;
+  recordId: string;
+  title: string;
+  deletedAt: string;
+  deletedBy: string;
+  category: ActivityLogCategory;
+}
+
 const HISTORY_STORAGE_KEY = 'clubsync_record_history_v1';
 const META_MARKER = '[HIST_META:';
 
@@ -15770,34 +16328,6 @@ function saveLocalHistoryEvent(ev: RecordHistoryEvent) {
     localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next));
   } catch {
     /* ignore quota errors */
-  }
-}
-
-interface LocalDeleteEntry {
-  deleted: boolean;
-  updatedAt: string;
-}
-
-function readLocalSoftDeletes(): Record<string, LocalDeleteEntry> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(SOFT_DELETE_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, LocalDeleteEntry>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function setLocalSoftDeleteState(table: TrackedTable, recordId: string, deleted: boolean) {
-  if (typeof window === 'undefined') return;
-  try {
-    const cur = readLocalSoftDeletes();
-    cur[`${table}:${recordId}`] = { deleted, updatedAt: new Date().toISOString() };
-    localStorage.setItem(SOFT_DELETE_STORAGE_KEY, JSON.stringify(cur));
-  } catch {
-    /* ignore */
   }
 }
 
@@ -15895,7 +16425,7 @@ export async function recordEditHistory(params: {
 }
 
 /**
- * Hides a record from the web UI while keeping its row in Supabase unless manually deleted in Supabase.
+ * Hides a record from the web UI via `deleted_at` while keeping its row in Supabase unless manually deleted in Supabase.
  */
 export async function softDeleteRecord(params: {
   actor: HistoryActor | null | undefined;
@@ -15908,17 +16438,15 @@ export async function softDeleteRecord(params: {
   const { actor, category, table, recordId, recordTitle, extraSummary } = params;
   if (!recordId) return;
 
-  setLocalSoftDeleteState(table, recordId, true);
+  const actorLabel = actor ? `${actor.full_name}${actor.matric_no ? ` (${actor.matric_no})` : ''}` : 'System';
+  const nowIso = new Date().toISOString();
 
-  // Best-effort flag on the table if `is_deleted` exists; never calls `.delete()`.
-  try {
-    await supabase.from(table).update({ is_deleted: true }).eq('id', recordId);
-  } catch {
-    /* table may not have is_deleted column; activity_logs + localStorage handle hiding cleanly */
-  }
+  await supabase
+    .from(table)
+    .update({ deleted_at: nowIso, deleted_by: actorLabel })
+    .eq('id', recordId);
 
   if (actor) {
-    const actorLabel = `${actor.full_name}${actor.matric_no ? ` (${actor.matric_no})` : ''}`;
     const roleLabel = actor.role === 'owner' ? 'Owner' : actor.role === 'treasurer' ? 'Admin' : 'Member';
     const summary = `${actorLabel} removed ${tableDisplayLabel(table)} "${recordTitle}" from web view (record preserved in Supabase)${
       extraSummary ? ` — ${extraSummary}` : ''
@@ -15942,7 +16470,7 @@ export async function softDeleteRecord(params: {
       actorName: actor.full_name,
       actorMatric: actor.matric_no || '',
       actorRole: roleLabel,
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso,
       summary,
       changes: [],
     });
@@ -15966,13 +16494,10 @@ export async function restoreSoftDeletedRecord(params: {
   const { actor, category, table, recordId, recordTitle } = params;
   if (!recordId) return;
 
-  setLocalSoftDeleteState(table, recordId, false);
-
-  try {
-    await supabase.from(table).update({ is_deleted: false }).eq('id', recordId);
-  } catch {
-    /* ignore if column missing */
-  }
+  await supabase
+    .from(table)
+    .update({ deleted_at: null, deleted_by: null })
+    .eq('id', recordId);
 
   if (actor) {
     const actorLabel = `${actor.full_name}${actor.matric_no ? ` (${actor.matric_no})` : ''}`;
@@ -16011,55 +16536,14 @@ export async function restoreSoftDeletedRecord(params: {
   }
 }
 
-export function getSoftDeleteStateMap(logs: ActivityLogEntry[]): Map<string, boolean> {
-  const latestByKey = new Map<string, { deleted: boolean; ts: number }>();
-
-  const consider = (key: string, deleted: boolean, iso: string) => {
-    const ts = new Date(iso).getTime() || 0;
-    const prev = latestByKey.get(key);
-    if (!prev || ts >= prev.ts) {
-      latestByKey.set(key, { deleted, ts });
-    }
-  };
-
-  for (const log of logs) {
-    const parsed = parseHistoryMetaFromLog(log);
-    if (parsed && (parsed.action === 'deleted' || parsed.action === 'restored')) {
-      consider(`${parsed.table}:${parsed.recordId}`, parsed.action === 'deleted', parsed.timestamp);
-    }
-  }
-
-  for (const ev of readLocalHistory()) {
-    if (ev.action === 'deleted' || ev.action === 'restored') {
-      consider(`${ev.table}:${ev.recordId}`, ev.action === 'deleted', ev.timestamp);
-    }
-  }
-
-  const localMap = readLocalSoftDeletes();
-  for (const [key, val] of Object.entries(localMap)) {
-    consider(key, Boolean(val.deleted), val.updatedAt);
-  }
-
-  const out = new Map<string, boolean>();
-  latestByKey.forEach((v, k) => {
-    out.set(k, v.deleted);
-  });
-  return out;
-}
-
 export function filterActiveRecords<T extends { id: string }>(
-  table: TrackedTable,
+  _table: TrackedTable,
   rows: T[],
-  logs: ActivityLogEntry[]
+  _logs?: ActivityLogEntry[]
 ): T[] {
-  const stateMap = getSoftDeleteStateMap(logs);
   return rows.filter((row) => {
-    const dbDeleted = (row as unknown as { is_deleted?: boolean }).is_deleted === true;
-    const key = `${table}:${row.id}`;
-    const logState = stateMap.get(key);
-    if (logState === false) return true; // Explicitly restored overrides DB flag if is_deleted column is absent or stale
-    if (logState === true) return false;
-    return !dbDeleted;
+    const r = row as unknown as { deleted_at?: string | null; is_deleted?: boolean };
+    return !r.deleted_at && r.is_deleted !== true;
   });
 }
 
@@ -16124,15 +16608,15 @@ export function getAllHistoryEvents(logs: ActivityLogEntry[]): RecordHistoryEven
 }
 
 export function getCurrentlyDeletedEvents(logs: ActivityLogEntry[]): RecordHistoryEvent[] {
-  const stateMap = getSoftDeleteStateMap(logs);
   const all = getAllHistoryEvents(logs);
   const seenKey = new Set<string>();
   const out: RecordHistoryEvent[] = [];
   for (const ev of all) {
     const key = `${ev.table}:${ev.recordId}`;
-    if (ev.action === 'deleted' && stateMap.get(key) === true && !seenKey.has(key)) {
+    if (seenKey.has(key)) continue;
+    if (ev.action === 'deleted' || ev.action === 'restored') {
       seenKey.add(key);
-      out.push(ev);
+      if (ev.action === 'deleted') out.push(ev);
     }
   }
   return out;
@@ -16489,8 +16973,28 @@ export interface Budget {
   driver_recruitment_open: boolean;
   qr_code_token?: string;
   ticket_qr_mode?: TicketQrMode;
+  pass_approval_rule?: PassApprovalRule;
+  payment_qr_url?: string;
+  payment_bank_info?: string;
+  show_payment_qr?: boolean;
   description: string;
   status: 'Active' | 'Closed';
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  created_at: string;
+}
+
+export interface BudgetPlanItem {
+  id: string;
+  budget_id: string;
+  entry_type: 'IN' | 'OUT';
+  item: string;
+  category: string;
+  planned_amount: number;
+  notes?: string;
+  created_by?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -16515,6 +17019,8 @@ export interface EventRsvp {
   qr_checked_in?: boolean;
   qr_checked_in_at?: string | null;
   pass_approved?: boolean;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   updated_at: string;
 }
 
@@ -16529,6 +17035,8 @@ export interface ActivityFeePayment {
   receipt_url: string;
   receipt_file_name: string;
   status: 'Verified' | 'Pending' | 'Rejected';
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -16567,6 +17075,8 @@ export interface Claim {
   treasurer_verified_at?: string | null;
   final_approved_by?: string | null;
   final_approved_at?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -16581,6 +17091,8 @@ export interface EquipmentItem {
   location: string;
   notes: string;
   requires_approval?: boolean;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -16601,6 +17113,8 @@ export interface EquipmentLoan {
   approval_status?: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | null;
   approved_by?: string | null;
   approved_at?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -16672,6 +17186,8 @@ export interface Announcement {
   is_pinned: boolean;
   show_in_carousel: boolean;
   created_by: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 
@@ -16682,6 +17198,8 @@ export interface Poll {
   is_active: boolean;
   show_results?: boolean;
   created_by: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   created_at: string;
 }
 

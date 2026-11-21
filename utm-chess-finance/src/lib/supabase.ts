@@ -173,6 +173,8 @@ export interface EventRsvp {
   updated_at: string;
 }
 
+export type AccountType = 'Bank' | 'Cash';
+
 export interface ActivityFeePayment {
   id: string;
   budget_id: string;
@@ -181,6 +183,7 @@ export interface ActivityFeePayment {
   matric_no: string;
   phone_number: string;
   amount_paid: number;
+  account_type?: AccountType;
   receipt_url: string;
   receipt_file_name: string;
   status: 'Verified' | 'Pending' | 'Rejected';
@@ -200,6 +203,7 @@ export interface Claim {
   title: string;
   category: string;
   amount: number;
+  account_type?: AccountType;
   expense_date: string;
   merchant_name: string;
   description: string;
@@ -388,23 +392,52 @@ export async function downloadFileFromUrl(url: string, fallbackName: string) {
   }
 }
 
+export type ExcelCellValue =
+  | string
+  | number
+  | null
+  | undefined
+  | { f: string; t?: 'n' | 's'; z?: string; v?: number | string };
+
 export interface ExcelSheetInput {
   name: string;
   headers: string[];
-  rows: (string | number | null | undefined)[][];
+  rows: ExcelCellValue[][];
 }
 
 declare global {
   interface Window {
     XLSX?: {
+      read: (data: ArrayBuffer, opts?: { type?: string }) => {
+        SheetNames: string[];
+        Sheets: Record<string, unknown>;
+      };
       utils: {
         book_new: () => unknown;
-        aoa_to_sheet: (data: (string | number)[][]) => Record<string, unknown>;
+        aoa_to_sheet: (data: unknown[][]) => Record<string, unknown>;
         book_append_sheet: (wb: unknown, ws: unknown, name: string) => void;
+        sheet_to_json: <T = Record<string, unknown>>(
+          ws: unknown,
+          opts?: { header?: number; defval?: unknown; raw?: boolean }
+        ) => T[];
       };
       writeFile: (wb: unknown, filename: string) => void;
     };
   }
+}
+
+export async function ensureSheetJsLoaded(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  if (window.XLSX) return true;
+  await new Promise<void>((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => resolve();
+    document.head.appendChild(script);
+  });
+  return Boolean(window.XLSX);
 }
 
 function escapeXml(val: string): string {
@@ -420,24 +453,23 @@ export async function exportMultiSheetExcel(filenameBase: string, sheets: ExcelS
   if (typeof window === 'undefined') return;
   const safeBase = filenameBase.replace(/[^a-zA-Z0-9_-]/g, '_');
 
-  if (!window.XLSX) {
-    await new Promise<void>((resolve) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
-      script.async = true;
-      script.onload = () => resolve();
-      script.onerror = () => resolve();
-      document.head.appendChild(script);
-    });
-  }
+  await ensureSheetJsLoaded();
 
   if (window.XLSX) {
     const wb = window.XLSX.utils.book_new();
     sheets.forEach((sheet, idx) => {
       const cleanName = (sheet.name || `Sheet${idx + 1}`).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31);
-      const aoa: (string | number)[][] = [
+      const aoa: unknown[][] = [
         sheet.headers,
-        ...sheet.rows.map((r) => r.map((c) => (c === null || c === undefined ? '' : c))),
+        ...sheet.rows.map((r) =>
+          r.map((c) => {
+            if (c === null || c === undefined) return '';
+            if (typeof c === 'object' && 'f' in c) {
+              return { f: c.f, t: c.t || 'n', ...(c.z ? { z: c.z } : {}), ...(c.v !== undefined ? { v: c.v } : {}) };
+            }
+            return c;
+          })
+        ),
       ];
       const ws = window.XLSX!.utils.aoa_to_sheet(aoa);
       ws['!cols'] = sheet.headers.map((h) => ({ wch: Math.max(16, h.length + 5) }));
@@ -458,9 +490,10 @@ export async function exportMultiSheetExcel(filenameBase: string, sheets: ExcelS
           (row) =>
             `<Row>${row
               .map((cell) => {
-                const isNum = typeof cell === 'number' && !isNaN(cell);
+                const rawVal = cell && typeof cell === 'object' && 'v' in cell ? cell.v : cell;
+                const isNum = typeof rawVal === 'number' && !isNaN(rawVal);
                 return `<Cell><Data ss:Type="${isNum ? 'Number' : 'String'}">${escapeXml(
-                  String(cell ?? '')
+                  String(rawVal ?? '')
                 )}</Data></Cell>`;
               })
               .join('')}</Row>`

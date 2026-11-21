@@ -250,7 +250,7 @@ export default function EventOperationsModal({
 
   const handleExportActivityMultiSheetExcel = async () => {
     const totalFeeReceived = eventPayments
-      .filter((f) => f.status !== 'Rejected')
+      .filter((f) => f.status === 'Verified')
       .reduce((s, f) => s + Number(f.amount_paid), 0);
     const approvedClaims = eventClaims.filter((c) => c.status === 'Approved');
     const totalReimbursed = approvedClaims.reduce((s, c) => s + Number(c.amount), 0);
