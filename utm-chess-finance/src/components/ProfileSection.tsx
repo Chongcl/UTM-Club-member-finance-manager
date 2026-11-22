@@ -474,7 +474,10 @@ export default function ProfileSection({
   const handleChangeEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setEmailModalError(null);
-    const trimmedNewEmail = newEmailInput.trim().toLowerCase();
+    const trimmedNewEmail = newEmailInput
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .trim()
+      .toLowerCase();
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailPattern.test(trimmedNewEmail)) {
       setEmailModalError('Please enter a valid email address.');
@@ -509,6 +512,24 @@ export default function ProfileSection({
 
       const { data, error } = await supabase.auth.updateUser({ email: trimmedNewEmail });
       if (error) {
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('change_my_email', {
+          p_new_email: trimmedNewEmail,
+        });
+        if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
+          const resObj = rpcRes as { ok?: boolean; email?: string; error?: string };
+          if (resObj.ok) {
+            const finalEmail = (resObj.email || trimmedNewEmail).trim();
+            await supabase.auth.refreshSession();
+            setPendingNewEmail(null);
+            setChangeEmailOpen(false);
+            onUpdated({ email: finalEmail }, 'Email updated successfully!');
+            return;
+          }
+          if (resObj.error) {
+            setEmailModalError(resObj.error);
+            return;
+          }
+        }
         setEmailModalError(error.message || 'Could not update email address.');
         return;
       }
