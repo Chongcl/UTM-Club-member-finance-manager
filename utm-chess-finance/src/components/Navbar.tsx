@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { UserProfile } from '@/lib/supabase';
 import { Menu, X, Calendar, Receipt, UserCheck, Wallet, Users, PlusCircle, Lock, Unlock, KeyRound, LogOut, Layers, Loader2, Package, QrCode, Crown, Moon, Sun, Palette, FileText, ShieldCheck, Globe, Download } from 'lucide-react';
 
@@ -55,6 +56,38 @@ export default function Navbar({
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || (!drawerOpen && !pinModalOpen)) return;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevBodyPaddingRight = document.body.style.paddingRight;
+    const prevBodyTouchAction = document.body.style.touchAction;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+
+    const scrollbarGap = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    document.documentElement.style.overflow = 'hidden';
+    if (scrollbarGap > 0) {
+      document.body.style.paddingRight = `${scrollbarGap}px`;
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDrawerOpen(false);
+        setPinModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = prevBodyOverflow;
+      document.body.style.paddingRight = prevBodyPaddingRight;
+      document.body.style.touchAction = prevBodyTouchAction;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, [drawerOpen, pinModalOpen]);
 
   const handleInstallPwa = async () => {
     if (!installPromptEvent) return;
@@ -149,92 +182,345 @@ export default function Navbar({
         </div>
       </header>
 
-      {drawerOpen && (
-        <div className="fixed inset-0 z-50 flex">
-          <div onClick={() => setDrawerOpen(false)} className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs" />
-          <aside className={`relative z-10 w-72 h-full shadow-2xl flex flex-col justify-between p-5 overflow-y-auto ${darkMode ? 'bg-slate-900 text-white border-r border-white/10' : 'bg-white text-slate-900'}`}>
-            <div className="space-y-5">
-              <div className="flex justify-between items-center pb-3 border-b border-slate-200/20">
+      {drawerOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[70] flex" role="dialog" aria-modal="true" aria-label="Navigation menu">
+            <div
+              onClick={() => setDrawerOpen(false)}
+              className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs touch-none"
+            />
+            <aside
+              className={`relative z-10 w-72 max-w-[85vw] h-[100dvh] max-h-[100dvh] shadow-2xl flex flex-col overflow-hidden ${
+                darkMode ? 'bg-slate-900 text-white border-r border-white/10' : 'bg-white text-slate-900 border-r border-slate-200'
+              }`}
+            >
+              {/* 1. Pinned Top Header */}
+              <div className="shrink-0 px-5 pt-5 pb-3 space-y-3 border-b border-slate-200/20">
+                <div className="flex justify-between items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleNav('activities')}
+                    title="Return to Main Homepage"
+                    className="flex items-center gap-2 cursor-pointer text-left min-w-0 flex-1"
+                  >
+                    {renderLogo()}
+                    <span className="font-extrabold text-sm hover:text-emerald-500 transition truncate">
+                      {clubName}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDrawerOpen(false)}
+                    className="p-1.5 rounded-lg hover:bg-slate-500/10 cursor-pointer shrink-0"
+                    aria-label="Close menu"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div
+                  className={`p-3 rounded-2xl border text-xs ${
+                    darkMode ? 'bg-white/5 border-white/10' : 'bg-emerald-50 border-emerald-200'
+                  }`}
+                >
+                  <div className="font-extrabold truncate">
+                    {profile.full_name} ({isOwner ? 'Owner' : isAdminOrOwner ? 'Admin' : 'Member'})
+                  </div>
+                  <div className="font-mono opacity-75 truncate">
+                    {profile.matric_no} • {profile.phone_number}
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Scrollable Middle Navigation */}
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y px-4 py-3 space-y-3">
+                <nav className="space-y-1 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => handleNav('activities')}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${
+                      activeTab === 'activities' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'
+                    }`}
+                  >
+                    <Calendar className="w-4 h-4 shrink-0" />
+                    <span>Home &amp; Activities</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDrawerOpen(false);
+                      onOpenQrScanner();
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-950 text-white hover:bg-slate-900 border border-white/10 cursor-pointer"
+                  >
+                    <QrCode className="w-4 h-4 text-white shrink-0" />
+                    <span>Scan QR Attendance</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNav('equipment')}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${
+                      activeTab === 'equipment' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'
+                    }`}
+                  >
+                    <Package className="w-4 h-4 shrink-0" />
+                    <span>Equipment Borrowing</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNav('claims')}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer ${
+                      activeTab === 'claims' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'
+                    }`}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Receipt className="w-4 h-4 shrink-0" />
+                      <span>Reimbursement Claims</span>
+                    </span>
+                    {pendingClaimsCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">
+                        {pendingClaimsCount}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNav('profile')}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${
+                      activeTab === 'profile' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'
+                    }`}
+                  >
+                    <UserCheck className="w-4 h-4 shrink-0" />
+                    <span>My Profile</span>
+                  </button>
+                </nav>
+                {isAdminOrOwner && (
+                  <nav className="space-y-1 pt-2 border-t border-slate-200/20 text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => handleNav('ledger')}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${
+                        activeTab === 'ledger' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'
+                      }`}
+                    >
+                      <Wallet className="w-4 h-4 shrink-0" />
+                      <span>Club Finance &amp; Savings</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNav('members')}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${
+                        activeTab === 'members' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'
+                      }`}
+                    >
+                      <Users className="w-4 h-4 shrink-0" />
+                      <span>Members &amp; Batch Clearance</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNav('logs')}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${
+                        activeTab === 'logs' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'
+                      }`}
+                    >
+                      <ShieldCheck className="w-4 h-4 shrink-0" />
+                      <span>Security &amp; Activity Log</span>
+                    </button>
+                    {canManagePublicPage && onOpenPublicPageEditor && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDrawerOpen(false);
+                          onOpenPublicPageEditor();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-emerald-600 hover:bg-emerald-500/10 cursor-pointer"
+                      >
+                        <Globe className="w-4 h-4 shrink-0" />
+                        <span>Edit Public Landing Page</span>
+                      </button>
+                    )}
+                    {canCustomizeTheme && onOpenThemeStudio && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDrawerOpen(false);
+                          onOpenThemeStudio();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-amber-500 hover:bg-amber-500/10 cursor-pointer"
+                      >
+                        <Palette className="w-4 h-4 shrink-0" />
+                        <span>Logo &amp; Background Studio</span>
+                      </button>
+                    )}
+                    {onOpenNewActivity && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDrawerOpen(false);
+                          onOpenNewActivity();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 cursor-pointer"
+                      >
+                        + New Activity
+                      </button>
+                    )}
+                    {onOpenNewFinance && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDrawerOpen(false);
+                          onOpenNewFinance();
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-amber-400/20 text-amber-500 cursor-pointer"
+                      >
+                        + Add Finance Record
+                      </button>
+                    )}
+                  </nav>
+                )}
+              </div>
+
+              {/* 3. Pinned Bottom Footer */}
+              <div
+                className={`shrink-0 border-t px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-2 text-xs font-bold ${
+                  darkMode ? 'border-white/10 bg-slate-900' : 'border-slate-200 bg-white'
+                }`}
+              >
+                {roleMode === 'member' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDrawerOpen(false);
+                      setPinError(null);
+                      setPinModalOpen(true);
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5 inline mr-1" />
+                    Unlock Admin Mode
+                  </button>
+                )}
+                {roleMode === 'admin' && (
+                  <>
+                    {profile.role === 'owner' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDrawerOpen(false);
+                          onSwitchMode('owner');
+                        }}
+                        className="w-full py-2 rounded-xl bg-amber-400 text-slate-950 cursor-pointer"
+                      >
+                        <Crown className="w-3.5 h-3.5 inline mr-1" />
+                        Owner Mode
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDrawerOpen(false);
+                        onSwitchMode('member');
+                      }}
+                      className="w-full py-2 rounded-xl bg-slate-500/20 cursor-pointer"
+                    >
+                      <Unlock className="w-3.5 h-3.5 inline mr-1" />
+                      Exit to Member Mode
+                    </button>
+                  </>
+                )}
+                {roleMode === 'owner' && (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDrawerOpen(false);
+                        onSwitchMode('admin');
+                      }}
+                      className="py-2 rounded-xl bg-emerald-600 text-white cursor-pointer"
+                    >
+                      Admin Mode
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDrawerOpen(false);
+                        onSwitchMode('member');
+                      }}
+                      className="py-2 rounded-xl bg-slate-500/20 cursor-pointer"
+                    >
+                      Member Mode
+                    </button>
+                  </div>
+                )}
+                {installPromptEvent && !isStandalone && (
+                  <button
+                    type="button"
+                    onClick={handleInstallPwa}
+                    className="w-full py-2.5 rounded-xl bg-emerald-600/15 text-emerald-600 hover:bg-emerald-600/25 border border-emerald-500/30 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Install App</span>
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => handleNav('activities')}
-                  title="Return to Main Homepage"
-                  className="flex items-center gap-2 cursor-pointer text-left"
+                  onClick={() => {
+                    setDrawerOpen(false);
+                    void onSignOut();
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/25 cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  {renderLogo()}
-                  <span className="font-extrabold text-sm hover:text-emerald-500 transition">{clubName}</span>
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out</span>
                 </button>
-                <button type="button" onClick={() => setDrawerOpen(false)} className="cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
-              <div className={`p-3 rounded-2xl border text-xs ${darkMode ? 'bg-white/5 border-white/10' : 'bg-emerald-50 border-emerald-200'}`}>
-                <div className="font-extrabold">{profile.full_name} ({isOwner ? 'Owner' : isAdminOrOwner ? 'Admin' : 'Member'})</div>
-                <div className="font-mono opacity-75">{profile.matric_no} • {profile.phone_number}</div>
-              </div>
-              <nav className="space-y-1 text-xs font-bold">
-                <button type="button" onClick={() => handleNav('activities')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'activities' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Calendar className="w-4 h-4" /><span>Home &amp; Activities</span></button>
-                <button type="button" onClick={() => { setDrawerOpen(false); onOpenQrScanner(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-950 text-white hover:bg-slate-900 border border-white/10 cursor-pointer"><QrCode className="w-4 h-4 text-white" /><span>Scan QR Attendance</span></button>
-                <button type="button" onClick={() => handleNav('equipment')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'equipment' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Package className="w-4 h-4" /><span>Equipment Borrowing</span></button>
-                <button type="button" onClick={() => handleNav('claims')} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'claims' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><span className="flex items-center gap-3"><Receipt className="w-4 h-4" /><span>Reimbursement Claims</span></span>{pendingClaimsCount > 0 && <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950">{pendingClaimsCount}</span>}</button>
-                <button type="button" onClick={() => handleNav('profile')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'profile' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><UserCheck className="w-4 h-4" /><span>My Profile</span></button>
-              </nav>
-              {isAdminOrOwner && (
-                <nav className="space-y-1 pt-2 border-t border-slate-200/20 text-xs font-bold">
-                  <button type="button" onClick={() => handleNav('ledger')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'ledger' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Wallet className="w-4 h-4" /><span>Club Finance &amp; Savings</span></button>
-                  <button type="button" onClick={() => handleNav('members')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'members' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Users className="w-4 h-4" /><span>Members &amp; Batch Clearance</span></button>
-                  <button type="button" onClick={() => handleNav('logs')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'logs' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><ShieldCheck className="w-4 h-4" /><span>Security &amp; Activity Log</span></button>
-                  {canManagePublicPage && onOpenPublicPageEditor && <button type="button" onClick={() => { setDrawerOpen(false); onOpenPublicPageEditor(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-emerald-600 hover:bg-emerald-500/10 cursor-pointer"><Globe className="w-4 h-4" /><span>Edit Public Landing Page</span></button>}
-                  {canCustomizeTheme && onOpenThemeStudio && <button type="button" onClick={() => { setDrawerOpen(false); onOpenThemeStudio(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-amber-500 hover:bg-amber-500/10 cursor-pointer"><Palette className="w-4 h-4" /><span>Logo &amp; Background Studio</span></button>}
-                  {onOpenNewActivity && <button type="button" onClick={() => { setDrawerOpen(false); onOpenNewActivity(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 cursor-pointer">+ New Activity</button>}
-                  {onOpenNewFinance && <button type="button" onClick={() => { setDrawerOpen(false); onOpenNewFinance(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-amber-400/20 text-amber-500 cursor-pointer">+ Add Finance Record</button>}
-                </nav>
-              )}
-            </div>
+            </aside>
+          </div>,
+          document.body
+        )}
 
-            <div className="pt-4 border-t border-slate-200/20 space-y-2 text-xs font-bold">
-              {roleMode === 'member' && (
-                <button type="button" onClick={() => { setDrawerOpen(false); setPinError(null); setPinModalOpen(true); }} className="w-full py-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/30 cursor-pointer"><Lock className="w-3.5 h-3.5 inline mr-1" />Unlock Admin Mode</button>
-              )}
-              {roleMode === 'admin' && (
-                <>
-                  {profile.role === 'owner' && (
-                    <button type="button" onClick={() => { setDrawerOpen(false); onSwitchMode('owner'); }} className="w-full py-2 rounded-xl bg-amber-400 text-slate-950 cursor-pointer"><Crown className="w-3.5 h-3.5 inline mr-1" />Owner Mode</button>
-                  )}
-                  <button type="button" onClick={() => { setDrawerOpen(false); onSwitchMode('member'); }} className="w-full py-2 rounded-xl bg-slate-500/20 cursor-pointer"><Unlock className="w-3.5 h-3.5 inline mr-1" />Exit to Member Mode</button>
-                </>
-              )}
-              {roleMode === 'owner' && (
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button type="button" onClick={() => { setDrawerOpen(false); onSwitchMode('admin'); }} className="py-2 rounded-xl bg-emerald-600 text-white cursor-pointer">Admin Mode</button>
-                  <button type="button" onClick={() => { setDrawerOpen(false); onSwitchMode('member'); }} className="py-2 rounded-xl bg-slate-500/20 cursor-pointer">Member Mode</button>
+      {pinModalOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4 touch-none" role="dialog" aria-modal="true">
+            <div className="bg-white text-slate-900 rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl">
+              <div className="bg-emerald-800 text-white px-5 py-4 flex justify-between items-center">
+                <span className="text-sm font-extrabold">
+                  <KeyRound className="w-4 h-4 inline mr-1" />
+                  Unlock Admin Mode
+                </span>
+                <button type="button" onClick={() => setPinModalOpen(false)} className="cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <form onSubmit={handlePinSubmit} className="p-5 space-y-3 text-xs">
+                <input
+                  type="password"
+                  value={pinInput}
+                  onChange={(e) => setPinInput(e.target.value)}
+                  placeholder="Enter Admin or Owner Code"
+                  className="w-full rounded-xl border px-3 py-2 text-sm font-mono"
+                  required
+                />
+                {pinError && <div className="text-rose-600">{pinError}</div>}
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setPinModalOpen(false)} className="px-3 py-2 cursor-pointer">
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={switchingRole}
+                    className="px-4 py-2 rounded-xl bg-emerald-700 text-white font-bold cursor-pointer"
+                  >
+                    {switchingRole && <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1" />}
+                    Unlock
+                  </button>
                 </div>
-              )}
-              {installPromptEvent && !isStandalone && (
-                <button type="button" onClick={handleInstallPwa} className="w-full py-2.5 rounded-xl bg-emerald-600/15 text-emerald-600 hover:bg-emerald-600/25 border border-emerald-500/30 cursor-pointer flex items-center justify-center gap-1.5">
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Install App</span>
-                </button>
-              )}
-              <button type="button" onClick={onSignOut} className="w-full py-2 rounded-xl text-rose-500 hover:bg-rose-500/10 cursor-pointer"><LogOut className="w-3.5 h-3.5 inline mr-1" />Sign Out</button>
+              </form>
             </div>
-          </aside>
-        </div>
-      )}
-
-      {pinModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
-          <div className="bg-white text-slate-900 rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl">
-            <div className="bg-emerald-800 text-white px-5 py-4 flex justify-between items-center">
-              <span className="text-sm font-extrabold"><KeyRound className="w-4 h-4 inline mr-1" />Unlock Admin Mode</span>
-              <button type="button" onClick={() => setPinModalOpen(false)}><X className="w-5 h-5" /></button>
-            </div>
-            <form onSubmit={handlePinSubmit} className="p-5 space-y-3 text-xs">
-              <input type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value)} placeholder="Enter Admin or Owner Code" className="w-full rounded-xl border px-3 py-2 text-sm font-mono" required />
-              {pinError && <div className="text-rose-600">{pinError}</div>}
-              <div className="flex justify-end gap-2"><button type="button" onClick={() => setPinModalOpen(false)} className="px-3 py-2">Cancel</button><button type="submit" disabled={switchingRole} className="px-4 py-2 rounded-xl bg-emerald-700 text-white font-bold">{switchingRole && <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1" />}Unlock</button></div>
-            </form>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </>
   );
 }

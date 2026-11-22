@@ -885,3 +885,69 @@ export function resolvePublicLandingConfig(
       cfg.footer_copyright ?? `${clubName} · Powered by ClubSync`,
   };
 }
+
+export interface PublicLandingSnapshot {
+  clubName: string;
+  logoUrl: string;
+  currentBatch: string;
+  tagline: string;
+  clubAbout: string;
+  instagramUrl: string;
+  contactEmail: string;
+  config?: PublicLandingConfig | null;
+  stats?: {
+    open_events_count: number;
+    total_events_count: number;
+  };
+  openEvents?: Array<Record<string, unknown>>;
+  carouselPosts?: Array<Record<string, unknown>>;
+  highlightPosts?: Array<Record<string, unknown>>;
+  updatedAt?: number;
+}
+
+const PUBLIC_SNAPSHOT_CACHE_KEY = 'clubsync_public_snapshot_v1';
+
+export function readCachedPublicSnapshot(): PublicLandingSnapshot | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(PUBLIC_SNAPSHOT_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      return parsed as PublicLandingSnapshot;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeCachedPublicSnapshot(
+  snapshot: Partial<PublicLandingSnapshot>
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const existing = readCachedPublicSnapshot();
+    const merged: PublicLandingSnapshot = {
+      clubName: snapshot.clubName ?? existing?.clubName ?? 'ClubSync',
+      logoUrl: snapshot.logoUrl ?? existing?.logoUrl ?? '',
+      currentBatch: snapshot.currentBatch ?? existing?.currentBatch ?? '2026/2027',
+      tagline:
+        snapshot.tagline ??
+        existing?.tagline ??
+        'Campus activities, events, and student community — all in one portal.',
+      clubAbout: snapshot.clubAbout ?? existing?.clubAbout ?? '',
+      instagramUrl: snapshot.instagramUrl ?? existing?.instagramUrl ?? '',
+      contactEmail: snapshot.contactEmail ?? existing?.contactEmail ?? '',
+      config: snapshot.config !== undefined ? snapshot.config : existing?.config,
+      stats: snapshot.stats ?? existing?.stats,
+      openEvents: snapshot.openEvents ?? existing?.openEvents,
+      carouselPosts: snapshot.carouselPosts ?? existing?.carouselPosts,
+      highlightPosts: snapshot.highlightPosts ?? existing?.highlightPosts,
+      updatedAt: Date.now(),
+    };
+    window.localStorage.setItem(PUBLIC_SNAPSHOT_CACHE_KEY, JSON.stringify(merged));
+  } catch {
+    /* ignore storage quota or private mode errors */
+  }
+}

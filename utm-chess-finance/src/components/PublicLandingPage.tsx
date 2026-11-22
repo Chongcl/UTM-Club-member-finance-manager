@@ -10,6 +10,7 @@ import {
 } from '@/lib/supabase';
 import {
   PublicLandingConfig,
+  PublicLandingSnapshot,
   FooterLinkPlatform,
   LandingSectionId,
   FeatureIconName,
@@ -19,6 +20,8 @@ import {
   LANDING_SECTION_META,
   resolvePublicLandingConfig,
   normalizeExternalHref,
+  readCachedPublicSnapshot,
+  writeCachedPublicSnapshot,
 } from '@/lib/publicLanding';
 import {
   Layers,
@@ -65,6 +68,7 @@ export interface PublicLandingPageProps {
   initialLogoUrl?: string;
   initialBatch?: string;
   initialConfig?: PublicLandingConfig | null;
+  initialPublicSnapshot?: PublicLandingSnapshot | null;
   previewConfig?: PublicLandingConfig | null;
   isPreview?: boolean;
   previewViewport?: 'desktop' | 'tablet' | 'mobile';
@@ -516,6 +520,7 @@ export default function PublicLandingPage({
   initialLogoUrl = '',
   initialBatch = '2026/2027',
   initialConfig = null,
+  initialPublicSnapshot = null,
   previewConfig = null,
   isPreview = false,
   previewViewport = 'desktop',
@@ -541,26 +546,48 @@ export default function PublicLandingPage({
   authError,
   setAuthError,
 }: PublicLandingPageProps) {
-  const [clubName, setClubName] = useState(initialClubName);
-  const [logoUrl, setLogoUrl] = useState(initialLogoUrl);
-  const [currentBatch, setCurrentBatch] = useState(initialBatch);
-  const [tagline, setTagline] = useState(
-    'Campus activities, events, and student community — all in one portal.'
+  const [clubName, setClubName] = useState(initialPublicSnapshot?.clubName || initialClubName);
+  const [logoUrl, setLogoUrl] = useState(initialPublicSnapshot?.logoUrl ?? initialLogoUrl);
+  const [currentBatch, setCurrentBatch] = useState(
+    initialPublicSnapshot?.currentBatch || initialBatch
   );
-  const [clubAbout, setClubAbout] = useState('');
-  const [instagramUrl, setInstagramUrl] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
-  const [storedLandingConfig, setStoredLandingConfig] =
-    useState<PublicLandingConfig | null>(initialConfig);
+  const [tagline, setTagline] = useState(
+    initialPublicSnapshot?.tagline ||
+      'Campus activities, events, and student community — all in one portal.'
+  );
+  const [clubAbout, setClubAbout] = useState(initialPublicSnapshot?.clubAbout || '');
+  const [instagramUrl, setInstagramUrl] = useState(initialPublicSnapshot?.instagramUrl || '');
+  const [contactEmail, setContactEmail] = useState(initialPublicSnapshot?.contactEmail || '');
+  const [storedLandingConfig, setStoredLandingConfig] = useState<PublicLandingConfig | null>(
+    initialPublicSnapshot?.config !== undefined ? initialPublicSnapshot.config : initialConfig
+  );
+  const [configReady, setConfigReady] = useState<boolean>(() =>
+    Boolean(
+      isPreview ||
+        previewConfig ||
+        initialConfig ||
+        initialPublicSnapshot?.config !== undefined
+    )
+  );
 
-  const [stats, setStats] = useState<PublicStats>({
-    open_events_count: 0,
-    total_events_count: 0,
-  });
-  const [openEvents, setOpenEvents] = useState<PublicEventCard[]>([]);
-  const [carouselPosts, setCarouselPosts] = useState<Announcement[]>([]);
-  const [highlightPosts, setHighlightPosts] = useState<Announcement[]>([]);
-  const [loadingPublic, setLoadingPublic] = useState(true);
+  const [stats, setStats] = useState<PublicStats>(
+    initialPublicSnapshot?.stats || {
+      open_events_count: 0,
+      total_events_count: 0,
+    }
+  );
+  const [openEvents, setOpenEvents] = useState<PublicEventCard[]>(
+    (initialPublicSnapshot?.openEvents as unknown as PublicEventCard[]) || []
+  );
+  const [carouselPosts, setCarouselPosts] = useState<Announcement[]>(
+    (initialPublicSnapshot?.carouselPosts as unknown as Announcement[]) || []
+  );
+  const [highlightPosts, setHighlightPosts] = useState<Announcement[]>(
+    (initialPublicSnapshot?.highlightPosts as unknown as Announcement[]) || []
+  );
+  const [loadingPublic, setLoadingPublic] = useState(
+    !Boolean(initialPublicSnapshot?.openEvents)
+  );
 
   const [slideIdx, setSlideIdx] = useState(0);
   const [openFaqIds, setOpenFaqIds] = useState<string[]>(['faq-join']);
@@ -571,12 +598,40 @@ export default function PublicLandingPage({
   useEffect(() => {
     if (initialConfig) {
       setStoredLandingConfig(initialConfig);
+      setConfigReady(true);
     }
   }, [initialConfig]);
 
   useEffect(() => {
+    if (configReady) return;
+    const cached = readCachedPublicSnapshot();
+    if (cached && cached.config !== undefined) {
+      if (cached.clubName) setClubName(cached.clubName);
+      if (cached.logoUrl !== undefined) setLogoUrl(cached.logoUrl);
+      if (cached.currentBatch) setCurrentBatch(cached.currentBatch);
+      if (cached.tagline) setTagline(cached.tagline);
+      if (cached.clubAbout !== undefined) setClubAbout(cached.clubAbout);
+      if (cached.instagramUrl !== undefined) setInstagramUrl(cached.instagramUrl);
+      if (cached.contactEmail !== undefined) setContactEmail(cached.contactEmail);
+      setStoredLandingConfig(cached.config ?? null);
+      if (cached.stats) setStats(cached.stats);
+      if (Array.isArray(cached.openEvents)) {
+        setOpenEvents(cached.openEvents as unknown as PublicEventCard[]);
+      }
+      if (Array.isArray(cached.carouselPosts)) {
+        setCarouselPosts(cached.carouselPosts as unknown as Announcement[]);
+      }
+      if (Array.isArray(cached.highlightPosts)) {
+        setHighlightPosts(cached.highlightPosts as unknown as Announcement[]);
+      }
+      setConfigReady(true);
+    }
+  }, [configReady]);
+
+  useEffect(() => {
     if (!isSupabaseConfigured) {
       setLoadingPublic(false);
+      setConfigReady(true);
       return;
     }
 
@@ -607,26 +662,63 @@ export default function PublicLandingPage({
 
         if (!active) return;
 
+        let nextClubName = clubName;
+        let nextLogoUrl = logoUrl;
+        let nextBatch = currentBatch;
+        let nextTagline = tagline;
+        let nextClubAbout = clubAbout;
+        let nextIg = instagramUrl;
+        let nextEmail = contactEmail;
+        let nextConfig: PublicLandingConfig | null = storedLandingConfig;
+
         if (settingsRes.data) {
           const s = settingsRes.data as Record<string, unknown>;
-          if (s.club_name) setClubName(String(s.club_name));
-          if (s.logo_url) setLogoUrl(String(s.logo_url));
-          if (s.current_batch) setCurrentBatch(String(s.current_batch));
-          if (s.club_tagline) setTagline(String(s.club_tagline));
-          if (s.club_about) setClubAbout(String(s.club_about));
-          if (s.instagram_url) setInstagramUrl(String(s.instagram_url));
-          if (s.contact_email) setContactEmail(String(s.contact_email));
-          if (s.public_landing_config && typeof s.public_landing_config === 'object') {
-            setStoredLandingConfig(s.public_landing_config as PublicLandingConfig);
+          if (s.club_name) {
+            nextClubName = String(s.club_name);
+            setClubName(nextClubName);
           }
+          if (s.logo_url !== undefined && s.logo_url !== null) {
+            nextLogoUrl = String(s.logo_url);
+            setLogoUrl(nextLogoUrl);
+          }
+          if (s.current_batch) {
+            nextBatch = String(s.current_batch);
+            setCurrentBatch(nextBatch);
+          }
+          if (s.club_tagline) {
+            nextTagline = String(s.club_tagline);
+            setTagline(nextTagline);
+          }
+          if (s.club_about !== undefined && s.club_about !== null) {
+            nextClubAbout = String(s.club_about);
+            setClubAbout(nextClubAbout);
+          }
+          if (s.instagram_url !== undefined && s.instagram_url !== null) {
+            nextIg = String(s.instagram_url);
+            setInstagramUrl(nextIg);
+          }
+          if (s.contact_email !== undefined && s.contact_email !== null) {
+            nextEmail = String(s.contact_email);
+            setContactEmail(nextEmail);
+          }
+          if (s.public_landing_config && typeof s.public_landing_config === 'object') {
+            nextConfig = s.public_landing_config as PublicLandingConfig;
+            setStoredLandingConfig(nextConfig);
+          } else {
+            nextConfig = null;
+            setStoredLandingConfig(null);
+          }
+          setConfigReady(true);
         }
 
+        let nextStats: PublicStats | undefined;
         if (statsRes.data && typeof statsRes.data === 'object') {
           const st = statsRes.data as Partial<PublicStats>;
-          setStats({
+          nextStats = {
             open_events_count: Number(st.open_events_count || 0),
             total_events_count: Number(st.total_events_count || 0),
-          });
+          };
+          setStats(nextStats);
         }
 
         const rawEvents = (budgetsRes.data || []) as Budget[];
@@ -655,10 +747,32 @@ export default function PublicLandingPage({
         if (active) setOpenEvents(enrichedEvents);
 
         const anns = (annRes.data || []) as Announcement[];
-        setCarouselPosts(anns.filter((a) => a.show_in_carousel));
-        setHighlightPosts(anns.filter((a) => a.is_pinned).slice(0, 4));
+        const nextCarousel = anns.filter((a) => a.show_in_carousel);
+        const nextHighlights = anns.filter((a) => a.is_pinned).slice(0, 4);
+        setCarouselPosts(nextCarousel);
+        setHighlightPosts(nextHighlights);
+
+        if (settingsRes.data) {
+          writeCachedPublicSnapshot({
+            clubName: nextClubName,
+            logoUrl: nextLogoUrl,
+            currentBatch: nextBatch,
+            tagline: nextTagline,
+            clubAbout: nextClubAbout,
+            instagramUrl: nextIg,
+            contactEmail: nextEmail,
+            config: nextConfig,
+            stats: nextStats,
+            openEvents: enrichedEvents as unknown as Array<Record<string, unknown>>,
+            carouselPosts: nextCarousel as unknown as Array<Record<string, unknown>>,
+            highlightPosts: nextHighlights as unknown as Array<Record<string, unknown>>,
+          });
+        }
       } finally {
-        if (active) setLoadingPublic(false);
+        if (active) {
+          setLoadingPublic(false);
+          setConfigReady(true);
+        }
       }
     })();
 
@@ -1616,6 +1730,50 @@ export default function PublicLandingPage({
         return null;
     }
   };
+
+  if (!configReady && !isPreview) {
+    return (
+      <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+        <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-xl border-b border-slate-200/80">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-200 animate-pulse" />
+              <div className="space-y-1.5">
+                <div className="w-32 h-4 rounded-md bg-slate-200 animate-pulse" />
+                <div className="w-20 h-2.5 rounded-md bg-slate-100 animate-pulse" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:block w-20 h-8 rounded-xl bg-slate-100 animate-pulse" />
+              <div className="w-24 h-9 rounded-xl bg-slate-200 animate-pulse" />
+            </div>
+          </div>
+        </header>
+        <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-12 sm:py-16 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center flex-1">
+          <div className="lg:col-span-6 space-y-4">
+            <div className="w-36 h-6 rounded-full bg-slate-200/80 animate-pulse" />
+            <div className="w-4/5 h-10 rounded-2xl bg-slate-200 animate-pulse" />
+            <div className="w-3/5 h-10 rounded-2xl bg-slate-200 animate-pulse" />
+            <div className="w-full h-4 rounded-lg bg-slate-200/70 animate-pulse mt-4" />
+            <div className="w-2/3 h-4 rounded-lg bg-slate-200/70 animate-pulse" />
+            <div className="flex gap-3 pt-4">
+              <div className="w-40 h-11 rounded-2xl bg-slate-300/80 animate-pulse" />
+              <div className="w-32 h-11 rounded-2xl bg-slate-200/80 animate-pulse" />
+            </div>
+          </div>
+          <div className="lg:col-span-6">
+            <div className="aspect-[4/3] w-full rounded-3xl bg-white border border-slate-200/80 shadow-sm p-6 flex flex-col justify-between">
+              <div className="w-full flex-1 rounded-2xl bg-slate-100 animate-pulse" />
+              <div className="pt-4 space-y-2">
+                <div className="w-1/2 h-4 rounded-md bg-slate-200 animate-pulse" />
+                <div className="w-1/3 h-3 rounded-md bg-slate-100 animate-pulse" />
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen flex flex-col ${theme.pageBg} text-slate-900 relative overflow-x-hidden break-words`}>

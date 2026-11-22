@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   supabase,
   UserProfile,
@@ -32,6 +33,7 @@ import {
   normalizeSectionOrder,
   normalizeExternalHref,
   resolvePublicLandingConfig,
+  writeCachedPublicSnapshot,
 } from '@/lib/publicLanding';
 import PublicLandingPage, {
   FeatureIcon,
@@ -254,6 +256,7 @@ export default function PublicLandingEditorModal({
       contactEmail: legacyContactEmail,
     });
 
+  const router = useRouter();
   const [baseline, setBaseline] = useState<ResolvedPublicLandingConfig>(buildBaseline);
   const [draft, setDraft] = useState<ResolvedPublicLandingConfig>(buildBaseline);
 
@@ -722,6 +725,17 @@ export default function PublicLandingEditorModal({
         },
         'Public Landing Page published live!'
       );
+      writeCachedPublicSnapshot({
+        clubName,
+        logoUrl,
+        currentBatch,
+        tagline: draft.hero_subtitle,
+        clubAbout: draft.footer_about,
+        instagramUrl: firstIg,
+        contactEmail: firstEmail,
+        config: finalConfig,
+      });
+      router.refresh();
       onClose();
     } catch (err: unknown) {
       setErrorMsg(
