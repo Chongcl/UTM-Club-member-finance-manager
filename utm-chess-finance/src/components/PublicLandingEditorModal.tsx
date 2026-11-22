@@ -397,6 +397,8 @@ export default function PublicLandingEditorModal({
     setActiveSectionId(sectionId);
     if (scrollPreview) {
       scrollPreviewToSection(sectionId);
+    } else {
+      setMobilePane('edit');
     }
   };
 
@@ -2702,10 +2704,25 @@ export default function PublicLandingEditorModal({
             ref={previewScrollRef}
             className={`${
               mobilePane === 'preview' || fullPreview ? 'flex' : 'hidden lg:flex'
-            } flex-1 min-w-0 min-h-0 overflow-y-auto bg-slate-200/80 p-3 sm:p-5 justify-center items-start`}
+            } flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden bg-slate-200/80 p-3 sm:p-5 flex-col items-center`}
           >
+            {viewport !== 'desktop' && (
+              <div className="mb-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900/90 text-white text-[11px] font-bold shadow-sm shrink-0">
+                {viewport === 'tablet' ? (
+                  <>
+                    <Tablet className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Tablet Preview · 768px</span>
+                  </>
+                ) : (
+                  <>
+                    <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Mobile Preview · 390px</span>
+                  </>
+                )}
+              </div>
+            )}
             <div
-              className={`w-full transition-all duration-300 rounded-2xl overflow-hidden shadow-2xl border border-slate-300 bg-white ${
+              className={`w-full transition-all duration-300 rounded-2xl overflow-hidden shadow-2xl border border-slate-300 bg-white shrink-0 ${
                 viewport === 'mobile'
                   ? 'max-w-[390px]'
                   : viewport === 'tablet'
@@ -2719,6 +2736,7 @@ export default function PublicLandingEditorModal({
                 initialBatch={currentBatch}
                 previewConfig={draft}
                 isPreview
+                previewViewport={viewport}
                 selectedSectionId={activeSectionId}
                 hoveredSectionId={hoveredSectionId}
                 showHiddenSections={showHiddenSections}

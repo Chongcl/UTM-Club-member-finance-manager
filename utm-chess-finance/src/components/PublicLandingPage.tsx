@@ -67,6 +67,7 @@ export interface PublicLandingPageProps {
   initialConfig?: PublicLandingConfig | null;
   previewConfig?: PublicLandingConfig | null;
   isPreview?: boolean;
+  previewViewport?: 'desktop' | 'tablet' | 'mobile';
   selectedSectionId?: LandingSectionId | null;
   hoveredSectionId?: LandingSectionId | null;
   showHiddenSections?: boolean;
@@ -345,6 +346,7 @@ function AnimatedMetricValue({
 function EditableSectionWrapper({
   sectionId,
   isPreview,
+  compactOverlay = false,
   isVisible = true,
   showHiddenSections = false,
   selectedSectionId,
@@ -362,6 +364,7 @@ function EditableSectionWrapper({
 }: {
   sectionId: LandingSectionId;
   isPreview: boolean;
+  compactOverlay?: boolean;
   isVisible?: boolean;
   showHiddenSections?: boolean;
   selectedSectionId?: LandingSectionId | null;
@@ -419,12 +422,14 @@ function EditableSectionWrapper({
       >
         <span
           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow-md ${
+            compactOverlay ? 'max-w-[140px]' : ''
+          } ${
             isSelected ? themePillClass : 'bg-slate-900/90 text-white'
           }`}
         >
-          <Edit3 className="w-2.5 h-2.5" />
-          <span>{isSelected ? `Editing: ${meta.label}` : meta.label}</span>
-          {!isVisible && <span className="opacity-75">(Hidden)</span>}
+          <Edit3 className="w-2.5 h-2.5 shrink-0" />
+          <span className="truncate">{isSelected ? `Editing: ${meta.label}` : meta.label}</span>
+          {!isVisible && <span className="opacity-75 shrink-0">(Hidden)</span>}
         </span>
       </div>
 
@@ -443,7 +448,7 @@ function EditableSectionWrapper({
           title={`Edit ${meta.label}`}
         >
           <Edit3 className="w-2.5 h-2.5" />
-          <span>Edit</span>
+          <span className={compactOverlay ? 'hidden' : 'inline'}>Edit</span>
         </button>
         {meta.reorderable && onQuickMoveSection && (
           <>
@@ -513,6 +518,7 @@ export default function PublicLandingPage({
   initialConfig = null,
   previewConfig = null,
   isPreview = false,
+  previewViewport = 'desktop',
   selectedSectionId = null,
   hoveredSectionId = null,
   showHiddenSections = false,
@@ -683,6 +689,9 @@ export default function PublicLandingPage({
   const theme = LANDING_THEME_STYLES[resolvedConfig.theme_preset];
   const cardSurface = CARD_SURFACE_STYLES[resolvedConfig.card_style];
   const animLevel = resolvedConfig.animation_level;
+  const isSimMobile = isPreview && previewViewport === 'mobile';
+  const isSimTablet = isPreview && previewViewport === 'tablet';
+  const isSimCompact = isSimMobile || isSimTablet;
 
   const openAuth = (targetMode: 'login' | 'signup') => {
     if (isPreview) return;
@@ -897,6 +906,7 @@ export default function PublicLandingPage({
             key="metrics"
             sectionId="metrics"
             isPreview={isPreview}
+            compactOverlay={isSimMobile}
             isVisible={resolvedConfig.show_metrics_section}
             showHiddenSections={showHiddenSections}
             selectedSectionId={selectedSectionId}
@@ -912,15 +922,21 @@ export default function PublicLandingPage({
             onQuickToggleSection={onQuickToggleSection}
           >
             {visible && (
-              <section id="metrics" className="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-10 pb-4">
+              <section id="metrics" className="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-8 sm:pt-10 pb-4">
                 <div
-                  className={`grid grid-cols-1 ${
-                    items.length === 2
-                      ? 'sm:grid-cols-2'
+                  className={`grid gap-4 ${
+                    isSimMobile
+                      ? 'grid-cols-1'
+                      : isSimTablet
+                      ? items.length >= 2
+                        ? 'grid-cols-2'
+                        : 'grid-cols-1'
+                      : items.length === 2
+                      ? 'grid-cols-1 sm:grid-cols-2'
                       : items.length >= 4
-                      ? 'sm:grid-cols-2 lg:grid-cols-4'
-                      : 'sm:grid-cols-3'
-                  } gap-4`}
+                      ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+                      : 'grid-cols-1 sm:grid-cols-3'
+                  }`}
                 >
                   {items.map((item, idx) => (
                     <Reveal key={item.id} animationLevel={animLevel} delayMs={idx * 70}>
@@ -962,6 +978,7 @@ export default function PublicLandingPage({
             key="about"
             sectionId="about"
             isPreview={isPreview}
+            compactOverlay={isSimMobile}
             isVisible={resolvedConfig.show_about_section}
             showHiddenSections={showHiddenSections}
             selectedSectionId={selectedSectionId}
@@ -976,10 +993,10 @@ export default function PublicLandingPage({
             onQuickMoveSection={onQuickMoveSection}
             onQuickToggleSection={onQuickToggleSection}
           >
-            <section id="about-club" className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-12 space-y-8">
+            <section id="about-club" className={`max-w-7xl w-full mx-auto px-4 sm:px-6 ${isSimMobile ? 'py-8 space-y-6' : 'py-10 sm:py-12 space-y-8'}`}>
               <Reveal animationLevel={animLevel}>
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-                  <div className={`${resolvedConfig.about_image_url ? 'lg:col-span-7' : 'lg:col-span-9'} space-y-2.5`}>
+                <div className={`grid gap-6 items-center ${isSimCompact ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-12'}`}>
+                  <div className={`${isSimCompact ? '' : resolvedConfig.about_image_url ? 'lg:col-span-7' : 'lg:col-span-9'} space-y-2.5 min-w-0`}>
                     {resolvedConfig.about_eyebrow && (
                       <span
                         className={`inline-block text-[11px] font-extrabold uppercase tracking-wider ${theme.accentText}`}
@@ -987,7 +1004,7 @@ export default function PublicLandingPage({
                         {resolvedConfig.about_eyebrow}
                       </span>
                     )}
-                    <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                    <h2 className={`${isSimMobile ? 'text-xl' : 'text-2xl sm:text-3xl'} font-extrabold tracking-tight text-slate-900`}>
                       {resolvedConfig.about_title}
                     </h2>
                     <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-3xl">
@@ -995,7 +1012,7 @@ export default function PublicLandingPage({
                     </p>
                   </div>
                   {resolvedConfig.about_image_url && (
-                    <div className="lg:col-span-5">
+                    <div className={isSimCompact ? '' : 'lg:col-span-5'}>
                       <div className={`rounded-3xl overflow-hidden border ${theme.softBorder} shadow-md aspect-[16/10] bg-slate-100`}>
                         <img
                           src={resolvedConfig.about_image_url}
@@ -1010,13 +1027,19 @@ export default function PublicLandingPage({
 
               {feats.length > 0 && (
                 <div
-                  className={`grid grid-cols-1 ${
-                    feats.length === 2
-                      ? 'md:grid-cols-2'
+                  className={`grid gap-5 ${
+                    isSimMobile
+                      ? 'grid-cols-1'
+                      : isSimTablet
+                      ? feats.length >= 2
+                        ? 'grid-cols-2'
+                        : 'grid-cols-1'
+                      : feats.length === 2
+                      ? 'grid-cols-1 md:grid-cols-2'
                       : feats.length === 4
-                      ? 'md:grid-cols-2 lg:grid-cols-4'
-                      : 'md:grid-cols-3'
-                  } gap-5`}
+                      ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'
+                      : 'grid-cols-1 md:grid-cols-3'
+                  }`}
                 >
                   {feats.map((feat, idx) => (
                     <Reveal key={feat.id} animationLevel={animLevel} delayMs={idx * 80}>
@@ -1059,6 +1082,7 @@ export default function PublicLandingPage({
             key="events"
             sectionId="events"
             isPreview={isPreview}
+            compactOverlay={isSimMobile}
             isVisible={resolvedConfig.show_events_section}
             showHiddenSections={showHiddenSections}
             selectedSectionId={selectedSectionId}
@@ -1073,7 +1097,7 @@ export default function PublicLandingPage({
             onQuickMoveSection={onQuickMoveSection}
             onQuickToggleSection={onQuickToggleSection}
           >
-            <section id="events" className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-12 space-y-6">
+            <section id="events" className={`max-w-7xl w-full mx-auto px-4 sm:px-6 ${isSimMobile ? 'py-8' : 'py-10 sm:py-12'} space-y-6`}>
               <Reveal animationLevel={animLevel}>
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
@@ -1084,7 +1108,7 @@ export default function PublicLandingPage({
                         {resolvedConfig.events_eyebrow}
                       </span>
                     )}
-                    <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 mt-0.5">
+                    <h2 className={`${isSimMobile ? 'text-xl' : 'text-2xl sm:text-3xl'} font-extrabold tracking-tight text-slate-900 mt-0.5`}>
                       {resolvedConfig.events_title}
                     </h2>
                   </div>
@@ -1097,7 +1121,7 @@ export default function PublicLandingPage({
               </Reveal>
 
               {loadingPublic ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className={`grid gap-5 ${isSimMobile ? 'grid-cols-1' : isSimTablet ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-3'}`}>
                   {[1, 2, 3].map((n) => (
                     <div
                       key={n}
@@ -1108,7 +1132,7 @@ export default function PublicLandingPage({
               ) : openEvents.length === 0 ? (
                 <Reveal animationLevel={animLevel}>
                   <div
-                    className={`${cardSurface} rounded-3xl p-8 sm:p-10 text-center space-y-3`}
+                    className={`${cardSurface} rounded-3xl ${isSimMobile ? 'p-6' : 'p-8 sm:p-10'} text-center space-y-3`}
                   >
                     <div
                       className={`w-12 h-12 rounded-2xl ${theme.softBg} ${theme.accentText} flex items-center justify-center mx-auto`}
@@ -1134,7 +1158,7 @@ export default function PublicLandingPage({
                   </div>
                 </Reveal>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div className={`grid gap-5 ${isSimMobile ? 'grid-cols-1' : isSimTablet ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
                   {openEvents.map((ev, idx) => {
                     const cap = Number(ev.guest_capacity || 0);
                     const spotsLeft =
@@ -1281,6 +1305,7 @@ export default function PublicLandingPage({
             key="highlights"
             sectionId="highlights"
             isPreview={isPreview}
+            compactOverlay={isSimMobile}
             isVisible={resolvedConfig.show_highlights_section}
             showHiddenSections={showHiddenSections}
             selectedSectionId={selectedSectionId}
@@ -1297,7 +1322,7 @@ export default function PublicLandingPage({
           >
             <section
               id="highlights"
-              className="bg-slate-50/85 border-y border-slate-200/70 py-12"
+              className={`bg-slate-50/85 border-y border-slate-200/70 ${isSimMobile ? 'py-8' : 'py-10 sm:py-12'}`}
             >
               <div className="max-w-7xl mx-auto px-4 sm:px-6 space-y-6">
                 <Reveal animationLevel={animLevel}>
@@ -1310,14 +1335,14 @@ export default function PublicLandingPage({
                         <span>{resolvedConfig.highlights_eyebrow}</span>
                       </span>
                     )}
-                    <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 mt-0.5">
+                    <h2 className={`${isSimMobile ? 'text-xl' : 'text-2xl sm:text-3xl'} font-extrabold tracking-tight text-slate-900 mt-0.5`}>
                       {resolvedConfig.highlights_title}
                     </h2>
                   </div>
                 </Reveal>
 
                 {hasPosts ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                  <div className={`grid gap-5 ${isSimMobile ? 'grid-cols-1' : isSimTablet ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
                     {highlightPosts.map((post, idx) => (
                       <Reveal key={post.id} animationLevel={animLevel} delayMs={idx * 70}>
                         <div
@@ -1387,6 +1412,7 @@ export default function PublicLandingPage({
             key="faq"
             sectionId="faq"
             isPreview={isPreview}
+            compactOverlay={isSimMobile}
             isVisible={resolvedConfig.show_faq_section}
             showHiddenSections={showHiddenSections}
             selectedSectionId={selectedSectionId}
@@ -1401,7 +1427,7 @@ export default function PublicLandingPage({
             onQuickMoveSection={onQuickMoveSection}
             onQuickToggleSection={onQuickToggleSection}
           >
-            <section id="faq" className="max-w-4xl w-full mx-auto px-4 sm:px-6 py-12 space-y-6">
+            <section id="faq" className={`max-w-4xl w-full mx-auto px-4 sm:px-6 ${isSimMobile ? 'py-8' : 'py-10 sm:py-12'} space-y-6`}>
               <Reveal animationLevel={animLevel}>
                 <div className="text-center space-y-1.5">
                   {resolvedConfig.faq_eyebrow && (
@@ -1411,7 +1437,7 @@ export default function PublicLandingPage({
                       {resolvedConfig.faq_eyebrow}
                     </span>
                   )}
-                  <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                  <h2 className={`${isSimMobile ? 'text-xl' : 'text-2xl sm:text-3xl'} font-extrabold tracking-tight text-slate-900`}>
                     {resolvedConfig.faq_title}
                   </h2>
                   {resolvedConfig.faq_subtitle && (
@@ -1480,6 +1506,7 @@ export default function PublicLandingPage({
             key="cta"
             sectionId="cta"
             isPreview={isPreview}
+            compactOverlay={isSimMobile}
             isVisible={resolvedConfig.show_cta_section}
             showHiddenSections={showHiddenSections}
             selectedSectionId={selectedSectionId}
@@ -1494,10 +1521,14 @@ export default function PublicLandingPage({
             onQuickMoveSection={onQuickMoveSection}
             onQuickToggleSection={onQuickToggleSection}
           >
-            <section className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-10">
+            <section className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-10">
               <Reveal animationLevel={animLevel}>
                 <div
-                  className={`${theme.ctaBannerBg} text-white rounded-3xl p-8 sm:p-12 shadow-xl relative overflow-hidden flex flex-col lg:flex-row lg:items-center justify-between gap-6`}
+                  className={`${theme.ctaBannerBg} text-white rounded-3xl ${
+                    isSimCompact
+                      ? 'p-6 flex flex-col gap-5'
+                      : 'p-6 sm:p-12 flex flex-col lg:flex-row lg:items-center justify-between gap-6'
+                  } shadow-xl relative overflow-hidden`}
                 >
                   <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-white/10 blur-3xl pointer-events-none" />
                   <div className="absolute left-1/3 -bottom-24 w-64 h-64 rounded-full bg-black/20 blur-3xl pointer-events-none" />
@@ -1509,7 +1540,7 @@ export default function PublicLandingPage({
                         <span>{resolvedConfig.cta_badge}</span>
                       </span>
                     )}
-                    <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight leading-tight">
+                    <h2 className={`${isSimMobile ? 'text-xl' : 'text-2xl sm:text-3xl'} font-extrabold tracking-tight leading-tight`}>
                       {resolvedConfig.cta_title}
                     </h2>
                     <p className="text-xs sm:text-sm text-white/85 leading-relaxed">
@@ -1587,7 +1618,7 @@ export default function PublicLandingPage({
   };
 
   return (
-    <div className={`min-h-screen flex flex-col ${theme.pageBg} text-slate-900 relative`}>
+    <div className={`min-h-screen flex flex-col ${theme.pageBg} text-slate-900 relative overflow-x-hidden break-words`}>
       <style>{`
         @keyframes plFloatSlow {
           0%, 100% { transform: translateY(0px) translateX(0px); }
@@ -1607,6 +1638,7 @@ export default function PublicLandingPage({
       <EditableSectionWrapper
         sectionId="announcement"
         isPreview={isPreview}
+        compactOverlay={isSimMobile}
         isVisible={resolvedConfig.show_announcement_bar}
         showHiddenSections={showHiddenSections}
         selectedSectionId={selectedSectionId}
@@ -1649,40 +1681,42 @@ export default function PublicLandingPage({
           isPreview ? 'relative' : 'sticky top-0 z-30'
         } bg-white/85 backdrop-blur-xl border-b ${theme.navBorder}`}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2 sm:gap-3">
           <button
             type="button"
             onClick={scrollToTop}
             title="Return to main homepage"
-            className="flex items-center gap-3 min-w-0 text-left cursor-pointer group"
+            className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 text-left cursor-pointer group"
           >
             {logoUrl && !isPdfMedia(logoUrl) ? (
               <img
                 src={logoUrl}
                 alt={clubName}
-                className={`w-10 h-10 rounded-xl object-cover border ${theme.softBorder} bg-white shadow-2xs shrink-0 transition group-hover:scale-105`}
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl object-cover border ${theme.softBorder} bg-white shadow-2xs shrink-0 transition group-hover:scale-105`}
               />
             ) : (
               <div
-                className={`w-10 h-10 rounded-xl ${theme.primaryBtn} flex items-center justify-center shadow-2xs shrink-0 transition group-hover:scale-105`}
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl ${theme.primaryBtn} flex items-center justify-center shadow-2xs shrink-0 transition group-hover:scale-105`}
               >
                 <Layers className="w-5 h-5" />
               </div>
             )}
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 min-w-0">
                 <span
                   className={`font-extrabold text-sm sm:text-base text-slate-900 ${theme.accentTextHover} transition truncate`}
                 >
                   {clubName}
                 </span>
-                <span
-                  className={`hidden sm:inline-flex px-2 py-0.5 rounded-full border ${theme.badgeBg} ${theme.badgeText} text-[10px] font-extrabold shrink-0`}
-                >
-                  Batch {currentBatch}
-                </span>
+                {!isSimMobile && (
+                  <span
+                    className={`hidden sm:inline-flex px-2 py-0.5 rounded-full border ${theme.badgeBg} ${theme.badgeText} text-[10px] font-extrabold shrink-0`}
+                  >
+                    Batch {currentBatch}
+                  </span>
+                )}
               </div>
-              {resolvedConfig.nav_subtitle && (
+              {resolvedConfig.nav_subtitle && !isSimMobile && (
                 <p className="text-[11px] text-slate-500 hidden md:block truncate">
                   {resolvedConfig.nav_subtitle}
                 </p>
@@ -1690,68 +1724,73 @@ export default function PublicLandingPage({
             </div>
           </button>
 
-          <nav className="hidden lg:flex items-center gap-5 text-xs font-bold text-slate-600">
-            {resolvedConfig.show_about_section && (
+          {!isSimCompact && (
+            <nav className="hidden lg:flex items-center gap-5 text-xs font-bold text-slate-600 shrink-0">
+              {resolvedConfig.show_about_section && (
+                <a
+                  href="#about-club"
+                  onClick={(e) => handleAnchorClick(e, '#about-club')}
+                  className={`${theme.accentTextHover} transition`}
+                >
+                  About
+                </a>
+              )}
+              {resolvedConfig.show_events_section && (
+                <a
+                  href="#events"
+                  onClick={(e) => handleAnchorClick(e, '#events')}
+                  className={`${theme.accentTextHover} transition`}
+                >
+                  Open Events
+                </a>
+              )}
+              {resolvedConfig.show_highlights_section && highlightPosts.length > 0 && (
+                <a
+                  href="#highlights"
+                  onClick={(e) => handleAnchorClick(e, '#highlights')}
+                  className={`${theme.accentTextHover} transition`}
+                >
+                  Highlights
+                </a>
+              )}
+              {resolvedConfig.show_faq_section && resolvedConfig.faq_items.length > 0 && (
+                <a
+                  href="#faq"
+                  onClick={(e) => handleAnchorClick(e, '#faq')}
+                  className={`${theme.accentTextHover} transition`}
+                >
+                  FAQ
+                </a>
+              )}
               <a
-                href="#about-club"
-                onClick={(e) => handleAnchorClick(e, '#about-club')}
+                href="#about"
+                onClick={(e) => handleAnchorClick(e, '#about')}
                 className={`${theme.accentTextHover} transition`}
               >
-                About
+                Connect
               </a>
-            )}
-            {resolvedConfig.show_events_section && (
-              <a
-                href="#events"
-                onClick={(e) => handleAnchorClick(e, '#events')}
-                className={`${theme.accentTextHover} transition`}
-              >
-                Open Events
-              </a>
-            )}
-            {resolvedConfig.show_highlights_section && highlightPosts.length > 0 && (
-              <a
-                href="#highlights"
-                onClick={(e) => handleAnchorClick(e, '#highlights')}
-                className={`${theme.accentTextHover} transition`}
-              >
-                Highlights
-              </a>
-            )}
-            {resolvedConfig.show_faq_section && resolvedConfig.faq_items.length > 0 && (
-              <a
-                href="#faq"
-                onClick={(e) => handleAnchorClick(e, '#faq')}
-                className={`${theme.accentTextHover} transition`}
-              >
-                FAQ
-              </a>
-            )}
-            <a
-              href="#about"
-              onClick={(e) => handleAnchorClick(e, '#about')}
-              className={`${theme.accentTextHover} transition`}
-            >
-              Connect
-            </a>
-          </nav>
+            </nav>
+          )}
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => openAuth('signup')}
-              className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
+              className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
             >
-              <UserPlus className="w-3.5 h-3.5 opacity-75" />
+              <UserPlus className="w-3.5 h-3.5 opacity-75 shrink-0" />
               <span>Sign Up</span>
             </button>
             <button
               type="button"
               onClick={() => openAuth('login')}
-              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-extrabold ${theme.primaryBtn} shadow-sm ${theme.primaryBtnShadow} transition cursor-pointer`}
+              className={`inline-flex items-center gap-1.5 ${
+                isSimMobile ? 'px-3 py-1.5 text-[11px]' : 'px-3 sm:px-4 py-1.5 sm:py-2 text-xs'
+              } rounded-xl font-extrabold ${theme.primaryBtn} shadow-sm ${theme.primaryBtnShadow} transition cursor-pointer whitespace-nowrap`}
             >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>Member Sign In</span>
+              <LogIn className="w-3.5 h-3.5 shrink-0" />
+              <span className={isSimMobile ? 'inline' : 'sm:hidden'}>Sign In</span>
+              <span className={isSimMobile ? 'hidden' : 'hidden sm:inline'}>Member Sign In</span>
             </button>
           </div>
         </div>
@@ -1761,6 +1800,7 @@ export default function PublicLandingPage({
       <EditableSectionWrapper
         sectionId="hero"
         isPreview={isPreview}
+        compactOverlay={isSimMobile}
         isVisible
         selectedSectionId={selectedSectionId}
         hoveredSectionId={hoveredSectionId}
@@ -1790,8 +1830,8 @@ export default function PublicLandingPage({
           />
 
           {resolvedConfig.hero_layout === 'banner' ? (
-            <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
-              <div className="relative rounded-[2rem] overflow-hidden bg-slate-950 text-white shadow-2xl border border-white/10 min-h-[420px] flex items-center">
+            <div className={`relative max-w-7xl mx-auto px-4 sm:px-6 ${isSimMobile ? 'py-6' : 'py-10 sm:py-14'}`}>
+              <div className={`relative rounded-[2rem] overflow-hidden bg-slate-950 text-white shadow-2xl border border-white/10 ${isSimMobile ? 'min-h-[320px]' : 'min-h-[380px] sm:min-h-[420px]'} flex items-center`}>
                 {(resolvedConfig.hero_cover_image_url || activeSlide?.poster_url) &&
                 !isPdfMedia(resolvedConfig.hero_cover_image_url || activeSlide?.poster_url) ? (
                   <img
@@ -1802,7 +1842,7 @@ export default function PublicLandingPage({
                 ) : null}
                 <div className="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-slate-950/80 to-slate-900/50" />
 
-                <div className="relative z-10 p-8 sm:p-14 max-w-3xl space-y-6">
+                <div className={`relative z-10 ${isSimMobile ? 'p-6 space-y-4' : 'p-6 sm:p-14 space-y-6'} max-w-3xl`}>
                   {resolvedConfig.hero_badge && (
                     <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/20 backdrop-blur-md text-white text-xs font-extrabold">
                       <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
@@ -1811,7 +1851,7 @@ export default function PublicLandingPage({
                   )}
 
                   <div className="space-y-3">
-                    <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight leading-[1.1]">
+                    <h1 className={`${isSimMobile ? 'text-2xl' : isSimTablet ? 'text-4xl' : 'text-3xl sm:text-5xl'} font-extrabold tracking-tight leading-[1.12]`}>
                       {resolvedConfig.hero_title}{' '}
                       {resolvedConfig.hero_highlight_text && (
                         <span className="text-emerald-300">{resolvedConfig.hero_highlight_text}</span>
@@ -1884,7 +1924,7 @@ export default function PublicLandingPage({
               </div>
             </div>
           ) : resolvedConfig.hero_layout === 'centered' ? (
-            <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-16 text-center space-y-10">
+            <div className={`relative max-w-6xl mx-auto px-4 sm:px-6 ${isSimMobile ? 'py-8 space-y-6' : 'py-12 sm:py-16 space-y-10'} text-center`}>
               <div className="max-w-3xl mx-auto space-y-6">
                 {resolvedConfig.hero_badge && (
                   <div
@@ -1896,7 +1936,7 @@ export default function PublicLandingPage({
                 )}
 
                 <div className="space-y-3">
-                  <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 leading-[1.08]">
+                  <h1 className={`${isSimMobile ? 'text-2xl' : isSimTablet ? 'text-4xl' : 'text-3xl sm:text-5xl lg:text-6xl'} font-extrabold tracking-tight text-slate-900 leading-[1.1]`}>
                     {resolvedConfig.hero_title}{' '}
                     {resolvedConfig.hero_highlight_text && (
                       <span className={theme.gradientText}>{resolvedConfig.hero_highlight_text}</span>
@@ -1970,19 +2010,19 @@ export default function PublicLandingPage({
               <div>{renderShowcaseMediaCard(true)}</div>
             </div>
           ) : (
-            <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
-              <div className="lg:col-span-7 space-y-6">
+            <div className={`relative max-w-7xl mx-auto px-4 sm:px-6 ${isSimMobile ? 'py-8 gap-6' : 'py-10 sm:py-16 gap-8 lg:gap-10'} grid ${isSimCompact ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-12'} items-center`}>
+              <div className={`${isSimCompact ? '' : 'lg:col-span-7'} space-y-5 sm:space-y-6 min-w-0`}>
                 {resolvedConfig.hero_badge && (
                   <div
                     className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border ${theme.badgeBg} ${theme.badgeText} text-xs font-extrabold`}
                   >
-                    <Sparkles className={`w-3.5 h-3.5 ${theme.accentText}`} />
+                    <Sparkles className={`w-3.5 h-3.5 ${theme.accentText} shrink-0`} />
                     <span>{resolvedConfig.hero_badge}</span>
                   </div>
                 )}
 
                 <div className="space-y-3">
-                  <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 leading-[1.12]">
+                  <h1 className={`${isSimMobile ? 'text-2xl' : isSimTablet ? 'text-4xl' : 'text-3xl sm:text-5xl'} font-extrabold tracking-tight text-slate-900 leading-[1.12]`}>
                     {resolvedConfig.hero_title}{' '}
                     {resolvedConfig.hero_highlight_text && (
                       <span className={theme.gradientText}>{resolvedConfig.hero_highlight_text}</span>
@@ -2053,7 +2093,7 @@ export default function PublicLandingPage({
                 </div>
               </div>
 
-              <div className="lg:col-span-5">{renderShowcaseMediaCard(false)}</div>
+              <div className={isSimCompact ? '' : 'lg:col-span-5'}>{renderShowcaseMediaCard(false)}</div>
             </div>
           )}
         </section>
@@ -2066,6 +2106,7 @@ export default function PublicLandingPage({
       <EditableSectionWrapper
         sectionId="footer"
         isPreview={isPreview}
+        compactOverlay={isSimMobile}
         isVisible
         selectedSectionId={selectedSectionId}
         hoveredSectionId={hoveredSectionId}
@@ -2075,8 +2116,8 @@ export default function PublicLandingPage({
         onHoverSection={onHoverSection}
       >
         <footer id="about" className="mt-auto bg-slate-950 text-slate-300 border-t border-slate-800">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start">
-            <div className="lg:col-span-4 space-y-3.5">
+          <div className={`max-w-7xl mx-auto px-4 sm:px-6 ${isSimMobile ? 'py-8 gap-6' : 'py-10 sm:py-12 gap-8 lg:gap-10'} grid ${isSimCompact ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-12'} items-start`}>
+            <div className={`${isSimCompact ? '' : 'lg:col-span-4'} space-y-3.5 min-w-0`}>
               <button
                 type="button"
                 onClick={scrollToTop}
@@ -2128,8 +2169,14 @@ export default function PublicLandingPage({
             </div>
 
             <div
-              className={`lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 ${
-                visibleColumns.length >= 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'
+              className={`${isSimCompact ? '' : 'lg:col-span-8'} grid ${
+                isSimMobile
+                  ? 'grid-cols-1'
+                  : isSimTablet
+                  ? 'grid-cols-2'
+                  : visibleColumns.length >= 3
+                  ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3'
+                  : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2'
               } gap-6`}
             >
               {visibleColumns.map((col) => {

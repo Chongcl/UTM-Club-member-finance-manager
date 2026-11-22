@@ -1617,12 +1617,12 @@ export default function Page() {
 
               <section className="space-y-4">
                 <div
-                  className={`flex flex-wrap items-center justify-between gap-3 p-5 rounded-3xl border backdrop-blur-xl shadow-xs ${
+                  className={`flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 rounded-3xl border backdrop-blur-xl shadow-xs ${
                     isDarkCanvas ? 'bg-slate-900/75 border-white/10' : 'bg-white/85 border-white/90'
                   }`}
                 >
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h2 className="text-lg font-extrabold tracking-tight">Activities &amp; Events</h2>
+                  <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+                    <h2 className="text-base sm:text-lg font-extrabold tracking-tight shrink-0">Activities &amp; Events</h2>
                     {hasMultipleActivityFormats && (
                       <div className={`flex flex-wrap p-1 rounded-xl text-[11px] ${isDarkCanvas ? 'bg-slate-800' : 'bg-slate-100'}`}>
                         {(
@@ -1651,7 +1651,7 @@ export default function Page() {
                     <button
                       type="button"
                       onClick={() => setIsQrScannerOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-slate-950 hover:bg-slate-900 text-white border border-white/15 shadow-xs cursor-pointer"
+                      className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-slate-950 hover:bg-slate-900 text-white border border-white/15 shadow-xs cursor-pointer"
                     >
                       <QrCode className="w-4 h-4" />
                       <span>Scan QR</span>
