@@ -40,7 +40,10 @@ import ClaimFormModal from '@/components/ClaimFormModal';
 import AuditReviewModal from '@/components/AuditReviewModal';
 import PreClaimReviewModal from '@/components/PreClaimReviewModal';
 import PublicLandingPage from '@/components/PublicLandingPage';
+import PublicLandingEditorModal from '@/components/PublicLandingEditorModal';
+import { PublicLandingConfig } from '@/lib/publicLanding';
 import BudgetModal, { EditableActivity } from '@/components/BudgetModal';
+import { Globe } from 'lucide-react';
 import EventOperationsModal from '@/components/EventOperationsModal';
 import QrScannerModal from '@/components/QrScannerModal';
 import LedgerSection, { LedgerEntryItem } from '@/components/LedgerSection';
@@ -202,6 +205,8 @@ export default function Page() {
   const [clubAboutInput, setClubAboutInput] = useState('');
   const [instagramUrlInput, setInstagramUrlInput] = useState('');
   const [contactEmailInput, setContactEmailInput] = useState('');
+  const [publicLandingConfig, setPublicLandingConfig] = useState<PublicLandingConfig | null>(null);
+  const [showPublicPageEditor, setShowPublicPageEditor] = useState(false);
   const [newAdminPinInput, setNewAdminPinInput] = useState('');
   const [newOwnerPinInput, setNewOwnerPinInput] = useState('');
   const [departmentsText, setDepartmentsText] = useState(DEFAULT_DEPARTMENTS.join('\n'));
@@ -554,6 +559,12 @@ export default function Page() {
       }
       if (sRes.data.contact_email !== undefined) {
         setContactEmailInput(String(sRes.data.contact_email || ''));
+      }
+      if (sRes.data.public_landing_config !== undefined) {
+        const rawCfg = sRes.data.public_landing_config;
+        setPublicLandingConfig(
+          rawCfg && typeof rawCfg === 'object' ? (rawCfg as PublicLandingConfig) : null
+        );
       }
       if (depts.length > 0) {
         setDepartments((prev) => (prev.join('|') === depts.join('|') ? prev : depts));
@@ -1100,6 +1111,7 @@ export default function Page() {
         initialClubName={clubName}
         initialLogoUrl={logoUrl}
         initialBatch={currentBatch}
+        initialConfig={publicLandingConfig}
         authMode={authMode}
         setAuthMode={setAuthMode}
         email={email}
@@ -1247,6 +1259,7 @@ export default function Page() {
           onToggleDarkMode={toggleDarkMode}
           canCustomizeTheme={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
           onOpenThemeStudio={() => setShowThemeStudio(true)}
+          onOpenPublicPageEditor={() => setShowPublicPageEditor(true)}
           pendingClaimsCount={
             isAdminOrOwner
               ? activeClaims.filter((c) => c.status === 'Pending').length +
@@ -2404,6 +2417,26 @@ export default function Page() {
                         </div>
                       </>
                     )}
+                    {isAdminOrOwner && effectivePermissions.can_manage_posters_polls && (
+                      <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-extrabold text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
+                            <Globe className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>Visual Landing Page &amp; Footer Builder</span>
+                          </div>
+                          <p className="text-[11px] text-emerald-800/80 mt-0.5">
+                            Customize hero text, section visibility, footer columns, social links (Facebook, Instagram, LinkedIn), and preview live.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowPublicPageEditor(true)}
+                          className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold whitespace-nowrap shadow-sm transition-colors cursor-pointer"
+                        >
+                          Open Visual Editor
+                        </button>
+                      </div>
+                    )}
                     {(isOwner || effectivePermissions.can_manage_members || effectivePermissions.can_manage_claims_fees) && (
                       <button
                         type="button"
@@ -3108,6 +3141,28 @@ export default function Page() {
         }}
         onUpdated={(m: string) => {
           showToast(m);
+          fetchAllData();
+        }}
+      />
+      <PublicLandingEditorModal
+        isOpen={showPublicPageEditor}
+        onClose={() => setShowPublicPageEditor(false)}
+        profile={profile}
+        clubName={clubName}
+        logoUrl={logoUrl}
+        currentBatch={currentBatch}
+        initialConfig={publicLandingConfig}
+        legacyTagline={clubTaglineInput}
+        legacyAbout={clubAboutInput}
+        legacyInstagramUrl={instagramUrlInput}
+        legacyContactEmail={contactEmailInput}
+        onSaved={(nextCfg, legacyUpdates, msg) => {
+          setPublicLandingConfig(nextCfg);
+          setClubTaglineInput(legacyUpdates.tagline);
+          setClubAboutInput(legacyUpdates.about);
+          setInstagramUrlInput(legacyUpdates.instagram);
+          setContactEmailInput(legacyUpdates.email);
+          showToast(msg);
           fetchAllData();
         }}
       />

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { UserProfile } from '@/lib/supabase';
-import { Menu, X, Calendar, Receipt, UserCheck, Wallet, Users, PlusCircle, Lock, Unlock, KeyRound, LogOut, Layers, Loader2, Package, QrCode, Crown, Moon, Sun, Palette, FileText, ShieldCheck } from 'lucide-react';
+import { Menu, X, Calendar, Receipt, UserCheck, Wallet, Users, PlusCircle, Lock, Unlock, KeyRound, LogOut, Layers, Loader2, Package, QrCode, Crown, Moon, Sun, Palette, FileText, ShieldCheck, Globe } from 'lucide-react';
 
 export type NavTab = 'activities' | 'equipment' | 'claims' | 'profile' | 'ledger' | 'members' | 'logs';
 
@@ -11,6 +11,7 @@ interface NavbarProps {
   currentBatch?: string; roleMode: 'member' | 'admin' | 'owner'; pendingClaimsCount?: number;
   notificationBell?: React.ReactNode;
   darkMode?: boolean; onToggleDarkMode?: () => void; canCustomizeTheme?: boolean; onOpenThemeStudio?: () => void;
+  onOpenPublicPageEditor?: () => void;
   onUnlockAdmin: (pin: string) => Promise<boolean>;
   onSwitchMode: (target: 'member' | 'admin' | 'owner') => Promise<void>;
   onSignOut: () => Promise<void>; onOpenNewClaim: () => void; onOpenQrScanner: () => void;
@@ -20,7 +21,7 @@ interface NavbarProps {
 export default function Navbar({
   profile, clubName, logoUrl = '', activeTab, onSelectTab, currentBatch = '2026/2027', roleMode, pendingClaimsCount = 0,
   notificationBell,
-  darkMode = false, onToggleDarkMode, canCustomizeTheme = false, onOpenThemeStudio,
+  darkMode = false, onToggleDarkMode, canCustomizeTheme = false, onOpenThemeStudio, onOpenPublicPageEditor,
   onUnlockAdmin, onSwitchMode, onSignOut, onOpenNewClaim, onOpenQrScanner,
   onOpenNewActivity, onOpenNewFinance, switchingRole = false,
 }: NavbarProps) {
@@ -31,7 +32,13 @@ export default function Navbar({
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
 
-  const handleNav = (tab: NavTab) => { onSelectTab(tab); setDrawerOpen(false); };
+  const handleNav = (tab: NavTab) => {
+    onSelectTab(tab);
+    setDrawerOpen(false);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   const handlePinSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,15 +72,31 @@ export default function Navbar({
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => setDrawerOpen(true)} className={`p-2.5 rounded-xl border transition cursor-pointer ${darkMode ? 'bg-white/5 border-white/10 text-emerald-400 hover:bg-white/10' : 'bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200'}`}><Menu className="w-5 h-5" /></button>
-            <div onClick={() => handleNav('activities')} className="flex items-center gap-2.5 cursor-pointer">
+            <button
+              type="button"
+              onClick={() => handleNav('activities')}
+              title="Return to Main Homepage"
+              className="flex items-center gap-2.5 cursor-pointer text-left group"
+            >
               {renderLogo()}
-              <span className="text-base font-extrabold tracking-tight">{clubName || 'ClubSync'}</span>
+              <span className="text-base font-extrabold tracking-tight group-hover:text-emerald-500 transition">{clubName || 'ClubSync'}</span>
               <span className={`hidden sm:inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${darkMode ? 'bg-white/5 border-white/10 text-emerald-300' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>{currentBatch}</span>
               {isOwner ? <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-amber-400 text-slate-950"><Crown className="w-3 h-3 inline mr-0.5" />Owner</span> : isAdminOrOwner ? <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-600 text-white">Admin</span> : null}
-            </div>
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
+            {canCustomizeTheme && onOpenPublicPageEditor && (
+              <button
+                type="button"
+                onClick={onOpenPublicPageEditor}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${darkMode ? 'bg-white/10 border-white/15 text-emerald-300 hover:bg-white/15' : 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'}`}
+                title="Customize Public Landing Page"
+              >
+                <Globe className="w-4 h-4" />
+                <span className="hidden lg:inline">Public Page</span>
+              </button>
+            )}
             {canCustomizeTheme && onOpenThemeStudio && (
               <button type="button" onClick={onOpenThemeStudio} className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition cursor-pointer ${darkMode ? 'bg-white/10 border-white/15 text-amber-300 hover:bg-white/15' : 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'}`} title="Customize Logo & Background">
                 <Palette className="w-4 h-4" /><span className="hidden md:inline">Logo &amp; Theme</span>
@@ -95,8 +118,16 @@ export default function Navbar({
           <aside className={`relative z-10 w-72 h-full shadow-2xl flex flex-col justify-between p-5 overflow-y-auto ${darkMode ? 'bg-slate-900 text-white border-r border-white/10' : 'bg-white text-slate-900'}`}>
             <div className="space-y-5">
               <div className="flex justify-between items-center pb-3 border-b border-slate-200/20">
-                <div className="flex items-center gap-2">{renderLogo()}<span className="font-extrabold text-sm">{clubName}</span></div>
-                <button type="button" onClick={() => setDrawerOpen(false)}><X className="w-5 h-5" /></button>
+                <button
+                  type="button"
+                  onClick={() => handleNav('activities')}
+                  title="Return to Main Homepage"
+                  className="flex items-center gap-2 cursor-pointer text-left"
+                >
+                  {renderLogo()}
+                  <span className="font-extrabold text-sm hover:text-emerald-500 transition">{clubName}</span>
+                </button>
+                <button type="button" onClick={() => setDrawerOpen(false)} className="cursor-pointer"><X className="w-5 h-5" /></button>
               </div>
               <div className={`p-3 rounded-2xl border text-xs ${darkMode ? 'bg-white/5 border-white/10' : 'bg-emerald-50 border-emerald-200'}`}>
                 <div className="font-extrabold">{profile.full_name} ({isOwner ? 'Owner' : isAdminOrOwner ? 'Admin' : 'Member'})</div>
@@ -114,6 +145,7 @@ export default function Navbar({
                   <button type="button" onClick={() => handleNav('ledger')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'ledger' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Wallet className="w-4 h-4" /><span>Club Finance &amp; Savings</span></button>
                   <button type="button" onClick={() => handleNav('members')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'members' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Users className="w-4 h-4" /><span>Members &amp; Batch Clearance</span></button>
                   <button type="button" onClick={() => handleNav('logs')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'logs' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><ShieldCheck className="w-4 h-4" /><span>Security &amp; Activity Log</span></button>
+                  {canCustomizeTheme && onOpenPublicPageEditor && <button type="button" onClick={() => { setDrawerOpen(false); onOpenPublicPageEditor(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-emerald-600 hover:bg-emerald-500/10 cursor-pointer"><Globe className="w-4 h-4" /><span>Edit Public Landing Page</span></button>}
                   {canCustomizeTheme && onOpenThemeStudio && <button type="button" onClick={() => { setDrawerOpen(false); onOpenThemeStudio(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-amber-500 hover:bg-amber-500/10 cursor-pointer"><Palette className="w-4 h-4" /><span>Logo &amp; Background Studio</span></button>}
                   {onOpenNewActivity && <button type="button" onClick={() => { setDrawerOpen(false); onOpenNewActivity(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 cursor-pointer">+ New Activity</button>}
                   {onOpenNewFinance && <button type="button" onClick={() => { setDrawerOpen(false); onOpenNewFinance(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-amber-400/20 text-amber-500 cursor-pointer">+ Add Finance Record</button>}

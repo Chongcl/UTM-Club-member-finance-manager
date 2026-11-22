@@ -311,23 +311,23 @@ export default function PublicEventPage() {
       {/* Top Branding Bar */}
       <header className="bg-white/90 backdrop-blur-xl border-b border-emerald-100 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+          <Link href="/" title="Return to Main Homepage" className="flex items-center gap-3 min-w-0 group">
             {logoUrl && !isPdfUrl(logoUrl) ? (
               <img
                 src={logoUrl}
                 alt={clubName}
-                className="w-9 h-9 rounded-xl object-cover border border-emerald-200 bg-white shrink-0"
+                className="w-9 h-9 rounded-xl object-cover border border-emerald-200 bg-white shrink-0 group-hover:scale-105 transition-transform"
               />
             ) : (
-              <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 group-hover:bg-emerald-700 transition-colors">
                 <Layers className="w-5 h-5" />
               </div>
             )}
             <div className="min-w-0">
-              <div className="font-extrabold text-sm text-slate-900 truncate">{clubName}</div>
+              <div className="font-extrabold text-sm text-slate-900 group-hover:text-emerald-700 transition-colors truncate">{clubName}</div>
               <div className="text-[11px] text-slate-500 truncate">Public Guest Event Portal</div>
             </div>
-          </div>
+          </Link>
 
           <Link
             href="/"

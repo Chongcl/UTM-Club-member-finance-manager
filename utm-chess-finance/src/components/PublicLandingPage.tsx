@@ -9,11 +9,16 @@ import {
   Announcement,
 } from '@/lib/supabase';
 import {
+  PublicLandingConfig,
+  FooterLinkPlatform,
+  resolvePublicLandingConfig,
+  normalizeExternalHref,
+} from '@/lib/publicLanding';
+import {
   Layers,
   Calendar,
   Clock,
   MapPin,
-  Users,
   Sparkles,
   ArrowRight,
   ChevronLeft,
@@ -28,12 +33,18 @@ import {
   Ticket,
   FileText,
   Maximize2,
+  Globe,
+  MessageCircle,
+  Link2,
 } from 'lucide-react';
 
 interface PublicLandingPageProps {
   initialClubName?: string;
   initialLogoUrl?: string;
   initialBatch?: string;
+  initialConfig?: PublicLandingConfig | null;
+  previewConfig?: PublicLandingConfig | null;
+  isPreview?: boolean;
   authMode: 'login' | 'signup';
   setAuthMode: (m: 'login' | 'signup') => void;
   email: string;
@@ -51,7 +62,6 @@ interface PublicLandingPageProps {
 }
 
 interface PublicStats {
-  member_count: number;
   open_events_count: number;
   total_events_count: number;
 }
@@ -69,10 +79,58 @@ function isPdfMedia(url?: string): boolean {
   );
 }
 
+function FooterPlatformIcon({ platform }: { platform?: FooterLinkPlatform }) {
+  switch (platform) {
+    case 'facebook':
+      return (
+        <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M13.5 22v-8h2.7l.4-3h-3.1V9.1c0-.9.3-1.5 1.6-1.5h1.7V4.9c-.3 0-1.3-.1-2.5-.1-2.5 0-4.2 1.5-4.2 4.3V11H7.5v3h2.6v8h3.4z" />
+        </svg>
+      );
+    case 'linkedin':
+      return (
+        <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M6.94 8.5H3.56V19.5H6.94V8.5ZM5.25 3.5C4.14 3.5 3.25 4.39 3.25 5.5C3.25 6.6 4.14 7.5 5.25 7.5C6.35 7.5 7.25 6.6 7.25 5.5C7.25 4.39 6.35 3.5 5.25 3.5ZM20.44 13.02C20.44 9.88 18.76 8.22 16.16 8.22C14.37 8.22 13.48 9.2 13.02 9.93V8.5H9.65C9.7 9.48 9.65 19.5 9.65 19.5H13.02V13.36C13.02 13.02 13.05 12.69 13.15 12.45C13.42 11.78 14.03 11.09 15.07 11.09C16.41 11.09 17.06 12.11 17.06 13.6V19.5H20.44V13.02Z" />
+        </svg>
+      );
+    case 'youtube':
+      return (
+        <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M21.58 7.19C21.35 6.33 20.67 5.65 19.81 5.42C18.25 5 12 5 12 5C12 5 5.75 5 4.19 5.42C3.33 5.65 2.65 6.33 2.42 7.19C2 8.75 2 12 2 12C2 12 2 15.25 2.42 16.81C2.65 17.67 3.33 18.35 4.19 18.58C5.75 19 12 19 12 19C12 19 18.25 19 19.81 18.58C20.67 18.35 21.35 17.67 21.58 16.81C22 15.25 22 12 22 12C22 12 22 8.75 21.58 7.19ZM10 15V9L15.2 12L10 15Z" />
+        </svg>
+      );
+    case 'tiktok':
+      return (
+        <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M16.6 5.82C15.9 5.02 15.5 3.99 15.5 2.9H12.4V15.4C12.38 16.71 11.31 17.76 10 17.76C8.67 17.76 7.6 16.68 7.6 15.36C7.6 14.04 8.67 12.96 10 12.96C10.24 12.96 10.48 13 10.7 13.07V9.91C10.47 9.88 10.24 9.86 10 9.86C6.96 9.86 4.5 12.33 4.5 15.36C4.5 18.39 6.96 20.86 10 20.86C13.04 20.86 15.5 18.39 15.5 15.36V9.01C16.75 9.91 18.28 10.43 19.9 10.43V7.34C18.61 7.34 17.44 6.76 16.6 5.82Z" />
+        </svg>
+      );
+    case 'twitter':
+      return (
+        <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M18.244 2.25H21.552L14.325 10.51L22.827 21.75H16.17L10.956 14.933L4.99 21.75H1.68L9.41 12.915L1.254 2.25H8.08L12.793 8.481L18.244 2.25ZM17.083 19.77H18.916L7.084 4.126H5.117L17.083 19.77Z" />
+        </svg>
+      );
+    case 'instagram':
+      return <Instagram className="w-3.5 h-3.5 shrink-0" />;
+    case 'whatsapp':
+      return <MessageCircle className="w-3.5 h-3.5 shrink-0" />;
+    case 'email':
+      return <Mail className="w-3.5 h-3.5 shrink-0" />;
+    case 'website':
+      return <Globe className="w-3.5 h-3.5 shrink-0" />;
+    default:
+      return <Link2 className="w-3.5 h-3.5 shrink-0" />;
+  }
+}
+
 export default function PublicLandingPage({
   initialClubName = 'ClubSync',
   initialLogoUrl = '',
   initialBatch = '2026/2027',
+  initialConfig = null,
+  previewConfig = null,
+  isPreview = false,
   authMode,
   setAuthMode,
   email,
@@ -97,9 +155,10 @@ export default function PublicLandingPage({
   const [clubAbout, setClubAbout] = useState('');
   const [instagramUrl, setInstagramUrl] = useState('');
   const [contactEmail, setContactEmail] = useState('');
+  const [storedLandingConfig, setStoredLandingConfig] =
+    useState<PublicLandingConfig | null>(initialConfig);
 
   const [stats, setStats] = useState<PublicStats>({
-    member_count: 0,
     open_events_count: 0,
     total_events_count: 0,
   });
@@ -112,6 +171,12 @@ export default function PublicLandingPage({
   const [lightboxPost, setLightboxPost] = useState<Announcement | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [submittingAuth, setSubmittingAuth] = useState(false);
+
+  useEffect(() => {
+    if (initialConfig) {
+      setStoredLandingConfig(initialConfig);
+    }
+  }, [initialConfig]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -155,12 +220,14 @@ export default function PublicLandingPage({
           if (s.club_about) setClubAbout(String(s.club_about));
           if (s.instagram_url) setInstagramUrl(String(s.instagram_url));
           if (s.contact_email) setContactEmail(String(s.contact_email));
+          if (s.public_landing_config && typeof s.public_landing_config === 'object') {
+            setStoredLandingConfig(s.public_landing_config as PublicLandingConfig);
+          }
         }
 
         if (statsRes.data && typeof statsRes.data === 'object') {
           const st = statsRes.data as Partial<PublicStats>;
           setStats({
-            member_count: Number(st.member_count || 0),
             open_events_count: Number(st.open_events_count || 0),
             total_events_count: Number(st.total_events_count || 0),
           });
@@ -176,7 +243,9 @@ export default function PublicLandingPage({
                 p_slug: b.public_slug,
               });
               if (rpcEv && typeof rpcEv === 'object' && 'guest_registered_count' in rpcEv) {
-                regCount = Number((rpcEv as { guest_registered_count?: unknown }).guest_registered_count || 0);
+                regCount = Number(
+                  (rpcEv as { guest_registered_count?: unknown }).guest_registered_count || 0
+                );
               }
             }
             const effFee = Number(b.guest_fee ?? b.registration_fee ?? 0);
@@ -210,75 +279,130 @@ export default function PublicLandingPage({
     return () => clearInterval(id);
   }, [carouselPosts.length, lightboxPost, authModalOpen]);
 
+  const resolvedConfig = resolvePublicLandingConfig(
+    previewConfig ?? storedLandingConfig,
+    {
+      clubName,
+      tagline,
+      about: clubAbout,
+      instagramUrl,
+      contactEmail,
+    }
+  );
+
   const openAuth = (targetMode: 'login' | 'signup') => {
+    if (isPreview) return;
     setAuthError(null);
     setAuthMode(targetMode);
     setAuthModalOpen(true);
   };
 
+  const scrollToTop = () => {
+    if (isPreview) return;
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleAnchorClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (!href.startsWith('#')) return;
+    e.preventDefault();
+    const target = document.querySelector(href);
+    if (target) target.scrollIntoView({ behavior: 'smooth' });
+  };
+
   const activeSlide = carouselPosts[slideIdx] || carouselPosts[0] || null;
+  const visibleColumns = resolvedConfig.footer_columns.filter(
+    (col) => col.title.trim() || col.links.some((l) => l.label.trim() && l.url.trim())
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-emerald-50/70 via-white to-slate-50 text-slate-900">
       {/* Sticky Public Navbar */}
-      <header className="sticky top-0 z-30 bg-white/85 backdrop-blur-xl border-b border-emerald-100/80">
+      <header
+        className={`${
+          isPreview ? 'relative' : 'sticky top-0 z-30'
+        } bg-white/85 backdrop-blur-xl border-b border-emerald-100/80`}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={scrollToTop}
+            title="Return to main homepage"
+            className="flex items-center gap-3 min-w-0 text-left cursor-pointer group"
+          >
             {logoUrl && !isPdfMedia(logoUrl) ? (
               <img
                 src={logoUrl}
                 alt={clubName}
-                className="w-10 h-10 rounded-xl object-cover border border-emerald-200 bg-white shadow-2xs shrink-0"
+                className="w-10 h-10 rounded-xl object-cover border border-emerald-200 bg-white shadow-2xs shrink-0 transition group-hover:scale-105"
               />
             ) : (
-              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-2xs shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-2xs shrink-0 transition group-hover:scale-105">
                 <Layers className="w-5 h-5" />
               </div>
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-sm sm:text-base text-slate-900 truncate">
+                <span className="font-extrabold text-sm sm:text-base text-slate-900 group-hover:text-emerald-700 transition truncate">
                   {clubName}
                 </span>
                 <span className="hidden sm:inline-flex px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold shrink-0">
                   Batch {currentBatch}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 hidden md:block truncate">
-                Official Student Club Portal
-              </p>
+              {resolvedConfig.nav_subtitle && (
+                <p className="text-[11px] text-slate-500 hidden md:block truncate">
+                  {resolvedConfig.nav_subtitle}
+                </p>
+              )}
             </div>
-          </div>
+          </button>
 
           <nav className="hidden md:flex items-center gap-6 text-xs font-bold text-slate-600">
-            <a href="#events" className="hover:text-emerald-700 transition">
-              Open Events
-            </a>
-            <a href="#highlights" className="hover:text-emerald-700 transition">
-              Highlights
-            </a>
-            <a href="#about" className="hover:text-emerald-700 transition">
-              About
+            {resolvedConfig.show_events_section && (
+              <a
+                href="#events"
+                onClick={(e) => handleAnchorClick(e, '#events')}
+                className="hover:text-emerald-700 transition"
+              >
+                Open Events
+              </a>
+            )}
+            {resolvedConfig.show_highlights_section && (
+              <a
+                href="#highlights"
+                onClick={(e) => handleAnchorClick(e, '#highlights')}
+                className="hover:text-emerald-700 transition"
+              >
+                Highlights
+              </a>
+            )}
+            <a
+              href="#about"
+              onClick={(e) => handleAnchorClick(e, '#about')}
+              className="hover:text-emerald-700 transition"
+            >
+              Connect &amp; About
             </a>
           </nav>
 
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => openAuth('login')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 border border-slate-200 transition cursor-pointer"
+              onClick={() => openAuth('signup')}
+              className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
             >
-              <LogIn className="w-3.5 h-3.5 text-emerald-700" />
-              <span>Member Sign In</span>
+              <UserPlus className="w-3.5 h-3.5 opacity-75" />
+              <span>Sign Up</span>
             </button>
             <button
               type="button"
-              onClick={() => openAuth('signup')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
+              onClick={() => openAuth('login')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20 transition cursor-pointer"
             >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Join Club</span>
-              <span className="sm:hidden">Join</span>
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Member Sign In</span>
             </button>
           </div>
         </div>
@@ -291,56 +415,65 @@ export default function PublicLandingPage({
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
           <div className="lg:col-span-7 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100/80 border border-emerald-200 text-emerald-900 text-xs font-extrabold">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Welcome to {clubName}</span>
-            </div>
+            {resolvedConfig.hero_badge && (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100/80 border border-emerald-200 text-emerald-900 text-xs font-extrabold">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                <span>{resolvedConfig.hero_badge}</span>
+              </div>
+            )}
 
             <div className="space-y-3">
               <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 leading-[1.12]">
-                {clubName}
+                {resolvedConfig.hero_title}
               </h1>
               <p className="text-sm sm:text-lg text-slate-600 max-w-2xl leading-relaxed">
-                {tagline}
+                {resolvedConfig.hero_subtitle}
               </p>
             </div>
 
-            {/* 3 Live Stat Pills */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
-                <Users className="w-4 h-4 text-emerald-600" />
-                <span className="font-extrabold text-slate-900">{stats.member_count}</span>
-                <span className="text-slate-500 font-medium">Members</span>
+            {/* Public Non-Member Stats Only */}
+            {resolvedConfig.hero_show_stats && (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
+                  <Ticket className="w-4 h-4 text-teal-600" />
+                  <span className="font-extrabold text-slate-900">
+                    {openEvents.length || stats.open_events_count}
+                  </span>
+                  <span className="text-slate-500 font-medium">Open Events</span>
+                </div>
+                <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
+                  <Calendar className="w-4 h-4 text-emerald-700" />
+                  <span className="text-slate-500 font-medium">Active Batch:</span>
+                  <span className="font-extrabold text-slate-900">{currentBatch}</span>
+                </div>
               </div>
-              <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
-                <Ticket className="w-4 h-4 text-teal-600" />
-                <span className="font-extrabold text-slate-900">
-                  {openEvents.length || stats.open_events_count}
-                </span>
-                <span className="text-slate-500 font-medium">Open Events</span>
-              </div>
-              <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
-                <Calendar className="w-4 h-4 text-emerald-700" />
-                <span className="text-slate-500 font-medium">Active Batch:</span>
-                <span className="font-extrabold text-slate-900">{currentBatch}</span>
-              </div>
-            </div>
+            )}
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
-              <a
-                href="#events"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-extrabold shadow-md shadow-emerald-600/20 transition"
-              >
-                <span>Explore Open Events</span>
-                <ArrowRight className="w-4 h-4" />
-              </a>
               <button
                 type="button"
                 onClick={() => openAuth('login')}
-                className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 text-sm font-bold shadow-2xs transition cursor-pointer"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-extrabold shadow-md shadow-emerald-600/20 transition cursor-pointer"
               >
-                <LogIn className="w-4 h-4 text-emerald-600" />
+                <LogIn className="w-4 h-4" />
                 <span>Member Sign In</span>
+              </button>
+              {resolvedConfig.show_events_section && (
+                <a
+                  href="#events"
+                  onClick={(e) => handleAnchorClick(e, '#events')}
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 text-sm font-bold shadow-2xs transition"
+                >
+                  <span>{resolvedConfig.hero_primary_cta}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => openAuth('signup')}
+                className="text-xs font-medium text-slate-500 hover:text-slate-800 underline underline-offset-4 px-2 py-1 cursor-pointer"
+              >
+                Register as member
               </button>
             </div>
           </div>
@@ -377,7 +510,9 @@ export default function PublicLandingPage({
                       <button
                         type="button"
                         onClick={() =>
-                          setSlideIdx((prev) => (prev - 1 + carouselPosts.length) % carouselPosts.length)
+                          setSlideIdx(
+                            (prev) => (prev - 1 + carouselPosts.length) % carouselPosts.length
+                          )
                         }
                         className="w-8 h-8 rounded-full bg-slate-950/60 hover:bg-slate-950 text-white flex items-center justify-center cursor-pointer"
                         aria-label="Previous featured slide"
@@ -428,13 +563,13 @@ export default function PublicLandingPage({
                 </div>
                 <div className="space-y-2">
                   <div className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-300">
-                    Campus Event &amp; Activity Hub
+                    {resolvedConfig.hero_fallback_eyebrow}
                   </div>
                   <h3 className="text-2xl font-extrabold leading-tight">
-                    Discover Public Workshops, Tournaments &amp; Gatherings
+                    {resolvedConfig.hero_fallback_title}
                   </h3>
                   <p className="text-xs text-emerald-100 leading-relaxed">
-                    Browse open events below to register directly as a guest participant and receive your digital Entry Pass QR.
+                    {resolvedConfig.hero_fallback_desc}
                   </p>
                 </div>
                 <div className="pt-2 flex items-center gap-3 text-xs font-bold text-emerald-200">
@@ -449,146 +584,160 @@ export default function PublicLandingPage({
       </section>
 
       {/* Open Public Events Grid (#events) */}
-      <section id="events" className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-12 space-y-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
-              Guest Registration Open
-            </span>
-            <h2 className="text-2xl font-extrabold text-slate-900 mt-0.5">
-              Open Public Events
-            </h2>
-          </div>
-          <span className="text-xs font-semibold text-slate-500">
-            Open to non-members &amp; visiting participants
-          </span>
-        </div>
-
-        {loadingPublic ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {[1, 2, 3].map((n) => (
-              <div
-                key={n}
-                className="h-64 rounded-3xl bg-white border border-slate-200 animate-pulse"
-              />
-            ))}
-          </div>
-        ) : openEvents.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-emerald-100 p-8 sm:p-10 text-center space-y-3 shadow-2xs">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
-              <Calendar className="w-6 h-6" />
+      {resolvedConfig.show_events_section && (
+        <section id="events" className="max-w-7xl w-full mx-auto px-4 sm:px-6 py-12 space-y-6">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              {resolvedConfig.events_eyebrow && (
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">
+                  {resolvedConfig.events_eyebrow}
+                </span>
+              )}
+              <h2 className="text-2xl font-extrabold text-slate-900 mt-0.5">
+                {resolvedConfig.events_title}
+              </h2>
             </div>
-            <h3 className="text-base font-extrabold text-slate-900">
-              No public guest events open at the moment
-            </h3>
-            <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-              Check back soon for upcoming tournaments, workshops, and open sessions. Already a club member? Sign in to view internal club activities.
-            </p>
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={() => openAuth('login')}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>Member Sign In</span>
-              </button>
-            </div>
+            {resolvedConfig.events_subtitle && (
+              <span className="text-xs font-semibold text-slate-500">
+                {resolvedConfig.events_subtitle}
+              </span>
+            )}
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {openEvents.map((ev) => {
-              const cap = Number(ev.guest_capacity || 0);
-              const spotsLeft = cap > 0 ? Math.max(0, cap - ev.guest_registered_count) : null;
-              const isFull = spotsLeft !== null && spotsLeft <= 0;
 
-              return (
+          {loadingPublic ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              {[1, 2, 3].map((n) => (
                 <div
-                  key={ev.id}
-                  className="bg-white rounded-3xl border border-slate-200/90 hover:border-emerald-300 p-6 flex flex-col justify-between space-y-5 shadow-2xs hover:shadow-lg transition"
+                  key={n}
+                  className="h-64 rounded-3xl bg-white border border-slate-200 animate-pulse"
+                />
+              ))}
+            </div>
+          ) : openEvents.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-emerald-100 p-8 sm:p-10 text-center space-y-3 shadow-2xs">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+                <Calendar className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900">
+                No public guest events open at the moment
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                Check back soon for upcoming tournaments, workshops, and open sessions. Already a club member? Sign in to view internal club activities.
+              </p>
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => openAuth('login')}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
                 >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                        {ev.category}
-                      </span>
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>Member Sign In</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {openEvents.map((ev) => {
+                const cap = Number(ev.guest_capacity || 0);
+                const spotsLeft = cap > 0 ? Math.max(0, cap - ev.guest_registered_count) : null;
+                const isFull = spotsLeft !== null && spotsLeft <= 0;
+
+                return (
+                  <div
+                    key={ev.id}
+                    className="bg-white rounded-3xl border border-slate-200/90 hover:border-emerald-300 p-6 flex flex-col justify-between space-y-5 shadow-2xs hover:shadow-lg transition"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                          {ev.category}
+                        </span>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+                            ev.effective_fee <= 0
+                              ? 'bg-teal-50 text-teal-800 border border-teal-200'
+                              : 'bg-amber-50 text-amber-900 border border-amber-200'
+                          }`}
+                        >
+                          {ev.effective_fee <= 0 ? 'Free' : `RM ${ev.effective_fee.toFixed(2)}`}
+                        </span>
+                      </div>
+
+                      <div>
+                        <h3 className="text-lg font-extrabold text-slate-900 leading-snug">
+                          {ev.event_name}
+                        </h3>
+                        <p className="text-xs text-slate-600 mt-1.5 line-clamp-2 leading-relaxed">
+                          {ev.description}
+                        </p>
+                      </div>
+
+                      <div className="space-y-1.5 pt-1 text-xs text-slate-600">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>{ev.event_date}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>{ev.event_time}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>{ev.location}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
                       <span
-                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
-                          ev.effective_fee <= 0
-                            ? 'bg-teal-50 text-teal-800 border border-teal-200'
-                            : 'bg-amber-50 text-amber-900 border border-amber-200'
+                        className={`text-[11px] font-bold ${
+                          isFull ? 'text-rose-600' : 'text-slate-500'
                         }`}
                       >
-                        {ev.effective_fee <= 0 ? 'Free' : `RM ${ev.effective_fee.toFixed(2)}`}
+                        {spotsLeft === null
+                          ? 'Open Spots'
+                          : isFull
+                          ? 'Full Capacity'
+                          : `${spotsLeft} of ${cap} spots left`}
                       </span>
-                    </div>
 
-                    <div>
-                      <h3 className="text-lg font-extrabold text-slate-900 leading-snug">
-                        {ev.event_name}
-                      </h3>
-                      <p className="text-xs text-slate-600 mt-1.5 line-clamp-2 leading-relaxed">
-                        {ev.description}
-                      </p>
-                    </div>
-
-                    <div className="space-y-1.5 pt-1 text-xs text-slate-600">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>{ev.event_date}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>{ev.event_time}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>{ev.location}</span>
-                      </div>
+                      {isPreview ? (
+                        <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold">
+                          Register as Guest →
+                        </span>
+                      ) : (
+                        <Link
+                          href={`/e/${ev.public_slug}`}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold transition"
+                        >
+                          <span>Register as Guest →</span>
+                        </Link>
+                      )}
                     </div>
                   </div>
-
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
-                    <span
-                      className={`text-[11px] font-bold ${
-                        isFull ? 'text-rose-600' : 'text-slate-500'
-                      }`}
-                    >
-                      {spotsLeft === null
-                        ? 'Open Spots'
-                        : isFull
-                        ? 'Full Capacity'
-                        : `${spotsLeft} of ${cap} spots left`}
-                    </span>
-
-                    <Link
-                      href={`/e/${ev.public_slug}`}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold transition"
-                    >
-                      <span>Register as Guest →</span>
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Club Highlights (#highlights) */}
-      {highlightPosts.length > 0 && (
+      {resolvedConfig.show_highlights_section && highlightPosts.length > 0 && (
         <section
           id="highlights"
           className="bg-slate-50/80 border-y border-slate-200/70 py-12"
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 space-y-6">
             <div>
-              <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700 inline-flex items-center gap-1">
-                <Pin className="w-3 h-3" />
-                <span>Pinned Announcements</span>
-              </span>
+              {resolvedConfig.highlights_eyebrow && (
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700 inline-flex items-center gap-1">
+                  <Pin className="w-3 h-3" />
+                  <span>{resolvedConfig.highlights_eyebrow}</span>
+                </span>
+              )}
               <h2 className="text-2xl font-extrabold text-slate-900 mt-0.5">
-                Club Highlights
+                {resolvedConfig.highlights_title}
               </h2>
             </div>
 
@@ -639,85 +788,105 @@ export default function PublicLandingPage({
         </section>
       )}
 
-      {/* Clean Footer (#about) */}
-      <footer id="about" className="mt-auto bg-slate-900 text-slate-300">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
-          <div className="md:col-span-6 space-y-2.5">
-            <div className="flex items-center gap-2.5">
+      {/* Multi-Column Dark Footer (#about) */}
+      <footer id="about" className="mt-auto bg-slate-950 text-slate-300 border-t border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start">
+          <div className="lg:col-span-4 space-y-3.5">
+            <button
+              type="button"
+              onClick={scrollToTop}
+              className="flex items-center gap-2.5 text-left cursor-pointer group"
+              title="Back to top"
+            >
               {logoUrl && !isPdfMedia(logoUrl) ? (
                 <img
                   src={logoUrl}
                   alt={clubName}
-                  className="w-8 h-8 rounded-lg object-cover bg-white"
+                  className="w-9 h-9 rounded-xl object-cover bg-white"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
-                  <Layers className="w-4 h-4" />
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
+                  <Layers className="w-5 h-5" />
                 </div>
               )}
-              <span className="text-base font-extrabold text-white">{clubName}</span>
+              <span className="text-base font-extrabold text-white group-hover:text-emerald-300 transition">
+                {clubName}
+              </span>
               <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
                 Batch {currentBatch}
               </span>
-            </div>
-            <p className="text-xs text-slate-400 leading-relaxed max-w-lg">
-              {clubAbout || tagline}
+            </button>
+
+            <p className="text-xs text-slate-400 leading-relaxed max-w-md whitespace-pre-line">
+              {resolvedConfig.footer_about}
             </p>
-          </div>
 
-          <div className="md:col-span-3 space-y-2 text-xs">
-            <div className="font-extrabold text-white uppercase tracking-wider text-[11px]">
-              Connect
-            </div>
-            <div className="space-y-1.5">
-              {instagramUrl && (
-                <a
-                  href={instagramUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-slate-300 hover:text-emerald-300 transition"
-                >
-                  <Instagram className="w-3.5 h-3.5" />
-                  <span>Instagram</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
-              {contactEmail && (
-                <a
-                  href={`mailto:${contactEmail}`}
-                  className="flex items-center gap-2 text-slate-300 hover:text-emerald-300 transition"
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  <span>{contactEmail}</span>
-                </a>
-              )}
-              {!instagramUrl && !contactEmail && (
-                <span className="text-slate-500">Official Club Portal · {clubName}</span>
-              )}
-            </div>
-          </div>
-
-          <div className="md:col-span-3 space-y-2 text-xs">
-            <div className="font-extrabold text-white uppercase tracking-wider text-[11px]">
-              Club Members
-            </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="pt-1 flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={() => openAuth('login')}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold cursor-pointer transition"
               >
                 <LogIn className="w-3.5 h-3.5" />
-                <span>Member Login</span>
+                <span>Member Sign In</span>
               </button>
               <button
                 type="button"
                 onClick={() => openAuth('signup')}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold cursor-pointer"
+                className="text-xs font-medium text-slate-400 hover:text-slate-200 underline-offset-4 hover:underline cursor-pointer"
               >
-                <span>Join Club</span>
+                Sign up as member
               </button>
             </div>
+          </div>
+
+          <div
+            className={`lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 ${
+              visibleColumns.length >= 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'
+            } gap-6`}
+          >
+            {visibleColumns.map((col) => {
+              const validLinks = col.links.filter(
+                (l) => l.label.trim() && l.url.trim()
+              );
+              return (
+                <div key={col.id} className="space-y-2.5 text-xs">
+                  <div className="font-extrabold text-white uppercase tracking-wider text-[11px]">
+                    {col.title || 'Links'}
+                  </div>
+                  {validLinks.length === 0 ? (
+                    <p className="text-[11px] text-slate-500 italic">No links added yet.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {validLinks.map((lnk) => {
+                        const href = normalizeExternalHref(lnk.url, lnk.platform);
+                        const isAnchor = href.startsWith('#');
+                        const isExternal = /^https?:\/\//i.test(href);
+                        return (
+                          <li key={lnk.id}>
+                            <a
+                              href={href}
+                              onClick={
+                                isAnchor ? (e) => handleAnchorClick(e, href) : undefined
+                              }
+                              target={isExternal ? '_blank' : undefined}
+                              rel={isExternal ? 'noopener noreferrer' : undefined}
+                              className="inline-flex items-center gap-2 text-slate-300 hover:text-emerald-300 transition font-medium"
+                            >
+                              <FooterPlatformIcon platform={lnk.platform} />
+                              <span>{lnk.label}</span>
+                              {isExternal && (
+                                <ExternalLink className="w-3 h-3 opacity-60 shrink-0" />
+                              )}
+                            </a>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </footer>
@@ -790,7 +959,7 @@ export default function PublicLandingPage({
       )}
 
       {/* Centered Member Auth Modal */}
-      {authModalOpen && (
+      {authModalOpen && !isPreview && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
           onClick={() => setAuthModalOpen(false)}
@@ -824,20 +993,20 @@ export default function PublicLandingPage({
               <p className="text-xs text-slate-500 mt-0.5">Member Portal Access</p>
             </div>
 
-            <div className="grid grid-cols-2 bg-emerald-50/80 border border-emerald-100 p-1 m-5 mb-2 rounded-2xl">
+            <div className="grid grid-cols-2 bg-slate-100 p-1 m-5 mb-2 rounded-2xl">
               <button
                 type="button"
                 onClick={() => {
                   setAuthError(null);
                   setAuthMode('login');
                 }}
-                className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+                className={`py-2 text-xs rounded-xl transition cursor-pointer ${
                   authMode === 'login'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-emerald-800'
+                    ? 'bg-emerald-600 text-white font-extrabold shadow-xs'
+                    : 'text-slate-600 font-semibold hover:text-emerald-800'
                 }`}
               >
-                Sign In
+                Member Sign In
               </button>
               <button
                 type="button"
@@ -845,13 +1014,13 @@ export default function PublicLandingPage({
                   setAuthError(null);
                   setAuthMode('signup');
                 }}
-                className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+                className={`py-2 text-xs rounded-xl transition cursor-pointer ${
                   authMode === 'signup'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-emerald-800'
+                    ? 'bg-slate-800 text-white font-bold shadow-xs'
+                    : 'text-slate-500 font-medium hover:text-slate-800'
                 }`}
               >
-                Register
+                Sign Up
               </button>
             </div>
 
@@ -937,13 +1106,17 @@ export default function PublicLandingPage({
               <button
                 type="submit"
                 disabled={submittingAuth}
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-sm cursor-pointer disabled:opacity-60"
+                className={`w-full py-2.5 rounded-xl font-bold text-sm shadow-sm cursor-pointer disabled:opacity-60 ${
+                  authMode === 'login'
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                    : 'bg-slate-800 hover:bg-slate-700 text-white'
+                }`}
               >
                 {submittingAuth
                   ? 'Please wait...'
                   : authMode === 'login'
                   ? 'Sign In'
-                  : 'Register'}
+                  : 'Create Member Account'}
               </button>
             </form>
           </div>
