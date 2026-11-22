@@ -160,6 +160,16 @@ export default function FloatingChatDock({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastSentAtRef = useRef<number>(0);
 
+  // Keep volatile callback/timestamp props in refs so effects do not re-fire in loops
+  const onUnreadCountChangeRef = useRef(onUnreadCountChange);
+  onUnreadCountChangeRef.current = onUnreadCountChange;
+  const onUpdatedPublicReadAtRef = useRef(onUpdatedPublicReadAt);
+  onUpdatedPublicReadAtRef.current = onUpdatedPublicReadAt;
+  const onClearOpenDmTargetRef = useRef(onClearOpenDmTarget);
+  onClearOpenDmTargetRef.current = onClearOpenDmTarget;
+  const publicReadAtRef = useRef(profile.public_chat_read_at);
+  publicReadAtRef.current = profile.public_chat_read_at;
+
   const activeFeedRoomId =
     viewTab === 'public'
       ? publicRoom?.id || null
@@ -175,19 +185,20 @@ export default function FloatingChatDock({
   const refreshUnreadCount = useCallback(async () => {
     const { data, error } = await supabase.rpc('get_unread_chat_count');
     if (!error && typeof data === 'number') {
-      onUnreadCountChange(data);
+      onUnreadCountChangeRef.current(data);
     }
-  }, [onUnreadCountChange]);
+  }, []);
 
   const markPublicRead = useCallback(async () => {
     const iso = new Date().toISOString();
+    publicReadAtRef.current = iso;
     setPublicHasUnread(false);
-    onUpdatedPublicReadAt?.(iso);
+    onUpdatedPublicReadAtRef.current?.(iso);
     await supabase
       .from('users')
       .update({ public_chat_read_at: iso })
       .eq('id', profile.id);
-  }, [profile.id, onUpdatedPublicReadAt]);
+  }, [profile.id]);
 
   const markDmRoomRead = useCallback(
     async (roomId: string) => {
@@ -226,50 +237,73 @@ export default function FloatingChatDock({
       setDirectory(dirList);
       const localMap = new Map<string, ChatDirectoryMember>(dirList.map((u) => [u.id, u]));
 
-      // Load Public Club Lounge metadata
+      // Load Public Club Lounge metadata (via RPC id, with direct dm_key fallback)
+      let pubRow: {
+        id: string;
+        dm_key: string;
+        title?: string | null;
+        pinned_message_text?: string | null;
+        pinned_by?: string | null;
+        pinned_at?: string | null;
+        last_message_at?: string | null;
+        last_message_sender_id?: string | null;
+      } | null = null;
+
       if (!pubRpcRes.error && pubRpcRes.data) {
         const pubId = String(pubRpcRes.data);
-        const { data: pubRow } = await supabase
+        const { data } = await supabase
           .from('chat_rooms')
           .select(
             'id, dm_key, title, pinned_message_text, pinned_by, pinned_at, last_message_at, last_message_sender_id'
           )
           .eq('id', pubId)
           .maybeSingle();
+        pubRow = data;
+      } else {
+        const { data } = await supabase
+          .from('chat_rooms')
+          .select(
+            'id, dm_key, title, pinned_message_text, pinned_by, pinned_at, last_message_at, last_message_sender_id'
+          )
+          .eq('dm_key', 'PUBLIC::CLUB_LOUNGE')
+          .maybeSingle();
+        pubRow = data;
+      }
 
-        if (pubRow) {
-          const parsedPub: PublicRoomInfo = {
-            id: pubRow.id,
-            dm_key: pubRow.dm_key,
-            title: pubRow.title || 'Club Lounge',
-            pinned_message_text: pubRow.pinned_message_text || '',
-            pinned_by: pubRow.pinned_by || null,
-            pinned_at: pubRow.pinned_at || null,
-            last_message_at: pubRow.last_message_at || '',
-            last_message_sender_id: pubRow.last_message_sender_id || null,
-          };
-          setPublicRoom(parsedPub);
+      if (pubRow) {
+        const parsedPub: PublicRoomInfo = {
+          id: pubRow.id,
+          dm_key: pubRow.dm_key,
+          title: pubRow.title || 'Club Lounge',
+          pinned_message_text: pubRow.pinned_message_text || '',
+          pinned_by: pubRow.pinned_by || null,
+          pinned_at: pubRow.pinned_at || null,
+          last_message_at: pubRow.last_message_at || '',
+          last_message_sender_id: pubRow.last_message_sender_id || null,
+        };
+        setPublicRoom(parsedPub);
 
-          const myPublicRead = profile.public_chat_read_at
-            ? new Date(profile.public_chat_read_at).getTime()
-            : 0;
-          const pubLastMsg = parsedPub.last_message_at
-            ? new Date(parsedPub.last_message_at).getTime()
-            : 0;
-          setPublicHasUnread(
-            Boolean(
-              parsedPub.last_message_sender_id &&
-                parsedPub.last_message_sender_id !== profile.id &&
-                pubLastMsg > myPublicRead
-            )
-          );
-        }
+        const myPublicRead = publicReadAtRef.current
+          ? new Date(publicReadAtRef.current).getTime()
+          : 0;
+        const pubLastMsg = parsedPub.last_message_at
+          ? new Date(parsedPub.last_message_at).getTime()
+          : 0;
+        setPublicHasUnread(
+          Boolean(
+            parsedPub.last_message_sender_id &&
+              parsedPub.last_message_sender_id !== profile.id &&
+              pubLastMsg > myPublicRead
+          )
+        );
+      } else if (pubRpcRes.error) {
+        setChatError(pubRpcRes.error.message || 'Public Club Lounge is not ready yet.');
       }
 
       const myParts = (myPartRes.data || []) as { room_id: string; last_read_at: string }[];
       if (myParts.length === 0) {
         setRooms([]);
-        onUnreadCountChange(0);
+        onUnreadCountChangeRef.current(0);
         return;
       }
 
@@ -332,11 +366,13 @@ export default function FloatingChatDock({
         });
 
       setRooms(builtRooms);
-      onUnreadCountChange(builtRooms.filter((r) => r.hasUnread).length);
+      onUnreadCountChangeRef.current(builtRooms.filter((r) => r.hasUnread).length);
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : 'Could not load chat.');
     } finally {
       setLoadingList(false);
     }
-  }, [profile.id, profile.public_chat_read_at, onUnreadCountChange]);
+  }, [profile.id]);
 
   useEffect(() => {
     if (isOpen) {
@@ -386,13 +422,13 @@ export default function FloatingChatDock({
       if (target) {
         await handleOpenMemberChat(target);
       }
-      onClearOpenDmTarget?.();
+      onClearOpenDmTargetRef.current?.();
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [isOpen, openDmWithUserId, directory, handleOpenMemberChat, onClearOpenDmTarget]);
+  }, [isOpen, openDmWithUserId, directory, handleOpenMemberChat]);
 
   // Latest 30 messages + Realtime ONLY while dock is open & an active room is displayed
   useEffect(() => {
@@ -752,7 +788,7 @@ export default function FloatingChatDock({
           </div>
         )}
 
-        {loadingMsgs ? (
+        {loadingMsgs || (isPublicFeed && loadingList && !publicRoom) ? (
           <div className="h-full flex items-center justify-center">
             <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
           </div>
