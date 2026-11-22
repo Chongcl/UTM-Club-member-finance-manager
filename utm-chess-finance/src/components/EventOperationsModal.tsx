@@ -20,6 +20,13 @@ import {
 } from '@/lib/supabase';
 import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
 import { emitClubNotification } from '@/lib/notifications';
+import {
+  resolveActivityConfig,
+  formatActivitySchedule,
+  hasFeeRequired,
+  getFeeDisplayLabel,
+  getFormatBadgeMeta,
+} from '@/lib/activityConfig';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import { waLink, formatPickupTime } from '@/lib/whatsapp';
 import {
@@ -53,24 +60,33 @@ import {
   History,
   ZoomIn,
   XCircle,
+  Link2,
+  KeyRound,
 } from 'lucide-react';
 import type { MemberLookupHint } from '@/lib/memberLookup';
 
+export type EventModalTab = 'fee' | 'transport' | 'qr' | 'pass' | 'access';
+
 interface EventOperationsModalProps {
-  event: Budget | null; initialTab: 'fee' | 'transport' | 'qr' | 'pass'; profile: UserProfile;
+  event: Budget | null; initialTab: EventModalTab; profile: UserProfile;
   isAdmin: boolean; permissions: AdminPermissions; rsvps: EventRsvp[]; feePayments: ActivityFeePayment[];
   guestRegistrations?: PublicGuestRegistration[];
   claims?: Claim[]; logs?: ActivityLogEntry[]; paymentQrUrl?: string; paymentBankInfo?: string;
   onClose: () => void; onOpenScanner?: () => void; onRefresh: (msg: string) => void;
   onOpenMemberProfile?: (hint: MemberLookupHint) => void;
+  onTabChange?: (tab: EventModalTab) => void;
 }
 
 type TransportSurveyChoice = 'OWN' | 'One-Way' | 'Return Trip' | 'Round Trip' | 'DRIVER';
 
 export default function EventOperationsModal({
-  event, initialTab, profile, isAdmin, permissions, rsvps, feePayments, guestRegistrations = [], claims = [], logs = [], paymentQrUrl = '', paymentBankInfo = '', onClose, onOpenScanner, onRefresh, onOpenMemberProfile,
+  event, initialTab, profile, isAdmin, permissions, rsvps, feePayments, guestRegistrations = [], claims = [], logs = [], paymentQrUrl = '', paymentBankInfo = '', onClose, onOpenScanner, onRefresh, onOpenMemberProfile, onTabChange,
 }: EventOperationsModalProps) {
-  const [tab, setTab] = useState<'fee' | 'transport' | 'qr' | 'pass'>(initialTab);
+  const [tab, setTab] = useState<EventModalTab>(initialTab);
+  const [selectedTierName, setSelectedTierName] = useState('');
+  const [registrationNote, setRegistrationNote] = useState('');
+  const [copiedDeepLink, setCopiedDeepLink] = useState(false);
+  const [copiedAccessCode, setCopiedAccessCode] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
   const [editingFee, setEditingFee] = useState<ActivityFeePayment | null>(null);
   const [editFeeName, setEditFeeName] = useState('');
@@ -132,15 +148,23 @@ export default function EventOperationsModal({
     setTransportSavedSuccess(false);
     setAdminQrSetupOpen(false);
     const feeVal = Number(event.registration_fee || 0);
-    setAmountPaid(String(feeVal));
+    const cfgInit = resolveActivityConfig(event);
+    if (cfgInit.fee_tiers.length > 0) {
+      setSelectedTierName(cfgInit.fee_tiers[0].name);
+      setAmountPaid(String(cfgInit.fee_tiers[0].amount));
+    } else {
+      setSelectedTierName('');
+      setAmountPaid(String(feeVal));
+    }
+    setRegistrationNote('');
     setQrToken(event.qr_code_token || event.id.slice(0, 6).toUpperCase());
 
     setActivePayQrUrl(event.payment_qr_url ?? paymentQrUrl);
     setActivePayBankInfo(event.payment_bank_info ?? paymentBankInfo);
     setShowQrToMembers(event.show_payment_qr ?? true);
 
-    const savedMode = event.ticket_qr_mode || (feeVal > 0 ? 'entry_pass' : 'scan_attendance');
-    const entryPassActive = isEntryPassMode(savedMode);
+    const savedMode = event.ticket_qr_mode || (feeVal > 0 && cfgInit.format === 'physical' ? 'entry_pass' : 'scan_attendance');
+    const entryPassActive = isEntryPassMode(savedMode) || cfgInit.unlock_mode === 'entry_pass_qr' || cfgInit.unlock_mode === 'both_link_and_qr';
     setHasEntryPass(entryPassActive);
 
     const savedRule: PassApprovalRule =
@@ -155,9 +179,21 @@ export default function EventOperationsModal({
     setZoomReceiptFee(null);
     setZoomGuestReceipt(null);
 
-    if (initialTab === 'pass' && !entryPassActive && !event.is_public_registration) setTab(isAdmin ? 'qr' : 'transport');
-    else if (initialTab === 'fee' && feeVal <= 0 && !isAdmin) setTab('transport');
-    else setTab(initialTab);
+    const feeReqInit = hasFeeRequired(event, cfgInit);
+    const hasAccessInit =
+      entryPassActive ||
+      Boolean(cfgInit.access_link_url) ||
+      cfgInit.format === 'self_paced' ||
+      cfgInit.format === 'fee_collection' ||
+      Boolean(event.is_public_registration);
+
+    if ((initialTab === 'pass' || initialTab === 'access') && !hasAccessInit) {
+      setTab(isAdmin ? 'qr' : cfgInit.format === 'physical' ? 'transport' : 'fee');
+    } else if (initialTab === 'fee' && !feeReqInit && !isAdmin && cfgInit.format !== 'fee_collection' && cfgInit.format !== 'self_paced') {
+      setTab(hasAccessInit ? 'pass' : 'transport');
+    } else {
+      setTab(initialTab === 'access' ? 'pass' : initialTab);
+    }
 
     const cur = rsvps.find((r) => r.budget_id === event.id && r.user_id === profile.id);
     setSurveyChoice(cur?.is_driver ? 'DRIVER' : cur?.transport_type && cur.transport_type !== 'None' ? cur.transport_type : 'OWN');
@@ -185,10 +221,21 @@ export default function EventOperationsModal({
   const guestCheckedIn = eventGuests.filter((g) => g.qr_checked_in);
   const eventClaims = claims.filter((c) => c.budget_id === event.id);
   const visibleFeePayments = isAdmin ? eventPayments : eventPayments.filter((p) => p.user_id === profile.id);
+  const cfg = resolveActivityConfig(event);
+  const formatBadge = getFormatBadgeMeta(cfg.format);
+  const scheduleLabel = formatActivitySchedule(event, cfg);
   const allowancePerTrip = Number(event.driver_allowance_per_trip || 0);
   const reqFee = Number(event.registration_fee || 0);
-  const requiresFee = reqFee > 0;
+  const requiresFee = hasFeeRequired(event, cfg);
+  const feeDisplayLabel = getFeeDisplayLabel(event, cfg);
   const hasGuestFee = Number(event.guest_fee ?? 0) > 0 || feeGuests.length > 0;
+  const myFeeVerified = eventPayments.some((f) => f.user_id === profile.id && f.status === 'Verified');
+  const myFeePending = eventPayments.some((f) => f.user_id === profile.id && f.status === 'Pending');
+  const selectTab = (nextTab: EventModalTab) => {
+    const normalized = nextTab === 'access' ? 'pass' : nextTab;
+    setTab(normalized);
+    onTabChange?.(normalized);
+  };
   const isCurrentUserDriver = Boolean(myRsvp?.is_driver) || surveyChoice === 'DRIVER';
   const myAssignedDriver = myRsvp?.assigned_driver_name
     ? eventDrivers.find((d) => d.student_name === myRsvp.assigned_driver_name) || null
@@ -221,6 +268,25 @@ export default function EventOperationsModal({
   };
 
   const myPassEligible = isMemberEligibleForPass(myRsvp);
+  const isMyAccessUnlocked = !requiresFee
+    ? myRsvp?.attendance === 'Attending' || cfg.format === 'fee_collection'
+    : cfg.unlock_timing === 'immediate_on_submit'
+    ? myFeeVerified || myFeePending || myPassEligible
+    : myFeeVerified || myPassEligible;
+  const hasAccessTab =
+    hasEntryPass ||
+    Boolean(cfg.access_link_url) ||
+    cfg.format === 'self_paced' ||
+    cfg.format === 'fee_collection' ||
+    (isAdmin && eventGuests.length > 0);
+  const showVenueQrTab =
+    isAdmin &&
+    (cfg.format === 'physical' ||
+      hasEntryPass ||
+      qrCheckedInList.length > 0 ||
+      guestCheckedIn.length > 0);
+  const showCarpoolTab =
+    cfg.format === 'physical' || passengers.length > 0 || eventDrivers.length > 0;
   const myPassPayload = `CLUBSYNC_PASS::v1::${event.id}::${profile.id}::${qrToken}`;
   const myPassQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=${encodeURIComponent(myPassPayload)}`;
   const venueQrPayload = `CLUBSYNC_QR::v1::${event.id}::${qrToken}`;
@@ -316,12 +382,14 @@ export default function EventOperationsModal({
       },
       {
         name: '2_Fee_Received',
-        headers: ['Date', 'Student Name', 'Matric No', 'Phone', 'Amount Paid (RM)', 'Status', 'Receipt URL'],
+        headers: ['Date', 'Student Name', 'Matric No', 'Phone', 'Selected Tier', 'Registration Note', 'Amount Paid (RM)', 'Status', 'Receipt URL'],
         rows: eventPayments.map((p) => [
           p.created_at?.split('T')[0] || '',
           p.student_name,
           p.matric_no,
           p.phone_number,
+          p.selected_tier || '-',
+          p.registration_note || '-',
           Number(p.amount_paid).toFixed(2),
           p.status,
           p.receipt_url,
@@ -401,6 +469,10 @@ export default function EventOperationsModal({
       setFeeError('Please enter a valid payment amount.');
       return;
     }
+    if (cfg.registration_prompt && !registrationNote.trim()) {
+      setFeeError(`Please enter: ${cfg.registration_prompt}`);
+      return;
+    }
     if (!feeFile) {
       setFeeError('Please upload your payment receipt first.');
       return;
@@ -423,11 +495,19 @@ export default function EventOperationsModal({
           pass_approved: myRsvp?.pass_approved ?? false,
         }, { onConflict: 'budget_id,user_id' });
 
-        await supabase.from('activity_fee_payments').insert({
+        const coreFeePayload = {
           budget_id: event.id, user_id: profile.id, student_name: profile.full_name,
           matric_no: profile.matric_no, phone_number: profile.phone_number, amount_paid: numAmt,
-          receipt_url: receiptUrl, receipt_file_name: feeFile.name, status: 'Pending',
+          receipt_url: receiptUrl, receipt_file_name: feeFile.name, status: 'Pending' as const,
+        };
+        const { error: feeInsErr } = await supabase.from('activity_fee_payments').insert({
+          ...coreFeePayload,
+          selected_tier: selectedTierName.trim() || null,
+          registration_note: registrationNote.trim() || null,
         });
+        if (feeInsErr) {
+          await supabase.from('activity_fee_payments').insert(coreFeePayload);
+        }
         setFeeFile(null);
         void logActivity(
           profile,
@@ -777,10 +857,37 @@ export default function EventOperationsModal({
         <div className="bg-slate-900 text-white px-6 py-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
-              {hasEntryPass ? <Ticket className="w-5 h-5 text-emerald-400 shrink-0" /> : <QrCode className="w-5 h-5 text-emerald-400 shrink-0" />}
-              <div className="min-w-0"><h2 className="text-base font-bold truncate">{event.event_name}</h2><p className="text-xs text-slate-400 truncate">{event.event_date} • {event.location}</p></div>
+              {hasEntryPass ? <Ticket className="w-5 h-5 text-emerald-400 shrink-0" /> : cfg.access_link_url ? <Link2 className="w-5 h-5 text-sky-400 shrink-0" /> : <QrCode className="w-5 h-5 text-emerald-400 shrink-0" />}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base font-bold truncate">{event.event_name}</h2>
+                  <span className="px-2 py-0.5 rounded-full bg-white/10 text-emerald-300 text-[10px] font-extrabold">
+                    {formatBadge.label}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 truncate">
+                  {scheduleLabel}{event.location && cfg.format !== 'self_paced' && cfg.format !== 'fee_collection' ? ` • ${event.location}` : ''}
+                </p>
+              </div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="shrink-0 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center cursor-pointer transition"><X className="w-4 h-4" /></button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (typeof window === 'undefined') return;
+                  const url = `${window.location.origin}/?tab=activities&event=${event.id}&panel=${tab}`;
+                  await navigator.clipboard.writeText(url);
+                  setCopiedDeepLink(true);
+                  setTimeout(() => setCopiedDeepLink(false), 1800);
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white text-xs font-bold cursor-pointer transition"
+                title="Copy shareable link to this activity"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{copiedDeepLink ? 'Copied!' : 'Copy Link'}</span>
+              </button>
+              <button type="button" onClick={onClose} aria-label="Close" className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center cursor-pointer transition"><X className="w-4 h-4" /></button>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {isAdmin && (
@@ -795,15 +902,25 @@ export default function EventOperationsModal({
               </button>
             )}
             <div className="flex flex-wrap bg-slate-800 p-1 rounded-xl text-xs">
-              {(hasEntryPass || (isAdmin && eventGuests.length > 0)) && (
-                <button type="button" onClick={() => setTab('pass')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'pass' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Entry Pass</button>
+              {hasAccessTab && (
+                <button
+                  type="button"
+                  onClick={() => selectTab('pass')}
+                  className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'pass' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}
+                >
+                  {hasEntryPass && !cfg.access_link_url
+                    ? 'Entry Pass'
+                    : cfg.access_link_url
+                    ? 'Access & Link'
+                    : 'Registration Status'}
+                </button>
               )}
-              {isAdmin && (
-                <button type="button" onClick={() => setTab('qr')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'qr' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Venue QR ({qrCheckedInList.length + guestCheckedIn.length})</button>
+              {showVenueQrTab && (
+                <button type="button" onClick={() => selectTab('qr')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'qr' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Venue QR ({qrCheckedInList.length + guestCheckedIn.length})</button>
               )}
-              {(requiresFee || hasGuestFee || isAdmin) && (
-                <button type="button" onClick={() => setTab('fee')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer inline-flex items-center gap-1.5 ${tab === 'fee' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>
-                  <span>Fee (RM {reqFee.toFixed(0)})</span>
+              {(requiresFee || hasGuestFee || isAdmin || cfg.format === 'fee_collection' || cfg.format === 'self_paced') && (
+                <button type="button" onClick={() => selectTab('fee')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer inline-flex items-center gap-1.5 ${tab === 'fee' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>
+                  <span>{requiresFee ? `Fee (${feeDisplayLabel})` : 'Fee & Register'}</span>
                   {isAdmin && permissions.can_manage_claims_fees && (pendingFeePayments.length + pendingGuestFees.length) > 0 && (
                     <span className="px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-amber-400 text-slate-950">
                       {pendingFeePayments.length + pendingGuestFees.length}
@@ -811,52 +928,125 @@ export default function EventOperationsModal({
                   )}
                 </button>
               )}
-              <button type="button" onClick={() => setTab('transport')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'transport' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Carpool ({passengers.length}P / {eventDrivers.length}D)</button>
+              {showCarpoolTab && (
+                <button type="button" onClick={() => selectTab('transport')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'transport' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Carpool ({passengers.length}P / {eventDrivers.length}D)</button>
+              )}
             </div>
           </div>
         </div>
 
         <div className="p-6 max-h-[75vh] overflow-y-auto space-y-6 text-xs">
-          {tab === 'pass' && (hasEntryPass || (isAdmin && eventGuests.length > 0)) && (
-            <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-12' : 'max-w-sm mx-auto'} gap-6`}>
-              <div className={`${isAdmin ? 'lg:col-span-5' : 'w-full'} bg-gradient-to-b from-slate-900 to-emerald-950 text-white rounded-3xl p-6 flex flex-col items-center text-center justify-between shadow-xl border border-emerald-700/40`}>
-                <div className="space-y-1">
-                  <span className="px-3 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-600 text-white">Entry Pass</span>
-                  <h3 className="text-base font-extrabold mt-1">{event.event_name}</h3>
-                </div>
-                {myPassEligible ? (
-                  <div className="my-4 p-3.5 bg-white rounded-3xl shadow-lg border-4 border-emerald-500">
-                    <img src={myPassQrUrl} alt="Entry Pass QR" className="w-48 h-48 object-contain mx-auto" />
-                    <div className="mt-2 pt-2 border-t text-slate-900"><p className="font-extrabold text-xs">{profile.full_name}</p><p className="font-mono text-[11px] text-slate-500">{profile.matric_no}</p></div>
-                  </div>
-                ) : (
-                  <div className="my-5 p-5 rounded-2xl bg-white/10 border border-white/15 space-y-3 w-full">
-                    <Lock className="w-8 h-8 text-amber-300 mx-auto" />
-                    <p className="text-xs font-extrabold">Entry Pass Locked</p>
-                    {requiresFee && passRule === 'auto_after_payment' ? (
-                      eventPayments.some((f) => f.user_id === profile.id && f.status === 'Pending') ? (
-                        <p className="text-[11px] text-amber-200 font-semibold">
-                          ⏳ Receipt submitted — waiting for Treasurer verification to unlock your Entry Pass QR.
+          {tab === 'pass' && hasAccessTab && (
+            <div className={`grid grid-cols-1 ${isAdmin ? 'lg:grid-cols-12' : 'max-w-md mx-auto'} gap-6`}>
+              <div className={`${isAdmin ? 'lg:col-span-5' : 'w-full'} space-y-4`}>
+                {isMyAccessUnlocked ? (
+                  <div className="space-y-4">
+                    <div className="p-5 rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 space-y-3">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-extrabold uppercase">
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>Registered &amp; Confirmed</span>
+                      </div>
+                      <h3 className="text-base font-extrabold text-slate-900">{event.event_name}</h3>
+                      {myFeePending && cfg.unlock_timing === 'immediate_on_submit' && (
+                        <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-1.5">
+                          Unlocked early on receipt submission (Treasurer verification pending).
                         </p>
-                      ) : (
-                        <>
-                          <p className="text-[11px] text-emerald-100">
-                            Pay RM {reqFee.toFixed(2)} and await Treasurer verification to unlock your Entry Pass QR:
-                          </p>
-                          <button type="button" onClick={() => setTab('fee')} className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold cursor-pointer">
-                            Pay RM {reqFee.toFixed(2)} Fee →
-                          </button>
-                        </>
-                      )
-                    ) : (
-                      <p className="text-[11px] text-emerald-100">Your Entry Pass QR will appear here once granted by the Admin.</p>
+                      )}
+                      {cfg.access_link_url && (
+                        <div className="space-y-2.5 pt-1">
+                          <a
+                            href={cfg.access_link_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-sm"
+                          >
+                            <span>{cfg.access_link_label}</span>
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                          {cfg.access_code && (
+                            <div className="p-3 rounded-xl bg-white border border-emerald-200 flex items-center justify-between gap-2">
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                                  Access Code / PIN
+                                </span>
+                                <span className="font-mono font-extrabold text-slate-900">{cfg.access_code}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void navigator.clipboard.writeText(cfg.access_code);
+                                  setCopiedAccessCode(true);
+                                  setTimeout(() => setCopiedAccessCode(false), 1800);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-[11px] cursor-pointer"
+                              >
+                                <KeyRound className="w-3 h-3 inline mr-1" />
+                                {copiedAccessCode ? 'Copied!' : 'Copy'}
+                              </button>
+                            </div>
+                          )}
+                          {cfg.access_instructions && (
+                            <p className="text-xs text-slate-700 bg-white/85 border border-emerald-100 rounded-xl p-3 whitespace-pre-line leading-relaxed">
+                              {cfg.access_instructions}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {hasEntryPass && myPassEligible && (
+                      <div className="bg-gradient-to-b from-slate-900 to-emerald-950 text-white rounded-3xl p-6 flex flex-col items-center text-center shadow-xl border border-emerald-700/40">
+                        <span className="px-3 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-600 text-white">Entry Pass QR</span>
+                        <div className="my-4 p-3.5 bg-white rounded-3xl shadow-lg border-4 border-emerald-500">
+                          <img src={myPassQrUrl} alt="Entry Pass QR" className="w-44 h-44 object-contain mx-auto" />
+                          <div className="mt-2 pt-2 border-t text-slate-900">
+                            <p className="font-extrabold text-xs">{profile.full_name}</p>
+                            <p className="font-mono text-[11px] text-slate-500">{profile.matric_no}</p>
+                          </div>
+                        </div>
+                        <div className="w-full pt-2 border-t border-white/15 flex justify-between text-[11px]">
+                          <span className="text-emerald-200">Status:</span>
+                          <span className="font-extrabold">{myRsvp?.qr_checked_in ? '✓ ATTENDED' : '✓ PASS READY'}</span>
+                        </div>
+                      </div>
                     )}
                   </div>
+                ) : requiresFee ? (
+                  myFeePending ? (
+                    <div className="p-6 rounded-3xl bg-amber-50 border-2 border-amber-200 text-amber-950 text-center space-y-3">
+                      <Clock className="w-10 h-10 text-amber-600 mx-auto" />
+                      <h3 className="text-base font-extrabold">⏳ Pending Verification</h3>
+                      <p className="text-xs text-amber-900 leading-relaxed">
+                        Your receipt has been submitted. Your {cfg.access_link_url ? 'access link' : hasEntryPass ? 'Entry Pass QR' : 'registration confirmation'} will unlock automatically once verified by the Treasurer.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-6 rounded-3xl bg-slate-900 text-white text-center space-y-4 shadow-xl">
+                      <Lock className="w-9 h-9 text-amber-300 mx-auto" />
+                      <div className="space-y-1">
+                        <h3 className="text-base font-extrabold">Payment Required to Unlock</h3>
+                        <p className="text-xs text-slate-300">
+                          Submit your {feeDisplayLabel} fee receipt to unlock {cfg.access_link_url ? 'the access link' : hasEntryPass ? 'your Entry Pass QR' : 'registration'}.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => selectTab('fee')}
+                        className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold cursor-pointer"
+                      >
+                        Pay {feeDisplayLabel} to Unlock →
+                      </button>
+                    </div>
+                  )
+                ) : (
+                  <div className="p-6 rounded-3xl bg-slate-50 border border-slate-200 text-center space-y-2">
+                    <Lock className="w-8 h-8 text-slate-400 mx-auto" />
+                    <h3 className="text-sm font-extrabold text-slate-900">Not Registered Yet</h3>
+                    <p className="text-xs text-slate-500">
+                      Mark yourself as Attending on the main activity card or wait for Admin pass approval.
+                    </p>
+                  </div>
                 )}
-                <div className="w-full pt-3 border-t border-white/15 flex justify-between text-[11px]">
-                  <span className="text-emerald-200">My Pass Status:</span>
-                  <span className="font-extrabold">{myRsvp?.qr_checked_in ? '✓ ATTENDED' : myPassEligible ? '✓ PASS READY' : '✗ LOCKED'}</span>
-                </div>
               </div>
 
               {isAdmin && (
@@ -1037,7 +1227,7 @@ export default function EventOperationsModal({
             </div>
           )}
 
-          {tab === 'fee' && (requiresFee || hasGuestFee || isAdmin) && (
+          {tab === 'fee' && (requiresFee || hasGuestFee || isAdmin || cfg.format === 'fee_collection' || cfg.format === 'self_paced') && (
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
               <div className="lg:col-span-2 space-y-3 self-start">
                 {isAdmin && (
@@ -1118,11 +1308,69 @@ export default function EventOperationsModal({
                 )}
 
                 <form onSubmit={handlePayFeeSubmit} className="bg-slate-50 border rounded-2xl p-5 space-y-3">
-                  <h3 className="text-sm font-extrabold">Fee Payment (RM {reqFee.toFixed(2)})</h3>
-                  {hasEntryPass && passRule === 'auto_after_payment' && (
+                  <h3 className="text-sm font-extrabold">Fee Payment ({feeDisplayLabel})</h3>
+                  {requiresFee && (cfg.access_link_url || hasEntryPass) && (
                     <p className="text-[11px] text-emerald-700 font-semibold">
-                      Your Entry Pass QR unlocks once the Treasurer verifies your receipt.
+                      {cfg.unlock_timing === 'immediate_on_submit'
+                        ? 'Your access unlocks right after submitting your receipt.'
+                        : cfg.access_link_url
+                        ? 'Your access link unlocks once the Treasurer verifies your receipt.'
+                        : 'Your Entry Pass QR unlocks once the Treasurer verifies your receipt.'}
                     </p>
+                  )}
+
+                  {cfg.fee_tiers.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                        Select Tier / Option
+                      </label>
+                      <div className="space-y-1.5">
+                        {cfg.fee_tiers.map((tier) => {
+                          const active = selectedTierName === tier.name;
+                          return (
+                            <button
+                              key={tier.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedTierName(tier.name);
+                                if (!cfg.allow_custom_amount) {
+                                  setAmountPaid(tier.amount.toFixed(2));
+                                }
+                              }}
+                              className={`w-full p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                                active
+                                  ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-500'
+                                  : 'border-slate-200 bg-white hover:border-slate-300'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2 font-extrabold text-slate-900">
+                                <span>{tier.name}</span>
+                                <span className="text-emerald-700">RM {tier.amount.toFixed(2)}</span>
+                              </div>
+                              {tier.description && (
+                                <p className="text-[10px] text-slate-500 mt-0.5">{tier.description}</p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {cfg.registration_prompt && (
+                    <div>
+                      <label className="block text-[11px] font-extrabold uppercase tracking-wide text-slate-500 mb-1">
+                        {cfg.registration_prompt} *
+                      </label>
+                      <input
+                        type="text"
+                        value={registrationNote}
+                        onChange={(e) => setRegistrationNote(e.target.value)}
+                        placeholder={`Enter ${cfg.registration_prompt}`}
+                        className="w-full rounded-xl border bg-white px-3 py-2 font-semibold"
+                        required
+                      />
+                    </div>
                   )}
 
                   {showQrToMembers && (activePayQrUrl || activePayBankInfo) && (
@@ -1311,6 +1559,20 @@ export default function EventOperationsModal({
                                         <div className="font-bold text-slate-900">{p.student_name}</div>
                                       )}
                                       <div className="text-[10px] text-slate-400 font-mono">{p.matric_no}</div>
+                                      {(p.selected_tier || p.registration_note) && (
+                                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                                          {p.selected_tier && (
+                                            <span className="px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold">
+                                              {p.selected_tier}
+                                            </span>
+                                          )}
+                                          {p.registration_note && (
+                                            <span className="text-[10px] text-slate-600 font-medium">
+                                              {p.registration_note}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
                                     </td>
                                     <td className="py-2 px-3 font-extrabold text-emerald-700">
                                       RM {Number(p.amount_paid).toFixed(2)}
@@ -1432,6 +1694,20 @@ export default function EventOperationsModal({
                                         {g.lookup_code}
                                         {g.institution_or_matric ? ` · ${g.institution_or_matric}` : ''}
                                       </div>
+                                      {(g.selected_tier || g.registration_note) && (
+                                        <div className="flex flex-wrap items-center gap-1 mt-1">
+                                          {g.selected_tier && (
+                                            <span className="px-1.5 py-0.5 rounded bg-amber-100/70 border border-amber-200 text-amber-900 text-[10px] font-bold">
+                                              {g.selected_tier}
+                                            </span>
+                                          )}
+                                          {g.registration_note && (
+                                            <span className="text-[10px] text-slate-600 font-medium">
+                                              {g.registration_note}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
                                     </td>
                                     <td className="py-2 px-3 font-extrabold text-emerald-700">
                                       RM {Number(g.amount_paid).toFixed(2)}

@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { UserProfile } from '@/lib/supabase';
-import { Menu, X, Calendar, Receipt, UserCheck, Wallet, Users, PlusCircle, Lock, Unlock, KeyRound, LogOut, Layers, Loader2, Package, QrCode, Crown, Moon, Sun, Palette, FileText, ShieldCheck, Globe } from 'lucide-react';
+import { Menu, X, Calendar, Receipt, UserCheck, Wallet, Users, PlusCircle, Lock, Unlock, KeyRound, LogOut, Layers, Loader2, Package, QrCode, Crown, Moon, Sun, Palette, FileText, ShieldCheck, Globe, Download } from 'lucide-react';
 
 export type NavTab = 'activities' | 'equipment' | 'claims' | 'profile' | 'ledger' | 'members' | 'logs';
 
@@ -11,7 +11,7 @@ interface NavbarProps {
   currentBatch?: string; roleMode: 'member' | 'admin' | 'owner'; pendingClaimsCount?: number;
   notificationBell?: React.ReactNode;
   darkMode?: boolean; onToggleDarkMode?: () => void; canCustomizeTheme?: boolean; onOpenThemeStudio?: () => void;
-  onOpenPublicPageEditor?: () => void;
+  canManagePublicPage?: boolean; onOpenPublicPageEditor?: () => void;
   onUnlockAdmin: (pin: string) => Promise<boolean>;
   onSwitchMode: (target: 'member' | 'admin' | 'owner') => Promise<void>;
   onSignOut: () => Promise<void>; onOpenNewClaim: () => void; onOpenQrScanner: () => void;
@@ -21,7 +21,7 @@ interface NavbarProps {
 export default function Navbar({
   profile, clubName, logoUrl = '', activeTab, onSelectTab, currentBatch = '2026/2027', roleMode, pendingClaimsCount = 0,
   notificationBell,
-  darkMode = false, onToggleDarkMode, canCustomizeTheme = false, onOpenThemeStudio, onOpenPublicPageEditor,
+  darkMode = false, onToggleDarkMode, canCustomizeTheme = false, onOpenThemeStudio, canManagePublicPage = false, onOpenPublicPageEditor,
   onUnlockAdmin, onSwitchMode, onSignOut, onOpenNewClaim, onOpenQrScanner,
   onOpenNewActivity, onOpenNewFinance, switchingRole = false,
 }: NavbarProps) {
@@ -31,6 +31,43 @@ export default function Navbar({
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
+  const [installPromptEvent, setInstallPromptEvent] = useState<{
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: string }>;
+  } | null>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.matchMedia?.('(display-mode: standalone)').matches) {
+      setIsStandalone(true);
+      return;
+    }
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setInstallPromptEvent(
+        e as unknown as {
+          prompt: () => Promise<void>;
+          userChoice: Promise<{ outcome: string }>;
+        }
+      );
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallPwa = async () => {
+    if (!installPromptEvent) return;
+    try {
+      await installPromptEvent.prompt();
+      const choice = await installPromptEvent.userChoice;
+      if (choice?.outcome === 'accepted') {
+        setInstallPromptEvent(null);
+      }
+    } catch {
+      /* ignore prompt dismissal */
+    }
+  };
 
   const handleNav = (tab: NavTab) => {
     onSelectTab(tab);
@@ -86,7 +123,7 @@ export default function Navbar({
           </div>
 
           <div className="flex items-center gap-2">
-            {canCustomizeTheme && onOpenPublicPageEditor && (
+            {canManagePublicPage && onOpenPublicPageEditor && (
               <button
                 type="button"
                 onClick={onOpenPublicPageEditor}
@@ -145,7 +182,7 @@ export default function Navbar({
                   <button type="button" onClick={() => handleNav('ledger')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'ledger' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Wallet className="w-4 h-4" /><span>Club Finance &amp; Savings</span></button>
                   <button type="button" onClick={() => handleNav('members')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'members' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><Users className="w-4 h-4" /><span>Members &amp; Batch Clearance</span></button>
                   <button type="button" onClick={() => handleNav('logs')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer ${activeTab === 'logs' ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-500/10'}`}><ShieldCheck className="w-4 h-4" /><span>Security &amp; Activity Log</span></button>
-                  {canCustomizeTheme && onOpenPublicPageEditor && <button type="button" onClick={() => { setDrawerOpen(false); onOpenPublicPageEditor(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-emerald-600 hover:bg-emerald-500/10 cursor-pointer"><Globe className="w-4 h-4" /><span>Edit Public Landing Page</span></button>}
+                  {canManagePublicPage && onOpenPublicPageEditor && <button type="button" onClick={() => { setDrawerOpen(false); onOpenPublicPageEditor(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-emerald-600 hover:bg-emerald-500/10 cursor-pointer"><Globe className="w-4 h-4" /><span>Edit Public Landing Page</span></button>}
                   {canCustomizeTheme && onOpenThemeStudio && <button type="button" onClick={() => { setDrawerOpen(false); onOpenThemeStudio(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-amber-500 hover:bg-amber-500/10 cursor-pointer"><Palette className="w-4 h-4" /><span>Logo &amp; Background Studio</span></button>}
                   {onOpenNewActivity && <button type="button" onClick={() => { setDrawerOpen(false); onOpenNewActivity(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-500 cursor-pointer">+ New Activity</button>}
                   {onOpenNewFinance && <button type="button" onClick={() => { setDrawerOpen(false); onOpenNewFinance(); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-xl bg-amber-400/20 text-amber-500 cursor-pointer">+ Add Finance Record</button>}
@@ -170,6 +207,12 @@ export default function Navbar({
                   <button type="button" onClick={() => { setDrawerOpen(false); onSwitchMode('admin'); }} className="py-2 rounded-xl bg-emerald-600 text-white cursor-pointer">Admin Mode</button>
                   <button type="button" onClick={() => { setDrawerOpen(false); onSwitchMode('member'); }} className="py-2 rounded-xl bg-slate-500/20 cursor-pointer">Member Mode</button>
                 </div>
+              )}
+              {installPromptEvent && !isStandalone && (
+                <button type="button" onClick={handleInstallPwa} className="w-full py-2.5 rounded-xl bg-emerald-600/15 text-emerald-600 hover:bg-emerald-600/25 border border-emerald-500/30 cursor-pointer flex items-center justify-center gap-1.5">
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Install App</span>
+                </button>
               )}
               <button type="button" onClick={onSignOut} className="w-full py-2 rounded-xl text-rose-500 hover:bg-rose-500/10 cursor-pointer"><LogOut className="w-3.5 h-3.5 inline mr-1" />Sign Out</button>
             </div>

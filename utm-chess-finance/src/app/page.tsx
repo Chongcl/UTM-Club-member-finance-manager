@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   supabase,
   isSupabaseConfigured,
@@ -33,6 +33,7 @@ import {
   logActivity,
 } from '@/lib/supabase';
 import Navbar, { NavTab } from '@/components/Navbar';
+import MobileBottomNav from '@/components/MobileBottomNav';
 import CinematicHub from '@/components/CinematicHub';
 import EquipmentSection from '@/components/EquipmentSection';
 import ProfileSection from '@/components/ProfileSection';
@@ -42,9 +43,16 @@ import PreClaimReviewModal from '@/components/PreClaimReviewModal';
 import PublicLandingPage from '@/components/PublicLandingPage';
 import PublicLandingEditorModal from '@/components/PublicLandingEditorModal';
 import { PublicLandingConfig } from '@/lib/publicLanding';
+import {
+  resolveActivityConfig,
+  formatActivitySchedule,
+  hasFeeRequired,
+  getFeeDisplayLabel,
+  getFormatBadgeMeta,
+} from '@/lib/activityConfig';
 import BudgetModal, { EditableActivity } from '@/components/BudgetModal';
-import { Globe } from 'lucide-react';
-import EventOperationsModal from '@/components/EventOperationsModal';
+import { Globe, Link2, Video } from 'lucide-react';
+import EventOperationsModal, { EventModalTab } from '@/components/EventOperationsModal';
 import QrScannerModal from '@/components/QrScannerModal';
 import LedgerSection, { LedgerEntryItem } from '@/components/LedgerSection';
 import ActivityLogSection from '@/components/ActivityLogSection';
@@ -108,6 +116,7 @@ const NO_PERMISSIONS: AdminPermissions = {
   can_manage_finance: false,
   can_manage_members: false,
   can_view_sensitive_profiles: false,
+  can_manage_public_page: false,
 };
 
 const BG_PRESETS = [
@@ -234,6 +243,10 @@ export default function Page() {
 
   const [activeTab, setActiveTab] = useState<NavTab>('activities');
   const [activityTimeFilter, setActivityTimeFilter] = useState<'All' | 'Active' | 'Closed'>('All');
+  const [activityFormatFilter, setActivityFormatFilter] = useState<'ALL' | 'events' | 'online_programs' | 'fees'>('ALL');
+  const deepLinkEventRef = useRef<{ eventId: string; panel?: EventModalTab } | null>(null);
+  const deepLinkClaimRef = useRef<string | null>(null);
+  const urlInitializedRef = useRef(false);
 
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
@@ -269,7 +282,7 @@ export default function Page() {
   const [chatDmTargetUserId, setChatDmTargetUserId] = useState<string | null>(null);
   const [editingActivity, setEditingActivity] = useState<EditableActivity | null>(null);
   const [opsModalEvent, setOpsModalEvent] = useState<Budget | null>(null);
-  const [opsModalTab, setOpsModalTab] = useState<'fee' | 'transport' | 'qr' | 'pass'>('pass');
+  const [opsModalTab, setOpsModalTab] = useState<EventModalTab>('pass');
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
   const [selectedPreClaim, setSelectedPreClaim] = useState<PreClaim | null>(null);
   const [quickAdjustFinanceOpen, setQuickAdjustFinanceOpen] = useState(false);
@@ -338,6 +351,7 @@ export default function Page() {
         can_manage_finance: Boolean(p.can_manage_finance),
         can_manage_members: Boolean(p.can_manage_members),
         can_view_sensitive_profiles: Boolean(p.can_view_sensitive_profiles),
+        can_manage_public_page: Boolean(p.can_manage_public_page),
       },
       member_type: String(raw.member_type || 'Member'),
       year_of_study: String(raw.year_of_study || ''),
@@ -573,6 +587,261 @@ export default function Page() {
     }
   }, [sessionUserId]);
 
+  const refreshEvents = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    const isAdminUser = profile?.role === 'owner' || profile?.role === 'treasurer';
+    const [bRes, rRes, fRes, gRes] = await Promise.all([
+      supabase.from('budgets').select('*').order('event_date', { ascending: true }),
+      supabase.from('event_rsvps').select('*'),
+      supabase.from('activity_fee_payments').select('*').order('created_at', { ascending: false }),
+      isAdminUser
+        ? supabase.from('public_guest_registrations').select('*').order('created_at', { ascending: false })
+        : Promise.resolve({ data: null }),
+    ]);
+    if (bRes.data) setBudgets(bRes.data as Budget[]);
+    if (rRes.data) setRsvps(rRes.data as EventRsvp[]);
+    if (fRes.data) setFeePayments(fRes.data as ActivityFeePayment[]);
+    if (gRes.data) setGuestRegistrations(gRes.data as PublicGuestRegistration[]);
+  }, [profile?.role]);
+
+  const refreshHub = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    const [annRes, pRes, pvRes] = await Promise.all([
+      supabase.from('announcements').select('*').order('created_at', { ascending: false }),
+      supabase.from('polls').select('*').order('created_at', { ascending: false }),
+      supabase.from('poll_votes').select('*'),
+    ]);
+    if (annRes.data) setAnnouncements(annRes.data as Announcement[]);
+    if (pRes.data) setPolls(pRes.data as Poll[]);
+    if (pvRes.data) setPollVotes(pvRes.data as PollVote[]);
+  }, []);
+
+  const refreshEquipment = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    const [eqIRes, eqLRes] = await Promise.all([
+      supabase.from('equipment_items').select('*').order('item_name', { ascending: true }),
+      supabase.from('equipment_loans').select('*').order('created_at', { ascending: false }),
+    ]);
+    const normalizedLoans = eqLRes.data
+      ? (eqLRes.data as Record<string, unknown>[]).map(normalizeEquipmentLoan)
+      : [];
+    if (eqLRes.data) setEquipmentLoans(normalizedLoans);
+    if (eqIRes.data) {
+      setEquipmentItems(
+        (eqIRes.data as Record<string, unknown>[]).map((raw) =>
+          normalizeEquipmentItem(raw, normalizedLoans)
+        )
+      );
+    }
+  }, []);
+
+  const refreshClaims = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    const [cRes, preRes, bRes, lRes] = await Promise.all([
+      supabase.from('claims').select('*').order('created_at', { ascending: false }),
+      sessionUserId
+        ? supabase.from('pre_claims').select('*').order('created_at', { ascending: false })
+        : Promise.resolve({ data: null }),
+      supabase.from('budgets').select('*').order('event_date', { ascending: true }),
+      supabase.from('ledger_entries').select('*').order('created_at', { ascending: false }),
+    ]);
+    if (cRes.data) setClaims(cRes.data as Claim[]);
+    if (preRes.data) setPreClaims(preRes.data as PreClaim[]);
+    if (bRes.data) setBudgets(bRes.data as Budget[]);
+    if (lRes.data) setLedgerEntries(lRes.data as LedgerEntryItem[]);
+  }, [sessionUserId]);
+
+  const refreshFinance = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    const isAdminUser = profile?.role === 'owner' || profile?.role === 'treasurer';
+    const [lRes, bpRes, fRes, cRes, preRes, gRes, sRes] = await Promise.all([
+      supabase.from('ledger_entries').select('*').order('created_at', { ascending: false }),
+      supabase.from('budget_plan_items').select('*').order('created_at', { ascending: true }),
+      supabase.from('activity_fee_payments').select('*').order('created_at', { ascending: false }),
+      supabase.from('claims').select('*').order('created_at', { ascending: false }),
+      sessionUserId
+        ? supabase.from('pre_claims').select('*').order('created_at', { ascending: false })
+        : Promise.resolve({ data: null }),
+      isAdminUser
+        ? supabase.from('public_guest_registrations').select('*').order('created_at', { ascending: false })
+        : Promise.resolve({ data: null }),
+      supabase.from('club_settings_public').select('*').eq('id', 1).maybeSingle(),
+    ]);
+    if (lRes.data) setLedgerEntries(lRes.data as LedgerEntryItem[]);
+    if (bpRes.data) setBudgetPlanItems(bpRes.data as BudgetPlanItem[]);
+    if (fRes.data) setFeePayments(fRes.data as ActivityFeePayment[]);
+    if (cRes.data) setClaims(cRes.data as Claim[]);
+    if (preRes.data) setPreClaims(preRes.data as PreClaim[]);
+    if (gRes.data) setGuestRegistrations(gRes.data as PublicGuestRegistration[]);
+    if (sRes.data) {
+      const openBank = Number(sRes.data.opening_bank_balance ?? 0);
+      const openCash = Number(sRes.data.opening_cash_balance ?? 0);
+      if (!isNaN(openBank)) setOpeningBankBalance(openBank);
+      if (!isNaN(openCash)) setOpeningCashBalance(openCash);
+      if (sRes.data.opening_balance_date) {
+        setOpeningBalanceDate(String(sRes.data.opening_balance_date).split('T')[0]);
+      }
+    }
+  }, [profile?.role, sessionUserId]);
+
+  const refreshMembersAndSettings = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    const callerIsOwner = profile?.role === 'owner';
+    const callerCanViewSensitive =
+      callerIsOwner ||
+      (profile?.role === 'treasurer' &&
+        Boolean(profile.admin_permissions?.can_view_sensitive_profiles));
+    const [mRes, sRes, pinRes] = await Promise.all([
+      callerCanViewSensitive
+        ? supabase.from('users').select('*').order('full_name', { ascending: true })
+        : supabase.from('users_public').select('*').order('full_name', { ascending: true }),
+      supabase.from('club_settings_public').select('*').eq('id', 1).maybeSingle(),
+      callerIsOwner
+        ? supabase.from('club_settings').select('admin_pin, owner_pin').eq('id', 1).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    if (mRes.data) {
+      const list = (mRes.data as Record<string, unknown>[]).map(normalizeProfile);
+      setAllMembers(
+        profile ? list.map((u) => (u.id === profile.id ? profile : u)) : list
+      );
+    }
+    if (pinRes.data) {
+      const pinRow = pinRes.data as { admin_pin?: string | null; owner_pin?: string | null };
+      if (pinRow.admin_pin) setNewAdminPinInput(String(pinRow.admin_pin));
+      if (pinRow.owner_pin) setNewOwnerPinInput(String(pinRow.owner_pin));
+    }
+    if (sRes.data) {
+      const depts = Array.isArray(sRes.data.departments)
+        ? (sRes.data.departments as string[]).filter(Boolean)
+        : DEFAULT_DEPARTMENTS;
+      if (depts.length > 0) {
+        setDepartments(depts);
+        setDepartmentsText(depts.join('\n'));
+      }
+      if (sRes.data.club_name) {
+        setClubName(String(sRes.data.club_name));
+        setClubNameInput(String(sRes.data.club_name));
+      }
+      if (sRes.data.current_batch) {
+        setCurrentBatch(String(sRes.data.current_batch));
+        setNewBatchInput(String(sRes.data.current_batch));
+      }
+      if (sRes.data.public_landing_config && typeof sRes.data.public_landing_config === 'object') {
+        setPublicLandingConfig(sRes.data.public_landing_config as PublicLandingConfig);
+      }
+    }
+  }, [profile]);
+
+  const refreshLogs = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    const { data } = await supabase
+      .from('activity_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1000);
+    if (data) setActivityLogs(data as ActivityLogEntry[]);
+  }, []);
+
+  const refreshNotifications = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    const { data } = await supabase
+      .from('club_notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(40);
+    if (data) setClubNotifications(data as ClubNotificationItem[]);
+  }, []);
+
+  // URL Deep-Linking (without useSearchParams so static export/SSR builds cleanly)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const validTabs: NavTab[] = ['activities', 'equipment', 'claims', 'profile', 'ledger', 'members', 'logs'];
+    const validPanels: EventModalTab[] = ['fee', 'transport', 'qr', 'pass', 'access'];
+
+    const applyFromSearch = () => {
+      const sp = new URLSearchParams(window.location.search);
+      const t = sp.get('tab') as NavTab | null;
+      if (t && validTabs.includes(t)) {
+        setActiveTab(t);
+      }
+      const evId = sp.get('event');
+      const panelRaw = sp.get('panel') as EventModalTab | null;
+      const panel = panelRaw && validPanels.includes(panelRaw) ? panelRaw : 'pass';
+      if (evId) {
+        deepLinkEventRef.current = { eventId: evId, panel };
+      } else {
+        setOpsModalEvent(null);
+      }
+      const clId = sp.get('claim');
+      if (clId) {
+        deepLinkClaimRef.current = clId;
+      } else {
+        setSelectedClaim(null);
+      }
+      urlInitializedRef.current = true;
+    };
+
+    applyFromSearch();
+    window.addEventListener('popstate', applyFromSearch);
+    return () => window.removeEventListener('popstate', applyFromSearch);
+  }, []);
+
+  const isCurrentlyAdminOrOwner =
+    (roleMode === 'admin' || roleMode === 'owner') &&
+    (profile?.role === 'treasurer' || profile?.role === 'owner');
+
+  useEffect(() => {
+    if (!profile) return;
+    if (!isCurrentlyAdminOrOwner && (activeTab === 'ledger' || activeTab === 'members' || activeTab === 'logs')) {
+      setActiveTab('activities');
+    }
+  }, [profile, isCurrentlyAdminOrOwner, activeTab]);
+
+  useEffect(() => {
+    const pending = deepLinkEventRef.current;
+    if (!pending || budgets.length === 0) return;
+    const found = budgets.find((b) => b.id === pending.eventId && !b.deleted_at);
+    if (found) {
+      setOpsModalEvent(found);
+      setOpsModalTab(pending.panel || 'pass');
+      deepLinkEventRef.current = null;
+    }
+  }, [budgets]);
+
+  useEffect(() => {
+    const pendingClaimId = deepLinkClaimRef.current;
+    if (!pendingClaimId || claims.length === 0 || !profile) return;
+    const found = claims.find((c) => c.id === pendingClaimId && !c.deleted_at);
+    if (found && (isCurrentlyAdminOrOwner || found.user_id === profile.id)) {
+      setSelectedClaim(found);
+    }
+    deepLinkClaimRef.current = null;
+  }, [claims, isCurrentlyAdminOrOwner, profile]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !urlInitializedRef.current || !sessionUserId) return;
+    if (deepLinkEventRef.current || deepLinkClaimRef.current) return;
+    const sp = new URLSearchParams(window.location.search);
+    sp.set('tab', activeTab);
+    if (opsModalEvent) {
+      sp.set('event', opsModalEvent.id);
+      sp.set('panel', opsModalTab);
+    } else {
+      sp.delete('event');
+      sp.delete('panel');
+    }
+    if (selectedClaim) {
+      sp.set('claim', selectedClaim.id);
+    } else {
+      sp.delete('claim');
+    }
+    const nextSearch = `?${sp.toString()}`;
+    if (window.location.search !== nextSearch) {
+      window.history.replaceState(null, '', `${window.location.pathname}${nextSearch}`);
+    }
+  }, [sessionUserId, activeTab, opsModalEvent, opsModalTab, selectedClaim]);
+
   useEffect(() => {
     if (!isSupabaseConfigured) {
       setAuthLoading(false);
@@ -667,7 +936,7 @@ export default function Page() {
     if (error && existing?.id && !existing.id.startsWith('temp-')) {
       await supabase.from('event_rsvps').update(corePayload).eq('id', existing.id);
     }
-    fetchAllData();
+    refreshEvents();
   };
 
   const activeBudgets = filterActiveRecords('budgets', budgets);
@@ -968,6 +1237,11 @@ export default function Page() {
     ? profile?.admin_permissions || DEFAULT_ADMIN_PERMISSIONS
     : NO_PERMISSIONS;
 
+  // Derived synced EventOperationsModal target (always reflects latest budgets after edits/saves)
+  const activeOpsEvent = opsModalEvent
+    ? activeBudgets.find((b) => b.id === opsModalEvent.id) || opsModalEvent
+    : null;
+
   const isNaturallyDarkStyle = bgStyle === 'galaxy-nebula' || bgStyle === 'obsidian-carbon';
   const isDarkCanvas = darkMode || isNaturallyDarkStyle;
 
@@ -1130,7 +1404,18 @@ export default function Page() {
     );
   }
 
-  const visibleBudgets = activeBudgets.filter((b) => activityTimeFilter === 'All' || b.status === activityTimeFilter);
+  const hasMultipleActivityFormats =
+    new Set(activeBudgets.map((b) => resolveActivityConfig(b).format)).size > 1;
+  const visibleBudgets = activeBudgets.filter((b) => {
+    if (activityTimeFilter !== 'All' && b.status !== activityTimeFilter) return false;
+    if (activityFormatFilter === 'ALL') return true;
+    const fmt = resolveActivityConfig(b).format;
+    if (activityFormatFilter === 'events') return fmt === 'physical';
+    if (activityFormatFilter === 'online_programs') {
+      return fmt === 'online' || fmt === 'self_paced';
+    }
+    return fmt === 'fee_collection';
+  });
   const visibleClaims = activeClaims.filter((c) => isAdminOrOwner || c.user_id === profile.id);
   const visiblePreClaims = activePreClaims.filter((pc) => isAdminOrOwner || pc.user_id === profile.id);
   const isUserClubOwner = (userId?: string) =>
@@ -1259,6 +1544,7 @@ export default function Page() {
           onToggleDarkMode={toggleDarkMode}
           canCustomizeTheme={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
           onOpenThemeStudio={() => setShowThemeStudio(true)}
+          canManagePublicPage={isAdminOrOwner && effectivePermissions.can_manage_public_page}
           onOpenPublicPageEditor={() => setShowPublicPageEditor(true)}
           pendingClaimsCount={
             isAdminOrOwner
@@ -1307,13 +1593,13 @@ export default function Page() {
         />
 
         {toastMessage && (
-          <div className="fixed bottom-20 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-500/40">
+          <div className="fixed bottom-24 md:bottom-20 right-4 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-500/40">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             <span>{toastMessage}</span>
           </div>
         )}
 
-        <main className="max-w-7xl w-full mx-auto px-4 py-6 space-y-6 flex-1">
+        <main className="max-w-7xl w-full mx-auto px-4 pt-6 pb-24 md:pb-6 space-y-6 flex-1">
           {activeTab === 'activities' && (
             <div className="space-y-8">
               <CinematicHub
@@ -1324,7 +1610,7 @@ export default function Page() {
                 isAdmin={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
                 logs={activityLogs}
                 onRefresh={(m: string) => {
-                  fetchAllData();
+                  refreshHub();
                   showToast(m);
                 }}
               />
@@ -1335,7 +1621,32 @@ export default function Page() {
                     isDarkCanvas ? 'bg-slate-900/75 border-white/10' : 'bg-white/85 border-white/90'
                   }`}
                 >
-                  <h2 className="text-lg font-extrabold tracking-tight">Activities &amp; Events</h2>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h2 className="text-lg font-extrabold tracking-tight">Activities &amp; Events</h2>
+                    {hasMultipleActivityFormats && (
+                      <div className={`flex flex-wrap p-1 rounded-xl text-[11px] ${isDarkCanvas ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                        {(
+                          [
+                            { id: 'ALL', label: 'All' },
+                            { id: 'events', label: 'Events' },
+                            { id: 'online_programs', label: 'Online / Programs' },
+                            { id: 'fees', label: 'Fees' },
+                          ] as const
+                        ).map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setActivityFormatFilter(f.id)}
+                            className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
+                              activityFormatFilter === f.id ? 'bg-emerald-600 text-white' : 'opacity-70'
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
@@ -1387,10 +1698,25 @@ export default function Page() {
                     ).length;
                     const drvCount = activeRsvps.filter((r) => r.budget_id === ev.id && r.is_driver).length;
 
-                    const reqFee = Number(ev.registration_fee || 0);
-                    const requiresFee = reqFee > 0;
-                    const savedMode = ev.ticket_qr_mode || (requiresFee ? 'entry_pass' : 'scan_attendance');
+                    const cfg = resolveActivityConfig(ev);
+                    const formatBadge = getFormatBadgeMeta(cfg.format);
+                    const scheduleLabel = formatActivitySchedule(ev, cfg);
+                    const requiresFee = hasFeeRequired(ev, cfg);
+                    const feeDisplay = getFeeDisplayLabel(ev, cfg);
+                    const savedMode = ev.ticket_qr_mode || (requiresFee && cfg.format === 'physical' ? 'entry_pass' : 'scan_attendance');
                     const hasEntryPass = isEntryPassMode(savedMode);
+
+                    const myFeeVerified = activeFeePayments.some(
+                      (f) => f.budget_id === ev.id && f.user_id === profile.id && f.status === 'Verified'
+                    );
+                    const myFeePending = activeFeePayments.some(
+                      (f) => f.budget_id === ev.id && f.user_id === profile.id && f.status === 'Pending'
+                    );
+                    const isUnlockedAccess = !requiresFee
+                      ? isAttending || cfg.format === 'fee_collection'
+                      : cfg.unlock_timing === 'immediate_on_submit'
+                      ? myFeeVerified || myFeePending || myRsvp?.pass_approved === true
+                      : myFeeVerified || myRsvp?.pass_approved === true;
 
                     return (
                       <div
@@ -1402,10 +1728,17 @@ export default function Page() {
                         }`}
                       >
                         <div className="space-y-2.5">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 border border-emerald-500/20">
-                              {ev.category}
-                            </span>
+                          <div className="flex flex-wrap justify-between items-center gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 border border-emerald-500/20">
+                                {ev.category}
+                              </span>
+                              {cfg.format !== 'physical' && (
+                                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md border ${formatBadge.badgeClass}`}>
+                                  {formatBadge.label}
+                                </span>
+                              )}
+                            </div>
                             {isAdminOrOwner && (
                               <div className="flex gap-1">
                                 <button
@@ -1466,7 +1799,7 @@ export default function Page() {
                                               recordTitle: ev.event_name,
                                               extraSummary: `${ev.category} · ${ev.event_date}`,
                                             });
-                                            fetchAllData();
+                                            refreshEvents();
                                             showToast('Activity removed from web (kept in Supabase)');
                                           },
                                         })
@@ -1488,158 +1821,298 @@ export default function Page() {
                           <div className="text-xs opacity-80 space-y-1 pt-1">
                             <div>
                               <Calendar className="w-3.5 h-3.5 inline mr-1.5 text-emerald-500" />
-                              {ev.event_date}
+                              {scheduleLabel}
                             </div>
-                            <div>
-                              <Clock className="w-3.5 h-3.5 inline mr-1.5 text-emerald-500" />
-                              {ev.event_time}
-                            </div>
-                            <div>
-                              <MapPin className="w-3.5 h-3.5 inline mr-1.5 text-emerald-500" />
-                              {ev.location}
-                            </div>
+                            {ev.event_time && cfg.format !== 'self_paced' && cfg.format !== 'fee_collection' && (
+                              <div>
+                                <Clock className="w-3.5 h-3.5 inline mr-1.5 text-emerald-500" />
+                                {ev.event_time}
+                              </div>
+                            )}
+                            {ev.location && cfg.format !== 'self_paced' && cfg.format !== 'fee_collection' && (
+                              <div>
+                                {cfg.format === 'online' ? (
+                                  <Video className="w-3.5 h-3.5 inline mr-1.5 text-sky-500" />
+                                ) : (
+                                  <MapPin className="w-3.5 h-3.5 inline mr-1.5 text-emerald-500" />
+                                )}
+                                {ev.location}
+                              </div>
+                            )}
                           </div>
 
-                          <div className="flex flex-wrap gap-2 pt-2">
-                            {hasEntryPass ? (
+                          {/* Context-Aware Action Buttons per Activity Format */}
+                          {cfg.format === 'physical' && (
+                            <div className="flex flex-wrap gap-2 pt-2">
+                              {hasEntryPass ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpsModalEvent(ev);
+                                    setOpsModalTab('pass');
+                                  }}
+                                  className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white border border-white/15 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                >
+                                  <Ticket className="w-3.5 h-3.5" />
+                                  <span>{myRsvp?.qr_checked_in ? '✓ Attended' : 'Entry Pass'}</span>
+                                </button>
+                              ) : isAdminOrOwner ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpsModalEvent(ev);
+                                    setOpsModalTab('qr');
+                                  }}
+                                  className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white border border-white/15 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                >
+                                  <QrCode className="w-3.5 h-3.5" />
+                                  <span>Venue QR ({qrCount})</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setIsQrScannerOpen(true)}
+                                  className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white border border-white/15 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                >
+                                  <QrCode className="w-3.5 h-3.5" />
+                                  <span>{myRsvp?.qr_checked_in ? '✓ Attended' : 'Scan Attendance'}</span>
+                                </button>
+                              )}
+
+                              {requiresFee && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpsModalEvent(ev);
+                                    setOpsModalTab('fee');
+                                  }}
+                                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 border cursor-pointer ${
+                                    isDarkCanvas
+                                      ? 'bg-amber-500/20 border-amber-500/30 text-amber-300'
+                                      : 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'
+                                  }`}
+                                >
+                                  <CreditCard className="w-3.5 h-3.5" />
+                                  <span>{feeDisplay}</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpsModalEvent(ev);
+                                  setOpsModalTab('transport');
+                                }}
+                                className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition cursor-pointer ${
+                                  isDarkCanvas
+                                    ? 'bg-white/10 hover:bg-white/15 text-slate-100 border-white/10'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-200/80'
+                                }`}
+                              >
+                                <Car className="w-3.5 h-3.5 text-emerald-500" />
+                                <span>Carpool ({paxCount}/{drvCount})</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {cfg.format === 'online' && (
+                            <div className="flex flex-wrap gap-2 pt-2">
                               <button
                                 type="button"
                                 onClick={() => {
                                   setOpsModalEvent(ev);
                                   setOpsModalTab('pass');
                                 }}
-                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white border border-white/15 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
+                                  isUnlockedAccess
+                                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                    : 'bg-slate-950 hover:bg-slate-900 text-white border border-white/15'
+                                }`}
                               >
-                                <Ticket className="w-3.5 h-3.5" />
-                                <span>{myRsvp?.qr_checked_in ? '✓ Attended' : 'Entry Pass'}</span>
+                                <Link2 className="w-3.5 h-3.5" />
+                                <span>{isUnlockedAccess ? '✓ Open Link' : 'Get Link / Access'}</span>
                               </button>
-                            ) : isAdminOrOwner ? (
+                              {requiresFee && (!myFeeVerified || isAdminOrOwner) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpsModalEvent(ev);
+                                    setOpsModalTab('fee');
+                                  }}
+                                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 border cursor-pointer ${
+                                    isDarkCanvas
+                                      ? 'bg-amber-500/20 border-amber-500/30 text-amber-300'
+                                      : 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'
+                                  }`}
+                                >
+                                  <CreditCard className="w-3.5 h-3.5" />
+                                  <span>{myFeeVerified ? 'Paid ✓' : `Pay Fee (${feeDisplay})`}</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {cfg.format === 'self_paced' && (
+                            <div className="flex flex-wrap gap-2 pt-2">
                               <button
                                 type="button"
                                 onClick={() => {
                                   setOpsModalEvent(ev);
-                                  setOpsModalTab('qr');
+                                  setOpsModalTab(
+                                    requiresFee && !myFeeVerified && !myFeePending ? 'fee' : 'pass'
+                                  );
                                 }}
-                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white border border-white/15 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+                                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
+                                  isUnlockedAccess
+                                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                    : 'bg-slate-950 hover:bg-slate-900 text-white border border-white/15'
+                                }`}
                               >
-                                <QrCode className="w-3.5 h-3.5" />
-                                <span>Venue QR ({qrCount})</span>
+                                <Link2 className="w-3.5 h-3.5" />
+                                <span>
+                                  {isUnlockedAccess
+                                    ? cfg.access_link_url
+                                      ? '✓ Open Resource'
+                                      : '✓ Enrolled'
+                                    : requiresFee
+                                    ? `Enroll / Pay (${feeDisplay})`
+                                    : 'Enroll & Access'}
+                                </span>
                               </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setIsQrScannerOpen(true)}
-                                className="flex-1 min-w-[110px] py-2 px-3 rounded-xl bg-slate-950 hover:bg-slate-900 text-white border border-white/15 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-                              >
-                                <QrCode className="w-3.5 h-3.5" />
-                                <span>{myRsvp?.qr_checked_in ? '✓ Attended' : 'Scan Attendance'}</span>
-                              </button>
-                            )}
+                              {isAdminOrOwner && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpsModalEvent(ev);
+                                    setOpsModalTab('fee');
+                                  }}
+                                  className="py-2 px-3 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 cursor-pointer"
+                                >
+                                  Manage
+                                </button>
+                              )}
+                            </div>
+                          )}
 
-                            {requiresFee && (
+                          {cfg.format === 'fee_collection' && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                              <span
+                                className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold ${
+                                  myFeeVerified
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : myFeePending
+                                    ? 'bg-amber-100 text-amber-900'
+                                    : 'bg-slate-100 text-slate-700'
+                                }`}
+                              >
+                                {myFeeVerified
+                                  ? '✓ Paid & Registered'
+                                  : myFeePending
+                                  ? '⏳ Pending Verification'
+                                  : 'Unpaid'}
+                              </span>
                               <button
                                 type="button"
                                 onClick={() => {
                                   setOpsModalEvent(ev);
                                   setOpsModalTab('fee');
                                 }}
-                                className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 border cursor-pointer ${
-                                  isDarkCanvas
-                                    ? 'bg-amber-500/20 border-amber-500/30 text-amber-300'
-                                    : 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'
-                                }`}
+                                className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 cursor-pointer"
                               >
                                 <CreditCard className="w-3.5 h-3.5" />
-                                <span>RM {reqFee.toFixed(0)}</span>
+                                <span>
+                                  {myFeeVerified || myFeePending
+                                    ? 'View Receipt & Status'
+                                    : `Pay Fee (${feeDisplay})`}
+                                </span>
                               </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOpsModalEvent(ev);
-                                setOpsModalTab('transport');
-                              }}
-                              className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition cursor-pointer ${
-                                isDarkCanvas
-                                  ? 'bg-white/10 hover:bg-white/15 text-slate-100 border-white/10'
-                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-200/80'
-                              }`}
-                            >
-                              <Car className="w-3.5 h-3.5 text-emerald-500" />
-                              <span>Carpool ({paxCount}/{drvCount})</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="pt-3 border-t border-slate-500/15 flex items-center justify-between gap-2 text-xs">
-                          <div className="flex gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleRsvpAttendance(ev, 'Attending')}
-                              className={`px-3.5 py-1.5 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 ${
-                                isAttending
-                                  ? 'bg-emerald-600 text-white shadow-xs'
-                                  : isDarkCanvas
-                                  ? 'bg-white/10 text-slate-300 hover:bg-emerald-600/30'
-                                  : 'bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700'
-                              }`}
-                            >
-                              {isAttending && <CheckCircle2 className="w-3.5 h-3.5" />}
-                              <span>{isAttending ? 'Attending' : 'Attend'}</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRsvpAttendance(ev, 'Not Attending')}
-                              className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
-                                isNotAttending
-                                  ? 'bg-slate-800 text-white'
-                                  : isDarkCanvas
-                                  ? 'bg-white/5 text-slate-400 hover:bg-white/10'
-                                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                              }`}
-                            >
-                              {isNotAttending ? 'Not Attending' : 'No'}
-                            </button>
-                          </div>
-
-                          {isAttending && (
-                            <select
-                              value={myRsvp?.transport_type || 'None'}
-                              onChange={async (e) => {
-                                const val = e.target.value as 'None' | 'One-Way' | 'Return Trip' | 'Round Trip';
-                                const prevTransport = myRsvp?.transport_type || 'None';
-                                setRsvps((prev) =>
-                                  prev.map((r) =>
-                                    r.budget_id === ev.id && r.user_id === profile.id ? { ...r, transport_type: val } : r
-                                  )
-                                );
-                                if (myRsvp?.id && !myRsvp.id.startsWith('temp-')) {
-                                  await supabase.from('event_rsvps').update({ transport_type: val }).eq('id', myRsvp.id);
-                                  const changes = computeFieldChanges([
-                                    { field: 'Transport Type', before: prevTransport, after: val },
-                                  ]);
-                                  await recordEditHistory({
-                                    actor: profile,
-                                    category: 'Carpool',
-                                    table: 'event_rsvps',
-                                    recordId: myRsvp.id,
-                                    recordTitle: `${profile.full_name} (${ev.event_name})`,
-                                    changes,
-                                  });
-                                }
-                                fetchAllData();
-                              }}
-                              className="rounded-xl border border-slate-500/30 bg-transparent px-2 py-1 font-bold"
-                            >
-                              {TRANSPORT_OPTIONS.map((o) => (
-                                <option key={o} value={o} className="text-slate-900">
-                                  {o === 'None' ? 'Own Transport' : o}
-                                </option>
-                              ))}
-                            </select>
+                            </div>
                           )}
                         </div>
+
+                        {cfg.format === 'physical' || cfg.format === 'online' ? (
+                          <div className="pt-3 border-t border-slate-500/15 flex items-center justify-between gap-2 text-xs">
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleRsvpAttendance(ev, 'Attending')}
+                                className={`px-3.5 py-1.5 rounded-xl font-bold transition cursor-pointer flex items-center gap-1 ${
+                                  isAttending
+                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                    : isDarkCanvas
+                                    ? 'bg-white/10 text-slate-300 hover:bg-emerald-600/30'
+                                    : 'bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700'
+                                }`}
+                              >
+                                {isAttending && <CheckCircle2 className="w-3.5 h-3.5" />}
+                                <span>{isAttending ? 'Attending' : 'Attend'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRsvpAttendance(ev, 'Not Attending')}
+                                className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+                                  isNotAttending
+                                    ? 'bg-slate-800 text-white'
+                                    : isDarkCanvas
+                                    ? 'bg-white/5 text-slate-400 hover:bg-white/10'
+                                    : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                }`}
+                              >
+                                {isNotAttending ? 'Not Attending' : 'No'}
+                              </button>
+                            </div>
+
+                            {cfg.format === 'physical' && isAttending && (
+                              <select
+                                value={myRsvp?.transport_type || 'None'}
+                                onChange={async (e) => {
+                                  const val = e.target.value as 'None' | 'One-Way' | 'Return Trip' | 'Round Trip';
+                                  const prevTransport = myRsvp?.transport_type || 'None';
+                                  setRsvps((prev) =>
+                                    prev.map((r) =>
+                                      r.budget_id === ev.id && r.user_id === profile.id ? { ...r, transport_type: val } : r
+                                    )
+                                  );
+                                  if (myRsvp?.id && !myRsvp.id.startsWith('temp-')) {
+                                    await supabase.from('event_rsvps').update({ transport_type: val }).eq('id', myRsvp.id);
+                                    const changes = computeFieldChanges([
+                                      { field: 'Transport Type', before: prevTransport, after: val },
+                                    ]);
+                                    await recordEditHistory({
+                                      actor: profile,
+                                      category: 'Carpool',
+                                      table: 'event_rsvps',
+                                      recordId: myRsvp.id,
+                                      recordTitle: `${profile.full_name} (${ev.event_name})`,
+                                      changes,
+                                    });
+                                  }
+                                  refreshEvents();
+                                }}
+                                className="rounded-xl border border-slate-500/30 bg-transparent px-2 py-1 font-bold"
+                              >
+                                {TRANSPORT_OPTIONS.map((o) => (
+                                  <option key={o} value={o} className="text-slate-900">
+                                    {o === 'None' ? 'Own Transport' : o}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        ) : cfg.format === 'self_paced' ? (
+                          <div className="pt-3 border-t border-slate-500/15 flex items-center justify-between text-[11px] opacity-80">
+                            <span>
+                              {myFeeVerified || (!requiresFee && isAttending)
+                                ? '✓ Enrolled in Program'
+                                : myFeePending
+                                ? '⏳ Verification Pending'
+                                : 'Open Enrollment'}
+                            </span>
+                            {ev.end_date || cfg.end_date ? (
+                              <span className="font-mono">Ends {cfg.end_date || ev.end_date}</span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -1658,7 +2131,7 @@ export default function Page() {
                 logs={activityLogs}
                 onOpenMemberProfile={handleOpenMemberProfile}
                 onRefresh={(m: string) => {
-                  fetchAllData();
+                  refreshEquipment();
                   showToast(m);
                 }}
               />
@@ -2166,7 +2639,7 @@ export default function Page() {
                                                 recordTitle: pc.title,
                                                 extraSummary: `Est. RM ${Number(pc.estimated_amount).toFixed(2)}`,
                                               });
-                                              fetchAllData();
+                                              refreshClaims();
                                               showToast('Pre-Claim removed from web (kept in Supabase)');
                                             },
                                           })
@@ -2201,7 +2674,7 @@ export default function Page() {
                 myFeePayments={feePayments.filter((f) => f.user_id === profile.id)}
                 onUpdated={(u: Partial<UserProfile>, m: string) => {
                   setProfile((p) => (p ? { ...p, ...u } : null));
-                  fetchAllData();
+                  refreshMembersAndSettings();
                   showToast(m);
                 }}
               />
@@ -2245,7 +2718,7 @@ export default function Page() {
                     'Updated Starting Club Savings',
                     `${profile.full_name} (${profile.matric_no}) set Starting Savings to Bank RM ${bank.toFixed(2)} + Cash RM ${cash.toFixed(2)} (${date})`
                   );
-                  await fetchAllData();
+                  await refreshFinance();
                   showToast(`Starting Savings saved: RM ${(bank + cash).toFixed(2)}`);
                 }}
                 externalOpenModal={quickAdjustFinanceOpen}
@@ -2253,7 +2726,7 @@ export default function Page() {
                 onSelectClaim={(c: Claim) => setSelectedClaim(c)}
                 onOpenMemberProfile={handleOpenMemberProfile}
                 onRefresh={(m: string) => {
-                  fetchAllData();
+                  refreshFinance();
                   showToast(m);
                 }}
               />
@@ -2417,7 +2890,7 @@ export default function Page() {
                         </div>
                       </>
                     )}
-                    {isAdminOrOwner && effectivePermissions.can_manage_posters_polls && (
+                    {isAdminOrOwner && effectivePermissions.can_manage_public_page && (
                       <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                         <div className="min-w-0">
                           <div className="text-[11px] font-extrabold text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
@@ -2737,7 +3210,7 @@ export default function Page() {
                                           );
                                           setRoleMode('admin');
                                           localStorage.setItem(`clubsync_mode_${profile.id}`, 'admin');
-                                          fetchAllData();
+                                          refreshMembersAndSettings();
                                           showToast(`Transferred Ownership to ${m.full_name}`);
                                         },
                                       })
@@ -2767,7 +3240,7 @@ export default function Page() {
                                             'Member removed',
                                             `${profile.full_name} removed ${m.full_name} (${m.matric_no}) from the roster`
                                           );
-                                          fetchAllData();
+                                          refreshMembersAndSettings();
                                           showToast(`Removed ${m.full_name}`);
                                         },
                                       })
@@ -2795,7 +3268,11 @@ export default function Page() {
               deletedRecords={deletedRecords}
               profile={profile}
               onRefresh={(m: string) => {
-                fetchAllData();
+                if (m.toLowerCase().includes('restor')) {
+                  fetchAllData();
+                } else {
+                  refreshLogs();
+                }
                 showToast(m);
               }}
             />
@@ -2988,7 +3465,7 @@ export default function Page() {
                   .update({ role: 'treasurer', admin_permissions: editingPerms })
                   .eq('id', permModalTarget.id);
                 setPermModalTarget(null);
-                fetchAllData();
+                refreshMembersAndSettings();
                 showToast('Permissions updated');
               }}
               className="p-6 space-y-2.5 text-xs max-h-[75vh] overflow-y-auto"
@@ -3033,11 +3510,12 @@ export default function Page() {
         equipmentLoans={activeEquipmentLoans}
         onSuccess={(m: string) => {
           showToast(m);
-          fetchAllData();
+          refreshEvents();
+          refreshEquipment();
         }}
       />
       <EventOperationsModal
-        event={opsModalEvent}
+        event={activeOpsEvent}
         initialTab={opsModalTab}
         profile={profile}
         isAdmin={isAdminOrOwner}
@@ -3050,11 +3528,12 @@ export default function Page() {
         paymentQrUrl={paymentQrUrl}
         paymentBankInfo={paymentBankInfo}
         onClose={() => setOpsModalEvent(null)}
+        onTabChange={setOpsModalTab}
         onOpenScanner={() => setIsQrScannerOpen(true)}
         onOpenMemberProfile={handleOpenMemberProfile}
         onRefresh={(m: string) => {
           showToast(m);
-          fetchAllData();
+          refreshEvents();
         }}
       />
       <ClaimFormModal
@@ -3080,7 +3559,7 @@ export default function Page() {
         profile={profile}
         onSuccess={(m: string) => {
           showToast(m);
-          fetchAllData();
+          refreshClaims();
         }}
       />
       <AuditReviewModal
@@ -3109,7 +3588,7 @@ export default function Page() {
         onOpenMemberProfile={handleOpenMemberProfile}
         onUpdated={(m: string) => {
           showToast(m);
-          fetchAllData();
+          refreshClaims();
         }}
       />
       <PreClaimReviewModal
@@ -3141,7 +3620,7 @@ export default function Page() {
         }}
         onUpdated={(m: string) => {
           showToast(m);
-          fetchAllData();
+          refreshClaims();
         }}
       />
       <PublicLandingEditorModal
@@ -3163,7 +3642,7 @@ export default function Page() {
           setInstagramUrlInput(legacyUpdates.instagram);
           setContactEmailInput(legacyUpdates.email);
           showToast(msg);
-          fetchAllData();
+          refreshMembersAndSettings();
         }}
       />
       <BudgetModal
@@ -3181,7 +3660,7 @@ export default function Page() {
         onOpenMemberProfile={handleOpenMemberProfile}
         onSuccess={(m: string) => {
           showToast(m);
-          fetchAllData();
+          refreshEvents();
         }}
       />
       <RecordHistoryModal
@@ -3220,6 +3699,18 @@ export default function Page() {
         onUpdatedPublicReadAt={(iso) =>
           setProfile((prev) => (prev ? { ...prev, public_chat_read_at: iso } : prev))
         }
+      />
+      <MobileBottomNav
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onOpenQrScanner={() => setIsQrScannerOpen(true)}
+        pendingClaimsCount={
+          isAdminOrOwner
+            ? activeClaims.filter((c) => c.status === 'Pending').length +
+              activePreClaims.filter((pc) => pc.status === 'Pending').length
+            : 0
+        }
+        darkMode={isDarkCanvas}
       />
     </div>
   );

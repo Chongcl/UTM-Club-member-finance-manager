@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { ActivityConfig } from './activityConfig';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -43,6 +44,7 @@ export interface AdminPermissions {
   can_manage_finance: boolean;
   can_manage_members: boolean;
   can_view_sensitive_profiles: boolean;
+  can_manage_public_page: boolean;
 }
 
 export const DEFAULT_ADMIN_PERMISSIONS: AdminPermissions = {
@@ -54,6 +56,7 @@ export const DEFAULT_ADMIN_PERMISSIONS: AdminPermissions = {
   can_manage_finance: false,
   can_manage_members: false,
   can_view_sensitive_profiles: false,
+  can_manage_public_page: false,
 };
 
 export const FULL_OWNER_PERMISSIONS: AdminPermissions = {
@@ -65,6 +68,7 @@ export const FULL_OWNER_PERMISSIONS: AdminPermissions = {
   can_manage_finance: true,
   can_manage_members: true,
   can_view_sensitive_profiles: true,
+  can_manage_public_page: true,
 };
 
 export const PERMISSION_LABELS: {
@@ -80,6 +84,7 @@ export const PERMISSION_LABELS: {
   { key: 'can_manage_finance', label: '6. Edit Club Finance & Savings', desc: 'Add/edit/delete Money In & Out (Otherwise View-Only)' },
   { key: 'can_manage_members', label: '7. Manage Members & Departments', desc: 'Customize departments and remove regular members' },
   { key: 'can_view_sensitive_profiles', label: '8. View Confidential Member Profiles', desc: 'See IC, phone, email, dorm, hometown & bank/QR details when inspecting profiles' },
+  { key: 'can_manage_public_page', label: '9. Customize Public Landing Page', desc: 'Edit public landing page layout, sections, theme & footer links' },
 ];
 
 export interface UserProfile {
@@ -165,6 +170,7 @@ export interface Budget {
   event_name: string;
   category: string;
   event_date: string;
+  end_date?: string | null;
   event_time: string;
   location: string;
   allocated_amount: number;
@@ -182,6 +188,7 @@ export interface Budget {
   public_slug?: string | null;
   guest_fee?: number | null;
   guest_capacity?: number;
+  activity_config?: ActivityConfig | null;
   description: string;
   status: 'Active' | 'Closed';
   deleted_at?: string | null;
@@ -242,6 +249,8 @@ export interface ActivityFeePayment {
   account_type?: AccountType;
   receipt_url: string;
   receipt_file_name: string;
+  selected_tier?: string | null;
+  registration_note?: string | null;
   status: 'Verified' | 'Pending' | 'Rejected';
   deleted_at?: string | null;
   deleted_by?: string | null;
@@ -350,6 +359,8 @@ export interface PublicGuestRegistration {
   account_type?: AccountType;
   receipt_url: string;
   receipt_file_name: string;
+  selected_tier?: string | null;
+  registration_note?: string | null;
   payment_status: 'Free' | 'Pending' | 'Verified' | 'Rejected';
   pass_approved: boolean;
   qr_checked_in: boolean;

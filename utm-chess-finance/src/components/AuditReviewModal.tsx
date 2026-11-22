@@ -121,6 +121,7 @@ export default function AuditReviewModal({
   const [confirmDeleteClaim, setConfirmDeleteClaim] = useState(false);
   const [deletingClaim, setDeletingClaim] = useState(false);
   const [compareMatch, setCompareMatch] = useState<DuplicateClaimMatch | null>(null);
+  const [copiedDeepLink, setCopiedDeepLink] = useState(false);
 
   useEffect(() => {
     if (claim) {
@@ -697,6 +698,21 @@ export default function AuditReviewModal({
             <h2 className="text-base font-bold mt-0.5 truncate">{claim.title}</h2>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={async () => {
+                if (typeof window === 'undefined') return;
+                const url = `${window.location.origin}/?tab=claims&claim=${claim.id}`;
+                await navigator.clipboard.writeText(url);
+                setCopiedDeepLink(true);
+                setTimeout(() => setCopiedDeepLink(false), 1800);
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-white text-xs font-bold cursor-pointer"
+              title="Copy shareable claim link"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>{copiedDeepLink ? 'Copied!' : 'Copy Link'}</span>
+            </button>
             {canEditOrDelete && (
               <>
                 <button

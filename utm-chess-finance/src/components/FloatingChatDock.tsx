@@ -727,7 +727,7 @@ export default function FloatingChatDock({
       <button
         type="button"
         onClick={() => onToggleOpen(true)}
-        className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-xl border border-emerald-400/50 cursor-pointer transition hover:scale-105"
+        className="fixed bottom-20 right-4 md:bottom-5 md:right-5 z-40 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-xl border border-emerald-400/50 cursor-pointer transition hover:scale-105"
         aria-label="Open Club Chat"
         title="Club Chat"
       >
@@ -990,7 +990,7 @@ export default function FloatingChatDock({
   );
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 w-[370px] max-w-[calc(100vw-1.5rem)] h-[540px] max-h-[82vh] rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden bg-white text-slate-900">
+    <div className="fixed bottom-20 right-3 md:bottom-5 md:right-5 z-40 w-[370px] max-w-[calc(100vw-1.5rem)] h-[520px] sm:h-[540px] max-h-[75vh] sm:max-h-[82vh] rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden bg-white text-slate-900">
       {inDmConversation && activeTarget ? (
         <>
           {/* DM Conversation Header (NO raw phone numbers or PII) */}

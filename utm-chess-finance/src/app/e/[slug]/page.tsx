@@ -10,6 +10,12 @@ import {
   downloadFileFromUrl,
 } from '@/lib/supabase';
 import {
+  ActivityConfig,
+  resolveActivityConfig,
+  formatActivitySchedule,
+  getFormatBadgeMeta,
+} from '@/lib/activityConfig';
+import {
   ArrowLeft,
   Calendar,
   Clock,
@@ -28,6 +34,7 @@ import {
   FileText,
   ShieldCheck,
   XCircle,
+  KeyRound,
 } from 'lucide-react';
 
 interface PublicEventPayload {
@@ -36,6 +43,7 @@ interface PublicEventPayload {
   event_name?: string;
   category?: string;
   event_date?: string;
+  end_date?: string | null;
   event_time?: string;
   location?: string;
   description?: string;
@@ -47,6 +55,7 @@ interface PublicEventPayload {
   effective_fee?: number;
   guest_capacity?: number;
   guest_registered_count?: number;
+  activity_config?: ActivityConfig | null;
   show_payment_qr?: boolean;
   payment_qr_url?: string;
   payment_bank_info?: string;
@@ -64,6 +73,12 @@ interface GuestSubmissionResult {
   payment_status?: 'Free' | 'Pending' | 'Verified' | 'Rejected';
   pass_approved?: boolean;
   qr_payload?: string | null;
+  selected_tier?: string;
+  registration_note?: string;
+  access_link_url?: string | null;
+  access_link_label?: string | null;
+  access_code?: string | null;
+  access_instructions?: string | null;
 }
 
 interface GuestPassStatusResult {
@@ -72,6 +87,8 @@ interface GuestPassStatusResult {
   guest_name?: string;
   institution_or_matric?: string;
   lookup_code?: string;
+  selected_tier?: string;
+  registration_note?: string;
   payment_status?: 'Free' | 'Pending' | 'Verified' | 'Rejected';
   pass_approved?: boolean;
   qr_checked_in?: boolean;
@@ -80,9 +97,15 @@ interface GuestPassStatusResult {
   event_id?: string;
   event_name?: string;
   event_date?: string;
+  end_date?: string | null;
   event_time?: string;
   location?: string;
   qr_payload?: string | null;
+  unlock_mode?: string;
+  access_link_url?: string | null;
+  access_link_label?: string | null;
+  access_code?: string | null;
+  access_instructions?: string | null;
 }
 
 function isPdfUrl(url?: string): boolean {
@@ -107,6 +130,8 @@ export default function PublicEventPage() {
   const [institution, setInstitution] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [selectedTierName, setSelectedTierName] = useState('');
+  const [registrationNote, setRegistrationNote] = useState('');
   const [amountPaid, setAmountPaid] = useState('');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -114,6 +139,7 @@ export default function PublicEventPage() {
   const [submissionResult, setSubmissionResult] = useState<GuestSubmissionResult | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedBank, setCopiedBank] = useState(false);
+  const [copiedAccess, setCopiedAccess] = useState(false);
 
   // Check My Pass state
   const [lookupInput, setLookupInput] = useState('');
@@ -136,8 +162,17 @@ export default function PublicEventPage() {
       } else {
         const payload = data as PublicEventPayload;
         setEventData(payload);
-        const effFee = Number(payload.effective_fee ?? payload.guest_fee ?? payload.registration_fee ?? 0);
-        setAmountPaid(effFee > 0 ? effFee.toFixed(2) : '0');
+        const cfg = resolveActivityConfig({
+          registration_fee: payload.effective_fee ?? payload.guest_fee ?? payload.registration_fee,
+          activity_config: payload.activity_config,
+        });
+        if (cfg.fee_tiers.length > 0) {
+          setSelectedTierName(cfg.fee_tiers[0].name);
+          setAmountPaid(cfg.fee_tiers[0].amount.toFixed(2));
+        } else {
+          const effFee = Number(payload.effective_fee ?? payload.guest_fee ?? payload.registration_fee ?? 0);
+          setAmountPaid(effFee > 0 ? effFee.toFixed(2) : '0');
+        }
       }
     } finally {
       setLoading(false);
@@ -148,15 +183,18 @@ export default function PublicEventPage() {
     void loadEvent();
   }, [loadEvent]);
 
-  const handleCopy = async (text: string, which: 'code' | 'bank') => {
+  const handleCopy = async (text: string, which: 'code' | 'bank' | 'access') => {
     try {
       await navigator.clipboard.writeText(text);
       if (which === 'code') {
         setCopiedCode(true);
         setTimeout(() => setCopiedCode(false), 2000);
-      } else {
+      } else if (which === 'bank') {
         setCopiedBank(true);
         setTimeout(() => setCopiedBank(false), 2000);
+      } else {
+        setCopiedAccess(true);
+        setTimeout(() => setCopiedAccess(false), 2000);
       }
     } catch {
       /* ignore clipboard error */
@@ -168,16 +206,26 @@ export default function PublicEventPage() {
     if (!eventData?.found || !eventData.id) return;
     setFormError(null);
 
+    const cfg = resolveActivityConfig({
+      registration_fee: eventData.effective_fee ?? eventData.guest_fee ?? eventData.registration_fee,
+      activity_config: eventData.activity_config,
+    });
+
     if (!guestName.trim() || !email.trim() || !phone.trim()) {
       setFormError('Please enter your full name, email address, and WhatsApp phone number.');
       return;
     }
 
-    const effFee = Number(eventData.effective_fee ?? 0);
-    const isPaid = effFee > 0;
-    const numAmt = isPaid ? parseFloat(amountPaid) || effFee : 0;
+    if (cfg.registration_prompt && !registrationNote.trim()) {
+      setFormError(`Please enter: ${cfg.registration_prompt}`);
+      return;
+    }
 
-    if (isPaid && !receiptFile) {
+    const effFee = Number(eventData.effective_fee ?? 0);
+    const numAmt = parseFloat(amountPaid) || effFee;
+    const isPaidSubmission = numAmt > 0 || (effFee > 0 && !cfg.allow_custom_amount);
+
+    if (isPaidSubmission && !receiptFile) {
       setFormError('Please upload your payment receipt image or PDF before submitting.');
       return;
     }
@@ -190,7 +238,7 @@ export default function PublicEventPage() {
     try {
       let receiptUrl = '';
       let receiptName = '';
-      if (isPaid && receiptFile) {
+      if (receiptFile) {
         const ext = receiptFile.name.split('.').pop() || 'jpg';
         const safePath = `guest-fees/${eventData.id}/${Date.now()}-${Math.random()
           .toString(36)
@@ -205,7 +253,8 @@ export default function PublicEventPage() {
         receiptName = receiptFile.name;
       }
 
-      const { data, error: rpcErr } = await supabase.rpc('submit_guest_registration', {
+      let res: GuestSubmissionResult | null = null;
+      const { data: extData, error: extErr } = await supabase.rpc('submit_guest_registration', {
         p_slug: slug,
         p_name: guestName.trim(),
         p_institution: institution.trim(),
@@ -214,13 +263,29 @@ export default function PublicEventPage() {
         p_amount: numAmt,
         p_receipt_url: receiptUrl,
         p_receipt_name: receiptName,
+        p_selected_tier: selectedTierName.trim(),
+        p_registration_note: registrationNote.trim(),
       });
 
-      if (rpcErr) {
-        throw new Error(rpcErr.message || 'Registration failed.');
+      if (extErr) {
+        const { data: baseData, error: baseErr } = await supabase.rpc('submit_guest_registration', {
+          p_slug: slug,
+          p_name: guestName.trim(),
+          p_institution: institution.trim(),
+          p_email: email.trim(),
+          p_phone: phone.trim(),
+          p_amount: numAmt,
+          p_receipt_url: receiptUrl,
+          p_receipt_name: receiptName,
+        });
+        if (baseErr) {
+          throw new Error(baseErr.message || 'Registration failed.');
+        }
+        res = baseData as GuestSubmissionResult;
+      } else {
+        res = extData as GuestSubmissionResult;
       }
 
-      const res = data as GuestSubmissionResult;
       if (!res?.ok) {
         setFormError(res?.error || 'Could not complete registration.');
         return;
@@ -297,14 +362,134 @@ export default function PublicEventPage() {
 
   const clubName = eventData.club_name || 'ClubSync';
   const logoUrl = eventData.logo_url || '';
+  const cfg = resolveActivityConfig({
+    event_date: eventData.event_date,
+    end_date: eventData.end_date,
+    registration_fee: eventData.effective_fee ?? eventData.guest_fee ?? eventData.registration_fee,
+    activity_config: eventData.activity_config,
+  });
+  const formatBadge = getFormatBadgeMeta(cfg.format);
+  const scheduleLabel = formatActivitySchedule({ event_date: eventData.event_date }, cfg);
   const effFee = Number(eventData.effective_fee ?? 0);
-  const isPaid = effFee > 0;
+  const isPaid = effFee > 0 || cfg.fee_tiers.some((t) => t.amount > 0) || cfg.allow_custom_amount;
   const cap = Number(eventData.guest_capacity || 0);
   const regCount = Number(eventData.guest_registered_count || 0);
   const spotsLeft = cap > 0 ? Math.max(0, cap - regCount) : null;
   const isFull = spotsLeft !== null && spotsLeft <= 0;
   const isClosed = eventData.status === 'Closed' || eventData.is_open === false;
   const progressPct = cap > 0 ? Math.min(100, Math.round((regCount / cap) * 100)) : 0;
+
+  const renderUnlockedAccessCard = (data: {
+    lookup_code?: string;
+    qr_payload?: string | null;
+    qr_checked_in?: boolean;
+    access_link_url?: string | null;
+    access_link_label?: string | null;
+    access_code?: string | null;
+    access_instructions?: string | null;
+    name?: string;
+  }) => {
+    const showQr =
+      (cfg.unlock_mode === 'entry_pass_qr' || cfg.unlock_mode === 'both_link_and_qr') &&
+      Boolean(data.qr_payload);
+    const showLink =
+      (cfg.unlock_mode === 'access_link' || cfg.unlock_mode === 'both_link_and_qr') &&
+      Boolean(data.access_link_url);
+
+    return (
+      <div className="space-y-4">
+        {showLink && data.access_link_url && (
+          <div className="p-5 rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 text-left space-y-3">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-extrabold uppercase">
+              <CheckCircle2 className="w-3 h-3" />
+              <span>Access Unlocked</span>
+            </div>
+            <a
+              href={data.access_link_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-sm"
+            >
+              <span>{data.access_link_label || cfg.access_link_label}</span>
+              <ExternalLink className="w-4 h-4" />
+            </a>
+            {data.access_code && (
+              <div className="p-3 rounded-xl bg-white border border-emerald-200 flex items-center justify-between gap-2 text-xs">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                    Access Code / PIN
+                  </span>
+                  <span className="font-mono font-extrabold text-slate-900">{data.access_code}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleCopy(data.access_code || '', 'access')}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-bold text-[11px] cursor-pointer"
+                >
+                  <KeyRound className="w-3 h-3 inline mr-1" />
+                  {copiedAccess ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            )}
+            {data.access_instructions && (
+              <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line bg-white/80 rounded-xl p-3 border border-emerald-100">
+                {data.access_instructions}
+              </p>
+            )}
+          </div>
+        )}
+
+        {showQr && data.qr_payload && (
+          <div className="p-6 rounded-3xl bg-gradient-to-b from-slate-900 to-emerald-950 text-white max-w-sm mx-auto space-y-4 shadow-xl text-center">
+            <span className="px-3 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase">
+              {data.qr_checked_in ? 'CHECKED IN ✓' : 'Guest Entry Pass QR'}
+            </span>
+            <div className="p-3 bg-white rounded-2xl inline-block">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=${encodeURIComponent(
+                  data.qr_payload
+                )}`}
+                alt="Guest Entry Pass QR"
+                className="w-48 h-48 object-contain"
+              />
+            </div>
+            <div className="text-xs">
+              {data.name && <div className="font-extrabold">{data.name}</div>}
+              <div className="font-mono text-emerald-300">{data.lookup_code}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                void downloadFileFromUrl(
+                  `https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=15&data=${encodeURIComponent(
+                    data.qr_payload || ''
+                  )}`,
+                  `Guest_Pass_${data.lookup_code || 'QR'}.png`
+                )
+              }
+              className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>Download Entry Pass QR</span>
+            </button>
+          </div>
+        )}
+
+        {!showLink && !showQr && (
+          <div className="p-6 rounded-3xl bg-emerald-50 border-2 border-emerald-200 text-center space-y-2 max-w-sm mx-auto">
+            <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
+            <div className="text-base font-extrabold text-emerald-950">
+              Registration Confirmed &amp; Verified
+            </div>
+            <p className="text-xs text-emerald-800">
+              Your registration reference code is{' '}
+              <span className="font-mono font-extrabold">{data.lookup_code}</span>.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50/80 via-white to-slate-50 text-slate-900">
@@ -328,10 +513,9 @@ export default function PublicEventPage() {
               <div className="text-[11px] text-slate-500 truncate">Public Guest Event Portal</div>
             </div>
           </Link>
-
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold shrink-0 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold shrink-0 transition"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Back to Club Portal</span>
@@ -344,9 +528,16 @@ export default function PublicEventPage() {
         {/* Left/Top Column: Event Info */}
         <section className="lg:col-span-5 bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold">
-              {eventData.category}
-            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold">
+                {eventData.category}
+              </span>
+              {cfg.format !== 'physical' && (
+                <span className={`px-2.5 py-1 rounded-full border text-[11px] font-extrabold ${formatBadge.badgeClass}`}>
+                  {formatBadge.label}
+                </span>
+              )}
+            </div>
             <span
               className={`px-3 py-1 rounded-full text-xs font-extrabold ${
                 isPaid
@@ -354,7 +545,13 @@ export default function PublicEventPage() {
                   : 'bg-teal-50 text-teal-800 border border-teal-200'
               }`}
             >
-              {isPaid ? `Guest Fee: RM ${effFee.toFixed(2)}` : 'Free Admission'}
+              {cfg.fee_tiers.length > 0
+                ? `From RM ${Math.min(...cfg.fee_tiers.map((t) => t.amount)).toFixed(2)}`
+                : effFee > 0
+                ? `Guest Fee: RM ${effFee.toFixed(2)}`
+                : cfg.allow_custom_amount
+                ? 'Custom RM Amount'
+                : 'Free Admission'}
             </span>
           </div>
 
@@ -375,16 +572,20 @@ export default function PublicEventPage() {
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 text-xs text-slate-700">
             <div className="flex items-center gap-2.5">
               <Calendar className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="font-semibold">{eventData.event_date}</span>
+              <span className="font-semibold">{scheduleLabel}</span>
             </div>
-            <div className="flex items-center gap-2.5">
-              <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="font-semibold">{eventData.event_time}</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="font-semibold">{eventData.location}</span>
-            </div>
+            {eventData.event_time && (
+              <div className="flex items-center gap-2.5">
+                <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="font-semibold">{eventData.event_time}</span>
+              </div>
+            )}
+            {eventData.location && cfg.format !== 'self_paced' && cfg.format !== 'fee_collection' && (
+              <div className="flex items-center gap-2.5">
+                <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="font-semibold">{eventData.location}</span>
+              </div>
+            )}
           </div>
 
           {cap > 0 && (
@@ -430,7 +631,7 @@ export default function PublicEventPage() {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Check My Pass
+              Check My Status / Pass
             </button>
           </div>
 
@@ -446,7 +647,7 @@ export default function PublicEventPage() {
                       Registration Received!
                     </h2>
                     <p className="text-xs text-slate-600">
-                      Save your lookup code below to check your pass anytime.
+                      Save your lookup code below to check your status anytime.
                     </p>
                   </div>
 
@@ -471,49 +672,23 @@ export default function PublicEventPage() {
                     </button>
                   </div>
 
-                  {submissionResult.pass_approved && submissionResult.qr_payload ? (
-                    <div className="p-6 rounded-3xl bg-gradient-to-b from-slate-900 to-emerald-950 text-white max-w-sm mx-auto space-y-4 shadow-xl">
-                      <span className="px-3 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-extrabold uppercase">
-                        Guest Entry Pass QR
-                      </span>
-                      <div className="p-3 bg-white rounded-2xl inline-block">
-                        <img
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=${encodeURIComponent(
-                            submissionResult.qr_payload
-                          )}`}
-                          alt="Guest Entry Pass QR"
-                          className="w-48 h-48 object-contain"
-                        />
-                      </div>
-                      <div className="text-xs">
-                        <div className="font-extrabold">{guestName}</div>
-                        <div className="font-mono text-emerald-300">
-                          {submissionResult.lookup_code}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void downloadFileFromUrl(
-                            `https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=15&data=${encodeURIComponent(
-                              submissionResult.qr_payload || ''
-                            )}`,
-                            `Guest_Pass_${submissionResult.lookup_code || 'QR'}.png`
-                          )
-                        }
-                        className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Download className="w-4 h-4" />
-                        <span>Download Entry Pass QR</span>
-                      </button>
-                    </div>
+                  {submissionResult.pass_approved || submissionResult.payment_status === 'Free' ? (
+                    renderUnlockedAccessCard({
+                      lookup_code: submissionResult.lookup_code,
+                      qr_payload: submissionResult.qr_payload,
+                      access_link_url: submissionResult.access_link_url,
+                      access_link_label: submissionResult.access_link_label,
+                      access_code: submissionResult.access_code,
+                      access_instructions: submissionResult.access_instructions,
+                      name: guestName,
+                    })
                   ) : (
                     <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 text-xs space-y-3 text-left">
                       <div className="flex items-start gap-2.5">
                         <Lock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                         <p className="font-semibold leading-relaxed">
                           Receipt submitted — check back anytime under{' '}
-                          <strong>&ldquo;Check My Pass&rdquo;</strong> with code{' '}
+                          <strong>&ldquo;Check My Status / Pass&rdquo;</strong> with code{' '}
                           <span className="font-mono font-extrabold">
                             {submissionResult.lookup_code}
                           </span>{' '}
@@ -530,7 +705,7 @@ export default function PublicEventPage() {
                         }}
                         className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
                       >
-                        Go to Check My Pass →
+                        Check My Status →
                       </button>
                     </div>
                   )}
@@ -543,15 +718,15 @@ export default function PublicEventPage() {
                   </h3>
                   <p className="text-slate-500 max-w-sm mx-auto">
                     {isClosed
-                      ? 'This event is no longer accepting new guest sign-ups.'
-                      : 'All guest registration spots for this event have been filled.'}
+                      ? 'This activity is no longer accepting new guest sign-ups.'
+                      : 'All guest registration spots for this activity have been filled.'}
                   </p>
                   <button
                     type="button"
                     onClick={() => setActiveTab('check')}
                     className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"
                   >
-                    Already registered? Check My Pass →
+                    Already registered? Check Status →
                   </button>
                 </div>
               ) : (
@@ -561,7 +736,7 @@ export default function PublicEventPage() {
                       Guest Registration Form
                     </h2>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      No club account needed. Your digital pass QR will be tied to your lookup code.
+                      No club account needed. Your status &amp; confirmation will be tied to your lookup code.
                     </p>
                   </div>
 
@@ -626,16 +801,70 @@ export default function PublicEventPage() {
                     </div>
                   </div>
 
+                  {cfg.registration_prompt && (
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">
+                        {cfg.registration_prompt} *
+                      </label>
+                      <input
+                        type="text"
+                        value={registrationNote}
+                        onChange={(e) => setRegistrationNote(e.target.value)}
+                        placeholder={`Enter ${cfg.registration_prompt}`}
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                        required
+                      />
+                    </div>
+                  )}
+
                   {isPaid && (
                     <div className="p-4 rounded-2xl bg-slate-50 border border-emerald-200 space-y-3.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-extrabold text-emerald-950 text-sm">
-                          Fee Payment (RM {effFee.toFixed(2)})
+                          Fee Payment
                         </span>
                         <span className="text-[11px] font-semibold text-emerald-800">
                           Upload receipt to submit
                         </span>
                       </div>
+
+                      {cfg.fee_tiers.length > 0 && (
+                        <div className="space-y-1.5">
+                          <label className="block font-bold text-slate-700">
+                            Select Option / Tier
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {cfg.fee_tiers.map((t) => {
+                              const active = selectedTierName === t.name;
+                              return (
+                                <button
+                                  key={t.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedTierName(t.name);
+                                    if (!cfg.allow_custom_amount) {
+                                      setAmountPaid(t.amount.toFixed(2));
+                                    }
+                                  }}
+                                  className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                                    active
+                                      ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-500'
+                                      : 'border-slate-200 bg-white hover:border-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2 font-extrabold text-slate-900">
+                                    <span>{t.name}</span>
+                                    <span className="text-emerald-700">RM {t.amount.toFixed(2)}</span>
+                                  </div>
+                                  {t.description && (
+                                    <p className="text-[11px] text-slate-500 mt-0.5">{t.description}</p>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       {eventData.show_payment_qr &&
                         (eventData.payment_qr_url || eventData.payment_bank_info) && (
@@ -722,7 +951,7 @@ export default function PublicEventPage() {
                         <input
                           type="number"
                           step="0.01"
-                          min="0.01"
+                          min="0"
                           value={amountPaid}
                           onChange={(e) => setAmountPaid(e.target.value)}
                           className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-bold"
@@ -777,7 +1006,7 @@ export default function PublicEventPage() {
               <div className="space-y-5 text-xs">
                 <div>
                   <h2 className="text-base font-extrabold text-slate-900">
-                    Check Your Entry Pass Status
+                    Check Your Pass / Registration Status
                   </h2>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     Enter your Lookup Code (e.g., <span className="font-mono">GST-XXXXXX</span>) or registration Email.
@@ -808,7 +1037,7 @@ export default function PublicEventPage() {
 
                 {passSearchAttempted && !checkingPass && !passResult?.found && (
                   <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center text-slate-500">
-                    No guest registration matched that Lookup Code or Email for this event.
+                    No guest registration matched that Lookup Code or Email for this activity.
                   </div>
                 )}
 
@@ -824,6 +1053,7 @@ export default function PublicEventPage() {
                           {passResult.institution_or_matric
                             ? ` · ${passResult.institution_or_matric}`
                             : ''}
+                          {passResult.selected_tier ? ` · ${passResult.selected_tier}` : ''}
                         </div>
                       </div>
                       <span
@@ -842,39 +1072,17 @@ export default function PublicEventPage() {
                       </span>
                     </div>
 
-                    {passResult.pass_approved && passResult.qr_payload ? (
-                      <div className="p-5 rounded-3xl bg-gradient-to-b from-slate-900 to-emerald-950 text-white text-center space-y-3">
-                        <div className="flex items-center justify-center gap-1.5 text-emerald-300 text-xs font-extrabold">
-                          <ShieldCheck className="w-4 h-4" />
-                          <span>
-                            {passResult.qr_checked_in ? 'CHECKED IN ✓' : 'ENTRY PASS UNLOCKED'}
-                          </span>
-                        </div>
-                        <div className="p-3 bg-white rounded-2xl inline-block">
-                          <img
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data=${encodeURIComponent(
-                              passResult.qr_payload
-                            )}`}
-                            alt="Guest Entry Pass QR"
-                            className="w-48 h-48 object-contain"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void downloadFileFromUrl(
-                              `https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=15&data=${encodeURIComponent(
-                                passResult.qr_payload || ''
-                              )}`,
-                              `Guest_Pass_${passResult.lookup_code || 'QR'}.png`
-                            )
-                          }
-                          className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Download className="w-4 h-4" />
-                          <span>Download Entry Pass QR</span>
-                        </button>
-                      </div>
+                    {passResult.pass_approved || passResult.payment_status === 'Free' ? (
+                      renderUnlockedAccessCard({
+                        lookup_code: passResult.lookup_code,
+                        qr_payload: passResult.qr_payload,
+                        qr_checked_in: passResult.qr_checked_in,
+                        access_link_url: passResult.access_link_url,
+                        access_link_label: passResult.access_link_label,
+                        access_code: passResult.access_code,
+                        access_instructions: passResult.access_instructions,
+                        name: passResult.guest_name,
+                      })
                     ) : passResult.payment_status === 'Rejected' ? (
                       <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-center gap-2 font-semibold">
                         <XCircle className="w-4 h-4 shrink-0" />
@@ -886,7 +1094,7 @@ export default function PublicEventPage() {
                       <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 flex items-center gap-2 font-semibold">
                         <Lock className="w-4 h-4 text-amber-600 shrink-0" />
                         <span>
-                          Payment verification is still pending. Once the treasurer verifies your receipt, your Guest Entry Pass QR will appear right here!
+                          Payment verification is still pending. Once the treasurer verifies your receipt, your pass or link will unlock right here!
                         </span>
                       </div>
                     )}
