@@ -802,7 +802,7 @@ export default function FloatingChatDock({
             </p>
             <p className="text-[11px]">
               {isPublicFeed
-                ? 'Everyone in the club can chat here. Text & emoji only.'
+                ? 'Everyone in the club can chat here.'
                 : 'Text & emoji messages only.'}
             </p>
           </div>
