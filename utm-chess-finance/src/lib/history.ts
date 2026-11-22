@@ -8,6 +8,8 @@ import {
 export type TrackedTable =
   | 'budgets'
   | 'claims'
+  | 'pre_claims'
+  | 'public_guest_registrations'
   | 'activity_fee_payments'
   | 'equipment_items'
   | 'equipment_loans'
@@ -148,6 +150,8 @@ export function tableDisplayLabel(table: TrackedTable): string {
   const labels: Record<TrackedTable, string> = {
     budgets: 'Activity / Event',
     claims: 'Claim / Reimbursement',
+    pre_claims: 'Pre-Claim / Cash Advance',
+    public_guest_registrations: 'Guest Registration',
     activity_fee_payments: 'Fee Payment',
     equipment_items: 'Equipment Item',
     equipment_loans: 'Equipment Borrowing',

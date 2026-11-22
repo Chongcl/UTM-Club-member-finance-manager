@@ -10,6 +10,8 @@ import {
   EventRsvp,
   ActivityFeePayment,
   Claim,
+  PreClaim,
+  PublicGuestRegistration,
   EquipmentItem,
   EquipmentLoan,
   Announcement,
@@ -36,6 +38,8 @@ import EquipmentSection from '@/components/EquipmentSection';
 import ProfileSection from '@/components/ProfileSection';
 import ClaimFormModal from '@/components/ClaimFormModal';
 import AuditReviewModal from '@/components/AuditReviewModal';
+import PreClaimReviewModal from '@/components/PreClaimReviewModal';
+import PublicLandingPage from '@/components/PublicLandingPage';
 import BudgetModal, { EditableActivity } from '@/components/BudgetModal';
 import EventOperationsModal from '@/components/EventOperationsModal';
 import QrScannerModal from '@/components/QrScannerModal';
@@ -80,6 +84,8 @@ import {
   FileSpreadsheet,
   ExternalLink,
   History,
+  Search,
+  CalendarClock,
 } from 'lucide-react';
 
 interface ConfirmDialogState {
@@ -190,6 +196,12 @@ export default function Page() {
 
   const [clubNameInput, setClubNameInput] = useState('ClubSync');
   const [newBatchInput, setNewBatchInput] = useState('2026/2027');
+  const [clubTaglineInput, setClubTaglineInput] = useState(
+    'Campus activities, events, and student community — all in one portal.'
+  );
+  const [clubAboutInput, setClubAboutInput] = useState('');
+  const [instagramUrlInput, setInstagramUrlInput] = useState('');
+  const [contactEmailInput, setContactEmailInput] = useState('');
   const [newAdminPinInput, setNewAdminPinInput] = useState('');
   const [newOwnerPinInput, setNewOwnerPinInput] = useState('');
   const [departmentsText, setDepartmentsText] = useState(DEFAULT_DEPARTMENTS.join('\n'));
@@ -220,6 +232,8 @@ export default function Page() {
 
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
+  const [preClaims, setPreClaims] = useState<PreClaim[]>([]);
+  const [guestRegistrations, setGuestRegistrations] = useState<PublicGuestRegistration[]>([]);
   const [rsvps, setRsvps] = useState<EventRsvp[]>([]);
   const [feePayments, setFeePayments] = useState<ActivityFeePayment[]>([]);
   const [allMembers, setAllMembers] = useState<UserProfile[]>([]);
@@ -238,6 +252,11 @@ export default function Page() {
 
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
+  const [claimModalInitMode, setClaimModalInitMode] = useState<'receipt' | 'preclaim'>('receipt');
+  const [claimModalPreClaimId, setClaimModalPreClaimId] = useState<string | null>(null);
+  const [claimsSubTab, setClaimsSubTab] = useState<'receipts' | 'preclaims'>('receipts');
+  const [claimsStatusFilter, setClaimsStatusFilter] = useState<string>('ALL');
+  const [claimsSearchQuery, setClaimsSearchQuery] = useState<string>('');
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
@@ -247,6 +266,7 @@ export default function Page() {
   const [opsModalEvent, setOpsModalEvent] = useState<Budget | null>(null);
   const [opsModalTab, setOpsModalTab] = useState<'fee' | 'transport' | 'qr' | 'pass'>('pass');
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
+  const [selectedPreClaim, setSelectedPreClaim] = useState<PreClaim | null>(null);
   const [quickAdjustFinanceOpen, setQuickAdjustFinanceOpen] = useState(false);
   const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
 
@@ -415,6 +435,8 @@ export default function Page() {
       pvRes,
       logRes,
       notifRes,
+      preRes,
+      guestRes,
     ] = await Promise.all([
       supabase.from('budgets').select('*').order('event_date', { ascending: true }),
       supabase.from('claims').select('*').order('created_at', { ascending: false }),
@@ -436,10 +458,18 @@ export default function Page() {
       supabase.from('poll_votes').select('*'),
       supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(1000),
       supabase.from('club_notifications').select('*').order('created_at', { ascending: false }).limit(40),
+      activeUid
+        ? supabase.from('pre_claims').select('*').order('created_at', { ascending: false })
+        : Promise.resolve({ data: null }),
+      meProfile && (meProfile.role === 'owner' || meProfile.role === 'treasurer')
+        ? supabase.from('public_guest_registrations').select('*').order('created_at', { ascending: false })
+        : Promise.resolve({ data: null }),
     ]);
 
     if (bRes.data) setBudgets(bRes.data as Budget[]);
     if (cRes.data) setClaims(cRes.data as Claim[]);
+    if (preRes.data) setPreClaims(preRes.data as PreClaim[]);
+    if (guestRes.data) setGuestRegistrations(guestRes.data as PublicGuestRegistration[]);
     if (rRes.data) setRsvps(rRes.data as EventRsvp[]);
     if (fRes.data) setFeePayments(fRes.data as ActivityFeePayment[]);
     if (mRes.data) {
@@ -508,6 +538,23 @@ export default function Page() {
       const dbLogo = sRes.data.logo_url ? String(sRes.data.logo_url) : '';
       setLogoUrl(dbLogo);
       setLogoUrlInput(dbLogo);
+      if (sRes.data.club_tagline !== undefined) {
+        setClubTaglineInput(
+          String(
+            sRes.data.club_tagline ||
+              'Campus activities, events, and student community — all in one portal.'
+          )
+        );
+      }
+      if (sRes.data.club_about !== undefined) {
+        setClubAboutInput(String(sRes.data.club_about || ''));
+      }
+      if (sRes.data.instagram_url !== undefined) {
+        setInstagramUrlInput(String(sRes.data.instagram_url || ''));
+      }
+      if (sRes.data.contact_email !== undefined) {
+        setContactEmailInput(String(sRes.data.contact_email || ''));
+      }
       if (depts.length > 0) {
         setDepartments((prev) => (prev.join('|') === depts.join('|') ? prev : depts));
         setDepartmentsText(depts.join('\n'));
@@ -614,6 +661,8 @@ export default function Page() {
 
   const activeBudgets = filterActiveRecords('budgets', budgets);
   const activeClaims = filterActiveRecords('claims', claims);
+  const activePreClaims = filterActiveRecords('pre_claims', preClaims);
+  const activeGuestRegistrations = filterActiveRecords('public_guest_registrations', guestRegistrations);
   const activeFeePayments = filterActiveRecords('activity_fee_payments', feePayments);
   const activeEquipmentItems = filterActiveRecords('equipment_items', equipmentItems);
   const activeEquipmentLoans = filterActiveRecords('equipment_loans', equipmentLoans);
@@ -643,6 +692,26 @@ export default function Page() {
         deletedAt: r.deleted_at || r.created_at,
         deletedBy: r.deleted_by || 'Admin',
         category: 'Claims' as const,
+      })),
+    ...preClaims
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'pre_claims' as const,
+        recordId: r.id,
+        title: `Pre-Claim: ${r.title} (${r.requester_name})`,
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Claims' as const,
+      })),
+    ...guestRegistrations
+      .filter((r) => Boolean(r.deleted_at))
+      .map((r) => ({
+        table: 'public_guest_registrations' as const,
+        recordId: r.id,
+        title: `Guest: ${r.guest_name} (${r.lookup_code})`,
+        deletedAt: r.deleted_at || r.created_at,
+        deletedBy: r.deleted_by || 'Admin',
+        category: 'Fees' as const,
       })),
     ...feePayments
       .filter((r) => Boolean(r.deleted_at))
@@ -1027,119 +1096,31 @@ export default function Page() {
 
   if (!sessionUserId || !profile) {
     return (
-      <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-4 bg-gradient-to-br from-emerald-50 via-teal-50/70 to-sky-100">
-        <div className="fixed -top-28 -left-28 w-96 h-96 rounded-full bg-emerald-300/30 blur-3xl pointer-events-none" />
-        <div className="fixed -bottom-28 -right-28 w-96 h-96 rounded-full bg-sky-300/30 blur-3xl pointer-events-none" />
-        <div className="relative z-10 max-w-md w-full bg-white/90 backdrop-blur-xl text-slate-900 rounded-3xl shadow-xl border border-white overflow-hidden">
-          <div className="bg-gradient-to-b from-emerald-100/80 via-teal-50/50 to-white p-6 text-center text-slate-900 border-b border-emerald-100">
-            {logoUrl && !logoUrl.toLowerCase().endsWith('.pdf') ? (
-              <img src={logoUrl} alt={clubName} className="w-14 h-14 rounded-2xl object-cover mx-auto mb-2 bg-white shadow-sm border border-emerald-200" />
-            ) : (
-              <div className="w-13 h-13 rounded-2xl bg-emerald-600 text-white flex items-center justify-center mx-auto mb-2 shadow-sm">
-                <Layers className="w-7 h-7" />
-              </div>
-            )}
-            <h1 className="text-lg font-extrabold text-emerald-950">{clubName}</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Club Finance &amp; Activity Portal</p>
-          </div>
-          <div className="grid grid-cols-2 bg-emerald-50/80 border border-emerald-100 p-1 m-5 mb-2 rounded-2xl">
-            <button
-              type="button"
-              onClick={() => setAuthMode('login')}
-              className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${authMode === 'login' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-emerald-800'}`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => setAuthMode('signup')}
-              className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${authMode === 'signup' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-emerald-800'}`}
-            >
-              Register
-            </button>
-          </div>
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setAuthError(null);
-              const res =
-                authMode === 'signup'
-                  ? await supabase.auth.signUp({
-                      email: email.trim(),
-                      password,
-                      options: {
-                        data: {
-                          full_name: fullName.trim(),
-                          matric_no: matricNo.trim().toUpperCase(),
-                          phone_number: phoneNumber.trim(),
-                          role: 'member',
-                        },
-                      },
-                    })
-                  : await supabase.auth.signInWithPassword({ email: email.trim(), password });
-              if (res.error) setAuthError(res.error.message);
-            }}
-            className="p-6 pt-2 space-y-3 text-xs"
-          >
-            {authMode === 'signup' && (
-              <>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Full Name *"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 text-sm"
-                  required
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    value={matricNo}
-                    onChange={(e) => setMatricNo(e.target.value)}
-                    placeholder="Matric No *"
-                    className="rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 font-mono"
-                    required
-                  />
-                  <input
-                    type="tel"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="Phone *"
-                    className="rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 font-mono"
-                    required
-                  />
-                </div>
-              </>
-            )}
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email *"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 text-sm"
-              required
-            />
-            <input
-              type="password"
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password *"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 text-sm"
-              required
-            />
-            {authError && <div className="text-rose-600">{authError}</div>}
-            <button type="submit" className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-sm cursor-pointer">
-              {authMode === 'login' ? 'Sign In' : 'Register'}
-            </button>
-          </form>
-        </div>
-      </div>
+      <PublicLandingPage
+        initialClubName={clubName}
+        initialLogoUrl={logoUrl}
+        initialBatch={currentBatch}
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        email={email}
+        setEmail={setEmail}
+        password={password}
+        setPassword={setPassword}
+        fullName={fullName}
+        setFullName={setFullName}
+        matricNo={matricNo}
+        setMatricNo={setMatricNo}
+        phoneNumber={phoneNumber}
+        setPhoneNumber={setPhoneNumber}
+        authError={authError}
+        setAuthError={setAuthError}
+      />
     );
   }
 
   const visibleBudgets = activeBudgets.filter((b) => activityTimeFilter === 'All' || b.status === activityTimeFilter);
   const visibleClaims = activeClaims.filter((c) => isAdminOrOwner || c.user_id === profile.id);
+  const visiblePreClaims = activePreClaims.filter((pc) => isAdminOrOwner || pc.user_id === profile.id);
   const isUserClubOwner = (userId?: string) =>
     Boolean(
       userId &&
@@ -1266,7 +1247,12 @@ export default function Page() {
           onToggleDarkMode={toggleDarkMode}
           canCustomizeTheme={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
           onOpenThemeStudio={() => setShowThemeStudio(true)}
-          pendingClaimsCount={isAdminOrOwner ? activeClaims.filter((c) => c.status === 'Pending').length : 0}
+          pendingClaimsCount={
+            isAdminOrOwner
+              ? activeClaims.filter((c) => c.status === 'Pending').length +
+                activePreClaims.filter((pc) => pc.status === 'Pending').length
+              : 0
+          }
           onUnlockAdmin={handleUnlockAdmin}
           onSwitchMode={handleSwitchMode}
           onSignOut={async () => {
@@ -1274,8 +1260,20 @@ export default function Page() {
             setProfile(null);
             setSessionUserId(null);
             setRoleMode('member');
+            setBudgets([]);
+            setClaims([]);
+            setPreClaims([]);
+            setGuestRegistrations([]);
+            setAllMembers([]);
+            setLedgerEntries([]);
+            setFeePayments([]);
+            setRsvps([]);
           }}
-          onOpenNewClaim={() => setIsClaimModalOpen(true)}
+          onOpenNewClaim={() => {
+            setClaimModalInitMode('receipt');
+            setClaimModalPreClaimId(null);
+            setIsClaimModalOpen(true);
+          }}
           onOpenQrScanner={() => setIsQrScannerOpen(true)}
           onOpenNewActivity={
             isAdminOrOwner && effectivePermissions.can_manage_activities
@@ -1654,224 +1652,531 @@ export default function Page() {
             </div>
           )}
 
-          {activeTab === 'claims' && (
-            <section className="bg-white/90 backdrop-blur-xl text-slate-900 rounded-3xl border border-emerald-100 overflow-hidden shadow-xs">
-              <div className="p-5 border-b flex flex-wrap justify-between items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <Receipt className="w-5 h-5 text-emerald-700" />
-                  <h2 className="text-base font-extrabold">Reimbursement Claims</h2>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {isOwner && (
-                    <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 rounded-xl px-2.5 py-1 text-xs">
-                      <span className="font-bold text-indigo-900">2-Stage &gt; RM</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="10"
-                        value={claimThresholdInput}
-                        onChange={(e) => setClaimThresholdInput(e.target.value)}
-                        className="w-16 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs font-extrabold text-indigo-950"
-                      />
+          {activeTab === 'claims' && (() => {
+            const receiptStatusPills = ['ALL', 'Pending', 'Approved', 'Rejected'] as const;
+            const preClaimStatusPills = [
+              'ALL',
+              'Pending',
+              'Pre-Approved',
+              'Advance Disbursed',
+              'Receipt Submitted',
+              'Settled',
+            ] as const;
+            const q = claimsSearchQuery.trim().toLowerCase();
+
+            const filteredReceiptClaims = visibleClaims.filter((c) => {
+              if (claimsStatusFilter !== 'ALL' && c.status !== claimsStatusFilter) return false;
+              if (q) {
+                const hay = `${c.title} ${c.claimant_name} ${c.matric_no} ${c.category} ${c.merchant_name}`.toLowerCase();
+                if (!hay.includes(q)) return false;
+              }
+              return true;
+            });
+
+            const filteredPreClaims = visiblePreClaims.filter((pc) => {
+              if (claimsStatusFilter !== 'ALL' && pc.status !== claimsStatusFilter) return false;
+              if (q) {
+                const evName =
+                  activeBudgets.find((b) => b.id === pc.budget_id)?.event_name ||
+                  pc.custom_event_name ||
+                  '';
+                const hay = `${pc.title} ${pc.requester_name} ${pc.matric_no} ${pc.category} ${evName}`.toLowerCase();
+                if (!hay.includes(q)) return false;
+              }
+              return true;
+            });
+
+            return (
+              <section className="bg-white/90 backdrop-blur-xl text-slate-900 rounded-3xl border border-emerald-100 overflow-hidden shadow-xs">
+                <div className="p-5 border-b flex flex-wrap justify-between items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Receipt className="w-5 h-5 text-emerald-700" />
+                      <h2 className="text-base font-extrabold">Claims &amp; Pre-Claims</h2>
+                    </div>
+
+                    <div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 gap-1 text-xs">
                       <button
                         type="button"
-                        onClick={() => void saveClaimThreshold(claimThresholdInput)}
-                        className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] cursor-pointer"
+                        onClick={() => {
+                          setClaimsSubTab('receipts');
+                          setClaimsStatusFilter('ALL');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg font-extrabold cursor-pointer transition ${
+                          claimsSubTab === 'receipts'
+                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
                       >
-                        Save
+                        Receipt Claims ({visibleClaims.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setClaimsSubTab('preclaims');
+                          setClaimsStatusFilter('ALL');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg font-extrabold inline-flex items-center gap-1 cursor-pointer transition ${
+                          claimsSubTab === 'preclaims'
+                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <CalendarClock className="w-3.5 h-3.5" />
+                        <span>Pre-Claims ({visiblePreClaims.length})</span>
                       </button>
                     </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setIsClaimModalOpen(true)}
-                    className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white cursor-pointer"
-                  >
-                    <PlusCircle className="w-4 h-4 inline mr-1" />
-                    New Claim
-                  </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {isOwner && (
+                      <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 rounded-xl px-2.5 py-1 text-xs">
+                        <span className="font-bold text-indigo-900">2-Stage &gt; RM</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="10"
+                          value={claimThresholdInput}
+                          onChange={(e) => setClaimThresholdInput(e.target.value)}
+                          className="w-16 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs font-extrabold text-indigo-950"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void saveClaimThreshold(claimThresholdInput)}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] cursor-pointer"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClaimModalInitMode('receipt');
+                        setClaimModalPreClaimId(null);
+                        setIsClaimModalOpen(true);
+                      }}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                    >
+                      <PlusCircle className="w-4 h-4 inline mr-1" />
+                      Submit Claim
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-b">
-                      <th className="py-3 px-4">Item</th>
-                      <th className="py-3 px-4">Claimant &amp; Bank</th>
-                      <th className="py-3 px-4">Amount</th>
-                      <th className="py-3 px-4">Status &amp; Proof</th>
-                      <th className="py-3 px-4 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {visibleClaims.map((c) => {
-                      const bankStr =
-                        c.payment_info ||
-                        (c.description?.includes('Reimburse To:')
-                          ? c.description.split('Reimburse To:')[1]?.trim()
-                          : '');
-                      const isReceiptPdf =
-                        c.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
-                        c.receipt_url?.toLowerCase().split('?')[0].endsWith('.pdf') ||
-                        c.receipt_url?.startsWith('data:application/pdf');
-                      return (
-                        <tr key={c.id}>
-                          <td className="py-3 px-4 font-bold">
-                            <div className="flex items-center gap-2.5">
-                              {c.receipt_url && !isReceiptPdf && (
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedClaim(c)}
-                                  className="w-9 h-9 rounded-lg border border-emerald-200 bg-emerald-50/40 overflow-hidden shrink-0 cursor-pointer hover:border-emerald-400"
-                                  title="View full receipt photo"
-                                >
-                                  <img
-                                    src={c.receipt_url}
-                                    alt={c.title}
-                                    className="w-full h-full object-cover"
-                                  />
-                                </button>
-                              )}
-                              <div>
-                                {c.title} <span className="text-emerald-700 block font-normal">{c.category}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleOpenMemberProfile({
-                                  userId: c.user_id,
-                                  matricNo: c.matric_no,
-                                  name: c.claimant_name,
-                                })
-                              }
-                              className="font-semibold text-emerald-900 hover:text-emerald-700 underline decoration-emerald-300 underline-offset-2 cursor-pointer text-left"
-                              title="View member profile"
-                            >
-                              {c.claimant_name} ({c.matric_no})
-                            </button>
-                            {bankStr && <div className="text-[11px] font-mono text-slate-500">{bankStr}</div>}
-                          </td>
-                          <td className="py-3 px-4 font-extrabold">RM {Number(c.amount).toFixed(2)}</td>
-                          <td className="py-3 px-4 space-y-1">
-                            <span
-                              className={`inline-block px-2.5 py-0.5 rounded-full font-bold ${
-                                c.status === 'Approved'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : c.status === 'Rejected'
-                                  ? 'bg-rose-100 text-rose-700'
-                                  : 'bg-amber-100 text-amber-900'
-                              }`}
-                            >
-                              {c.status === 'Pending' && Number(c.amount) > claimThreshold
-                                ? isUserClubOwner(c.user_id)
-                                  ? c.treasurer_verified_by
-                                    ? 'Treasurer Verified (Ready)'
-                                    : 'Awaiting Treasurer Approval'
-                                  : c.treasurer_verified_by
-                                  ? 'Stage 2/2: Awaiting Owner'
-                                  : 'Stage 1/2: Awaiting Treasurer'
-                                : c.status}
-                            </span>
-                            {c.payout_proof_url && (
-                              <div>
-                                <a
-                                  href={c.payout_proof_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:underline"
-                                >
-                                  <span>✓ Proof of Paid</span>
-                                  <ExternalLink className="w-3 h-3" />
-                                </a>
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="inline-flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setHistoryTarget({
-                                    table: 'claims',
-                                    recordId: c.id,
-                                    title: c.title,
-                                  })
-                                }
-                                className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold cursor-pointer inline-flex items-center gap-1"
-                                title="View edit & delete history"
-                              >
-                                <History className="w-3.5 h-3.5" />
-                                <span>History</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setSelectedClaim(c)}
-                                className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                <span>
-                                  {isAdminOrOwner && effectivePermissions.can_manage_claims_fees
-                                    ? 'Review / Edit'
-                                    : 'View / Edit'}
-                                </span>
-                              </button>
-                              {((isAdminOrOwner && effectivePermissions.can_manage_claims_fees) ||
-                                (c.user_id === profile.id && c.status !== 'Approved')) && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setConfirmDialog({
-                                      title: 'Remove Claim from Web?',
-                                      message: `"${c.title}" (RM ${Number(c.amount).toFixed(2)}) will be removed from ClubSync dashboards and tables, while its row remains preserved in Supabase.`,
-                                      confirmLabel: 'Remove from Web',
-                                      danger: true,
-                                      onConfirm: async () => {
-                                        if (c.status === 'Approved' && c.budget_id) {
-                                          const linkedBudget = activeBudgets.find((b) => b.id === c.budget_id);
-                                          if (linkedBudget) {
-                                            await supabase
-                                              .from('budgets')
-                                              .update({
-                                                spent_amount: Math.max(
-                                                  0,
-                                                  Number(linkedBudget.spent_amount) - Number(c.amount)
-                                                ),
-                                              })
-                                              .eq('id', linkedBudget.id);
-                                          }
-                                        }
-                                        await softDeleteRecord({
-                                          actor: profile,
-                                          category: 'Claims',
+
+                {/* Compact Filter Pills + Search */}
+                <div className="px-5 py-3 bg-slate-50/70 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                  <div className="flex flex-wrap items-center gap-1">
+                    {(claimsSubTab === 'receipts' ? receiptStatusPills : preClaimStatusPills).map(
+                      (st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setClaimsStatusFilter(st)}
+                          className={`px-2.5 py-1 rounded-lg font-bold text-[11px] cursor-pointer transition ${
+                            claimsStatusFilter === st
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {st === 'ALL' ? 'All' : st}
+                        </button>
+                      )
+                    )}
+                  </div>
+
+                  <div className="relative w-full sm:w-60">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={claimsSearchQuery}
+                      onChange={(e) => setClaimsSearchQuery(e.target.value)}
+                      placeholder="Search item, member, dept..."
+                      className="w-full rounded-xl border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                    />
+                  </div>
+                </div>
+
+                {claimsSubTab === 'receipts' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b">
+                          <th className="py-3 px-4">Item</th>
+                          <th className="py-3 px-4">Claimant &amp; Bank</th>
+                          <th className="py-3 px-4">Amount</th>
+                          <th className="py-3 px-4">Status &amp; Proof</th>
+                          <th className="py-3 px-4 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {filteredReceiptClaims.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-slate-400">
+                              No matching receipt claims found.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredReceiptClaims.map((c) => {
+                            const bankStr =
+                              c.payment_info ||
+                              (c.description?.includes('Reimburse To:')
+                                ? c.description.split('Reimburse To:')[1]?.trim()
+                                : '');
+                            const isReceiptPdf =
+                              c.receipt_file_name?.toLowerCase().endsWith('.pdf') ||
+                              c.receipt_url?.toLowerCase().split('?')[0].endsWith('.pdf') ||
+                              c.receipt_url?.startsWith('data:application/pdf');
+                            return (
+                              <tr key={c.id}>
+                                <td className="py-3 px-4 font-bold">
+                                  <div className="flex items-center gap-2.5">
+                                    {c.receipt_url && !isReceiptPdf && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedClaim(c)}
+                                        className="w-9 h-9 rounded-lg border border-emerald-200 bg-emerald-50/40 overflow-hidden shrink-0 cursor-pointer hover:border-emerald-400"
+                                        title="View full receipt photo"
+                                      >
+                                        <img
+                                          src={c.receipt_url}
+                                          alt={c.title}
+                                          className="w-full h-full object-cover"
+                                        />
+                                      </button>
+                                    )}
+                                    <div>
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span>{c.title}</span>
+                                        {c.pre_claim_id && (
+                                          <span className="px-1.5 py-0.2 rounded bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-bold">
+                                            Pre-Claim
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-emerald-700 block font-normal">{c.category}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOpenMemberProfile({
+                                        userId: c.user_id,
+                                        matricNo: c.matric_no,
+                                        name: c.claimant_name,
+                                      })
+                                    }
+                                    className="font-semibold text-emerald-900 hover:text-emerald-700 underline decoration-emerald-300 underline-offset-2 cursor-pointer text-left"
+                                    title="View member profile"
+                                  >
+                                    {c.claimant_name} ({c.matric_no})
+                                  </button>
+                                  {bankStr && <div className="text-[11px] font-mono text-slate-500">{bankStr}</div>}
+                                </td>
+                                <td className="py-3 px-4 font-extrabold">RM {Number(c.amount).toFixed(2)}</td>
+                                <td className="py-3 px-4 space-y-1">
+                                  <span
+                                    className={`inline-block px-2.5 py-0.5 rounded-full font-bold ${
+                                      c.status === 'Approved'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : c.status === 'Rejected'
+                                        ? 'bg-rose-100 text-rose-700'
+                                        : 'bg-amber-100 text-amber-900'
+                                    }`}
+                                  >
+                                    {c.status === 'Pending' && Number(c.amount) > claimThreshold
+                                      ? isUserClubOwner(c.user_id)
+                                        ? c.treasurer_verified_by
+                                          ? 'Treasurer Verified (Ready)'
+                                          : 'Awaiting Treasurer Approval'
+                                        : c.treasurer_verified_by
+                                        ? 'Stage 2/2: Awaiting Owner'
+                                        : 'Stage 1/2: Awaiting Treasurer'
+                                      : c.status}
+                                  </span>
+                                  {c.payout_proof_url && (
+                                    <div>
+                                      <a
+                                        href={c.payout_proof_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:underline"
+                                      >
+                                        <span>✓ Proof of Paid</span>
+                                        <ExternalLink className="w-3 h-3" />
+                                      </a>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="inline-flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setHistoryTarget({
                                           table: 'claims',
                                           recordId: c.id,
-                                          recordTitle: c.title,
-                                          extraSummary: `RM ${Number(c.amount).toFixed(2)} by ${c.claimant_name}`,
-                                        });
-                                        fetchAllData();
-                                        showToast('Claim removed from web (kept in Supabase)');
-                                      },
-                                    })
-                                  }
-                                  className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 cursor-pointer"
-                                  title="Remove claim from web view (keeps row in Supabase)"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
+                                          title: c.title,
+                                        })
+                                      }
+                                      className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold cursor-pointer inline-flex items-center gap-1"
+                                      title="View edit & delete history"
+                                    >
+                                      <History className="w-3.5 h-3.5" />
+                                      <span>History</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedClaim(c)}
+                                      className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>
+                                        {isAdminOrOwner && effectivePermissions.can_manage_claims_fees
+                                          ? 'Review / Edit'
+                                          : 'View / Edit'}
+                                      </span>
+                                    </button>
+                                    {((isAdminOrOwner && effectivePermissions.can_manage_claims_fees) ||
+                                      (c.user_id === profile.id && c.status !== 'Approved')) && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setConfirmDialog({
+                                            title: 'Remove Claim from Web?',
+                                            message: `"${c.title}" (RM ${Number(c.amount).toFixed(2)}) will be removed from ClubSync dashboards and tables, while its row remains preserved in Supabase.`,
+                                            confirmLabel: 'Remove from Web',
+                                            danger: true,
+                                            onConfirm: async () => {
+                                              if (c.status === 'Approved' && c.budget_id) {
+                                                const linkedBudget = activeBudgets.find((b) => b.id === c.budget_id);
+                                                if (linkedBudget) {
+                                                  await supabase
+                                                    .from('budgets')
+                                                    .update({
+                                                      spent_amount: Math.max(
+                                                        0,
+                                                        Number(linkedBudget.spent_amount) - Number(c.amount)
+                                                      ),
+                                                    })
+                                                    .eq('id', linkedBudget.id);
+                                                }
+                                              }
+                                              await softDeleteRecord({
+                                                actor: profile,
+                                                category: 'Claims',
+                                                table: 'claims',
+                                                recordId: c.id,
+                                                recordTitle: c.title,
+                                                extraSummary: `RM ${Number(c.amount).toFixed(2)} by ${c.claimant_name}`,
+                                              });
+                                              fetchAllData();
+                                              showToast('Claim removed from web (kept in Supabase)');
+                                            },
+                                          })
+                                        }
+                                        className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 cursor-pointer"
+                                        title="Remove claim from web view (keeps row in Supabase)"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b">
+                          <th className="py-3 px-4">Request &amp; Activity</th>
+                          <th className="py-3 px-4">Requester &amp; Needed By</th>
+                          <th className="py-3 px-4">Est. / Approved Cap</th>
+                          <th className="py-3 px-4">Status &amp; Advance</th>
+                          <th className="py-3 px-4 text-right">Action</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
+                      </thead>
+                      <tbody className="divide-y">
+                        {filteredPreClaims.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-8 text-center text-slate-400">
+                              No Pre-Claims found. Use &ldquo;Submit Claim → Buying soon? Pre-Claim&rdquo; to request approval before buying.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredPreClaims.map((pc) => {
+                            const evName =
+                              activeBudgets.find((b) => b.id === pc.budget_id)?.event_name ||
+                              pc.custom_event_name ||
+                              'General Club Expense';
+                            const isMine = pc.user_id === profile.id;
+                            const canUploadReceipt =
+                              isMine &&
+                              (pc.status === 'Pre-Approved' || pc.status === 'Advance Disbursed');
+                            const advDisb = Number(pc.advance_disbursed_amount || 0);
+                            return (
+                              <tr key={pc.id}>
+                                <td className="py-3 px-4">
+                                  <div className="font-bold text-slate-900">{pc.title}</div>
+                                  <div className="text-[11px] text-emerald-700">
+                                    {evName} · {pc.category}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOpenMemberProfile({
+                                        userId: pc.user_id,
+                                        matricNo: pc.matric_no,
+                                        name: pc.requester_name,
+                                      })
+                                    }
+                                    className="font-semibold text-emerald-900 hover:text-emerald-700 underline decoration-emerald-300 underline-offset-2 cursor-pointer text-left"
+                                  >
+                                    {pc.requester_name} ({pc.matric_no})
+                                  </button>
+                                  <div className="text-[11px] font-mono text-slate-500">
+                                    Needed by {pc.needed_date}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="font-extrabold text-slate-900">
+                                    RM {Number(pc.estimated_amount).toFixed(2)}
+                                  </div>
+                                  {pc.approved_cap !== null && pc.approved_cap !== undefined && (
+                                    <div className="text-[11px] font-bold text-emerald-700">
+                                      Cap: RM {Number(pc.approved_cap).toFixed(2)}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 space-y-1">
+                                  <span
+                                    className={`inline-block px-2.5 py-0.5 rounded-full font-bold ${
+                                      pc.status === 'Pre-Approved' || pc.status === 'Settled'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : pc.status === 'Advance Disbursed'
+                                        ? 'bg-sky-100 text-sky-900'
+                                        : pc.status === 'Receipt Submitted'
+                                        ? 'bg-indigo-100 text-indigo-900'
+                                        : pc.status === 'Rejected' || pc.status === 'Cancelled'
+                                        ? 'bg-rose-100 text-rose-700'
+                                        : 'bg-amber-100 text-amber-900'
+                                    }`}
+                                  >
+                                    {pc.status === 'Pending' && Number(pc.estimated_amount) > claimThreshold
+                                      ? isUserClubOwner(pc.user_id)
+                                        ? pc.treasurer_verified_by
+                                          ? 'Treasurer Verified'
+                                          : 'Awaiting Treasurer'
+                                        : pc.treasurer_verified_by
+                                        ? 'Stage 2/2: Awaiting Owner'
+                                        : 'Stage 1/2: Awaiting Treasurer'
+                                      : pc.status}
+                                  </span>
+                                  {advDisb > 0 ? (
+                                    <div className="text-[11px] font-bold text-sky-800">
+                                      Adv Disbursed: RM {advDisb.toFixed(2)}
+                                    </div>
+                                  ) : pc.needs_cash_advance ? (
+                                    <div className="text-[11px] font-semibold text-amber-800">
+                                      Advance Req: RM {Number(pc.advance_amount || pc.estimated_amount).toFixed(2)}
+                                    </div>
+                                  ) : null}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                                    {canUploadReceipt && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setClaimModalInitMode('receipt');
+                                          setClaimModalPreClaimId(pc.id);
+                                          setIsClaimModalOpen(true);
+                                        }}
+                                        className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
+                                      >
+                                        <Receipt className="w-3.5 h-3.5" />
+                                        <span>Upload Receipt →</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setHistoryTarget({
+                                          table: 'pre_claims',
+                                          recordId: pc.id,
+                                          title: pc.title,
+                                        })
+                                      }
+                                      className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold cursor-pointer inline-flex items-center gap-1"
+                                      title="View history"
+                                    >
+                                      <History className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedPreClaim(pc)}
+                                      className="px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer inline-flex items-center gap-1"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>
+                                        {isAdminOrOwner && effectivePermissions.can_manage_claims_fees
+                                          ? 'Review'
+                                          : 'View'}
+                                      </span>
+                                    </button>
+                                    {((isAdminOrOwner && effectivePermissions.can_manage_claims_fees) ||
+                                      (isMine && pc.status === 'Pending')) && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setConfirmDialog({
+                                            title: 'Remove Pre-Claim from Web?',
+                                            message: `"${pc.title}" will be removed from web views while remaining in Supabase.`,
+                                            confirmLabel: 'Remove from Web',
+                                            danger: true,
+                                            onConfirm: async () => {
+                                              await softDeleteRecord({
+                                                actor: profile,
+                                                category: 'Claims',
+                                                table: 'pre_claims',
+                                                recordId: pc.id,
+                                                recordTitle: pc.title,
+                                                extraSummary: `Est. RM ${Number(pc.estimated_amount).toFixed(2)}`,
+                                              });
+                                              fetchAllData();
+                                              showToast('Pre-Claim removed from web (kept in Supabase)');
+                                            },
+                                          })
+                                        }
+                                        className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 cursor-pointer"
+                                        title="Remove from web"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            );
+          })()}
 
           {activeTab === 'profile' && (
             <div className="text-slate-900">
@@ -1899,7 +2204,9 @@ export default function Page() {
                 budgetPlanItems={activeBudgetPlanItems}
                 rsvps={activeRsvps}
                 claims={activeClaims}
+                preClaims={activePreClaims}
                 feePayments={activeFeePayments}
+                guestRegistrations={activeGuestRegistrations}
                 profile={profile}
                 logs={activityLogs}
                 canEdit={effectivePermissions.can_manage_finance}
@@ -2048,6 +2355,53 @@ export default function Page() {
                             className="w-full rounded-xl border px-3 py-2 font-bold"
                           />
                         </div>
+                        <div className="p-3 rounded-2xl bg-emerald-50/50 border border-emerald-200 space-y-2">
+                          <div className="text-[11px] font-extrabold text-emerald-950 uppercase tracking-wide">
+                            Public Landing Page Showcase
+                          </div>
+                          <div>
+                            <label className="block font-bold mb-1">Club Tagline</label>
+                            <input
+                              type="text"
+                              value={clubTaglineInput}
+                              onChange={(e) => setClubTaglineInput(e.target.value)}
+                              placeholder="Campus activities, events, and student community..."
+                              className="w-full rounded-xl border bg-white px-3 py-1.5"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold mb-1">Club About</label>
+                            <textarea
+                              rows={2}
+                              value={clubAboutInput}
+                              onChange={(e) => setClubAboutInput(e.target.value)}
+                              placeholder="Short club overview displayed in the public portal footer..."
+                              className="w-full rounded-xl border bg-white px-3 py-1.5"
+                            />
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div>
+                              <label className="block font-bold mb-1">Instagram URL</label>
+                              <input
+                                type="url"
+                                value={instagramUrlInput}
+                                onChange={(e) => setInstagramUrlInput(e.target.value)}
+                                placeholder="https://instagram.com/..."
+                                className="w-full rounded-xl border bg-white px-3 py-1.5"
+                              />
+                            </div>
+                            <div>
+                              <label className="block font-bold mb-1">Contact Email</label>
+                              <input
+                                type="email"
+                                value={contactEmailInput}
+                                onChange={(e) => setContactEmailInput(e.target.value)}
+                                placeholder="club@utm.my"
+                                className="w-full rounded-xl border bg-white px-3 py-1.5"
+                              />
+                            </div>
+                          </div>
+                        </div>
                       </>
                     )}
                     {(isOwner || effectivePermissions.can_manage_members || effectivePermissions.can_manage_claims_fees) && (
@@ -2082,6 +2436,10 @@ export default function Page() {
                             updatePayload.club_name = clubNameInput.trim() || 'ClubSync';
                             updatePayload.current_batch = newBatchInput.trim();
                             updatePayload.claim_approval_threshold = nextThresh;
+                            updatePayload.club_tagline = clubTaglineInput.trim();
+                            updatePayload.club_about = clubAboutInput.trim();
+                            updatePayload.instagram_url = instagramUrlInput.trim();
+                            updatePayload.contact_email = contactEmailInput.trim();
                           }
                           const { error: settingsErr } = await supabase
                             .from('club_settings')
@@ -2635,6 +2993,7 @@ export default function Page() {
         budgets={activeBudgets}
         rsvps={activeRsvps}
         feePayments={activeFeePayments}
+        guestRegistrations={activeGuestRegistrations}
         profile={profile}
         isAdmin={isAdminOrOwner}
         equipmentItems={activeEquipmentItems}
@@ -2652,6 +3011,7 @@ export default function Page() {
         permissions={effectivePermissions}
         rsvps={activeRsvps}
         feePayments={activeFeePayments}
+        guestRegistrations={activeGuestRegistrations}
         claims={activeClaims}
         logs={activityLogs}
         paymentQrUrl={paymentQrUrl}
@@ -2666,10 +3026,24 @@ export default function Page() {
       />
       <ClaimFormModal
         isOpen={isClaimModalOpen}
-        onClose={() => setIsClaimModalOpen(false)}
+        onClose={() => {
+          setIsClaimModalOpen(false);
+          setClaimModalPreClaimId(null);
+          setClaimModalInitMode('receipt');
+        }}
         budgets={activeBudgets}
         departments={departments}
         existingClaims={activeClaims}
+        preClaims={activePreClaims}
+        initialMode={claimModalInitMode}
+        initialPreClaimId={claimModalPreClaimId}
+        adminRecipientIds={allMembers
+          .filter(
+            (u) =>
+              u.role === 'owner' ||
+              (u.role === 'treasurer' && Boolean(u.admin_permissions?.can_manage_claims_fees))
+          )
+          .map((u) => u.id)}
         profile={profile}
         onSuccess={(m: string) => {
           showToast(m);
@@ -2678,6 +3052,14 @@ export default function Page() {
       />
       <AuditReviewModal
         claim={selectedClaim}
+        linkedPreClaim={
+          selectedClaim
+            ? activePreClaims.find(
+                (pc) =>
+                  pc.id === selectedClaim.pre_claim_id || pc.linked_claim_id === selectedClaim.id
+              ) || null
+            : null
+        }
         budget={activeBudgets.find((b) => b.id === selectedClaim?.budget_id)}
         budgets={activeBudgets}
         departments={departments}
@@ -2692,6 +3074,38 @@ export default function Page() {
         approvalThreshold={claimThreshold}
         onClose={() => setSelectedClaim(null)}
         onOpenMemberProfile={handleOpenMemberProfile}
+        onUpdated={(m: string) => {
+          showToast(m);
+          fetchAllData();
+        }}
+      />
+      <PreClaimReviewModal
+        preClaim={selectedPreClaim}
+        budget={activeBudgets.find((b) => b.id === selectedPreClaim?.budget_id)}
+        allClaims={activeClaims}
+        requesterProfile={allMembers.find((u) => u.id === selectedPreClaim?.user_id)}
+        profile={{
+          ...profile,
+          role:
+            isAdminOrOwner && effectivePermissions.can_manage_claims_fees
+              ? isOwner
+                ? 'owner'
+                : 'treasurer'
+              : 'member',
+        }}
+        isOwner={isOwner}
+        canManageClaims={isAdminOrOwner && effectivePermissions.can_manage_claims_fees}
+        ownerUserId={ownerUserId}
+        isRequesterOwner={isUserClubOwner(selectedPreClaim?.user_id)}
+        approvalThreshold={claimThreshold}
+        onClose={() => setSelectedPreClaim(null)}
+        onOpenMemberProfile={handleOpenMemberProfile}
+        onSelectClaim={(c: Claim) => setSelectedClaim(c)}
+        onUploadReceipt={(pc: PreClaim) => {
+          setClaimModalInitMode('receipt');
+          setClaimModalPreClaimId(pc.id);
+          setIsClaimModalOpen(true);
+        }}
         onUpdated={(m: string) => {
           showToast(m);
           fetchAllData();

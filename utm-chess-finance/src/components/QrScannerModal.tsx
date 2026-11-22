@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, EquipmentItem, EquipmentLoan, logActivity } from '@/lib/supabase';
+import { supabase, Budget, UserProfile, EventRsvp, ActivityFeePayment, PublicGuestRegistration, EquipmentItem, EquipmentLoan, logActivity } from '@/lib/supabase';
 import {
   localDateStr,
   addDaysStr,
@@ -14,13 +14,14 @@ import { X, Camera, CheckCircle2, AlertTriangle, Upload, QrCode, ShieldCheck, XC
 
 interface QrScannerModalProps {
   isOpen: boolean; onClose: () => void; budgets: Budget[]; rsvps: EventRsvp[];
-  feePayments?: ActivityFeePayment[]; profile: UserProfile; isAdmin?: boolean; onSuccess: (msg: string) => void;
+  feePayments?: ActivityFeePayment[]; guestRegistrations?: PublicGuestRegistration[];
+  profile: UserProfile; isAdmin?: boolean; onSuccess: (msg: string) => void;
   equipmentItems?: EquipmentItem[]; equipmentLoans?: EquipmentLoan[];
 }
 
 interface GatePassResult {
   allowed: boolean; studentName: string; matricNo: string; department: string;
-  eventName: string; feeStatus: string; reason: string;
+  eventName: string; feeStatus: string; reason: string; isGuest?: boolean;
 }
 
 declare global {
@@ -30,7 +31,7 @@ declare global {
 }
 
 export default function QrScannerModal({
-  isOpen, onClose, budgets, rsvps, feePayments = [], profile, isAdmin = false, onSuccess,
+  isOpen, onClose, budgets, rsvps, feePayments = [], guestRegistrations = [], profile, isAdmin = false, onSuccess,
   equipmentItems = [], equipmentLoans = [],
 }: QrScannerModalProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -99,6 +100,76 @@ export default function QrScannerModal({
       setEqError(null);
       setEqReturnDate(addDaysStr(localDateStr(), 7));
       setEqScan({ item: found, unit: Number.isFinite(unitNo) ? unitNo : undefined });
+      return;
+    }
+
+    if (trimmed.includes('CLUBSYNC_GUEST::v1::')) {
+      const guestPayload = trimmed.slice(trimmed.indexOf('CLUBSYNC_GUEST::v1::'));
+      const parts = guestPayload.split('::');
+      const eventId = parts[2]?.trim();
+      const regId = parts[3]?.trim();
+      const scannedToken = parts[4]?.trim().toUpperCase();
+
+      const targetEvent = budgets.find((b) => b.id === eventId);
+      if (!targetEvent) { setErrorMsg('Event not found.'); return; }
+
+      const activeToken = (targetEvent.qr_code_token || targetEvent.id.slice(0, 6)).trim().toUpperCase();
+      if (scannedToken !== activeToken) {
+        setGatePass({
+          allowed: false, isGuest: true, studentName: 'Expired Guest QR Pass', matricNo: '-', department: 'Guest',
+          eventName: targetEvent.event_name, feeStatus: 'Expired',
+          reason: 'DENIED: This guest QR pass has expired.',
+        });
+        return;
+      }
+
+      let guestReg = guestRegistrations.find((g) => g.id === regId && g.budget_id === targetEvent.id && !g.deleted_at);
+      if (!guestReg && regId) {
+        const { data: liveGuest } = await supabase
+          .from('public_guest_registrations')
+          .select('*')
+          .eq('id', regId)
+          .eq('budget_id', targetEvent.id)
+          .is('deleted_at', null)
+          .maybeSingle();
+        if (liveGuest) guestReg = liveGuest as PublicGuestRegistration;
+      }
+
+      if (!guestReg) {
+        setGatePass({
+          allowed: false, isGuest: true, studentName: 'Unregistered Guest', matricNo: '-', department: 'Guest',
+          eventName: targetEvent.event_name, feeStatus: 'Not Found',
+          reason: 'DENIED: Guest registration record was not found.',
+        });
+        return;
+      }
+
+      if (!guestReg.pass_approved) {
+        setGatePass({
+          allowed: false, isGuest: true, studentName: guestReg.guest_name, matricNo: guestReg.lookup_code,
+          department: guestReg.institution_or_matric || 'Guest', eventName: targetEvent.event_name,
+          feeStatus: guestReg.payment_status === 'Pending' ? 'Pending Verification' : guestReg.payment_status,
+          reason: 'DENIED: Guest fee verification or Admin pass grant required.',
+        });
+        return;
+      }
+
+      const nowIso = new Date().toISOString();
+      await supabase
+        .from('public_guest_registrations')
+        .update({ qr_checked_in: true, qr_checked_in_at: nowIso })
+        .eq('id', guestReg.id);
+
+      setGatePass({
+        allowed: true, isGuest: true, studentName: guestReg.guest_name, matricNo: guestReg.lookup_code,
+        department: guestReg.institution_or_matric || 'Guest', eventName: targetEvent.event_name,
+        feeStatus:
+          guestReg.payment_status === 'Free'
+            ? 'Free Guest Entry ✓'
+            : `Paid RM ${Number(guestReg.amount_paid).toFixed(2)} ✓`,
+        reason: 'ACCESS GRANTED (Guest): Guest attendance automatically recorded!',
+      });
+      onSuccess(`Admitted Guest ${guestReg.guest_name}!`);
       return;
     }
 
@@ -194,7 +265,7 @@ export default function QrScannerModal({
 
     setSuccessMsg(`Attendance automatically recorded for "${targetEvent.event_name}"!`);
     setTimeout(() => { onSuccess(`Attendance recorded for "${targetEvent.event_name}"!`); onClose(); }, 1000);
-  }, [budgets, rsvps, feePayments, profile, onSuccess, onClose]);
+  }, [budgets, rsvps, feePayments, guestRegistrations, profile, onSuccess, onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -489,7 +560,11 @@ export default function QrScannerModal({
                 {gatePass.allowed ? <ShieldCheck className="w-8 h-8 text-emerald-600 shrink-0" /> : <XCircle className="w-8 h-8 text-rose-600 shrink-0" />}
                 <div>
                   <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${gatePass.allowed ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}>
-                    {gatePass.allowed ? 'ACCESS GRANTED' : 'ENTRY DENIED'}
+                    {gatePass.allowed
+                      ? gatePass.isGuest
+                        ? 'ACCESS GRANTED (Guest)'
+                        : 'ACCESS GRANTED'
+                      : 'ENTRY DENIED'}
                   </span>
                   <h4 className="text-base font-extrabold mt-1">{gatePass.studentName}</h4>
                 </div>

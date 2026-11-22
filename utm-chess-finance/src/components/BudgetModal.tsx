@@ -33,13 +33,25 @@ import {
   Users,
   Trash2,
   History,
+  Copy,
+  Globe,
 } from 'lucide-react';
 
 export interface EditableActivity {
   id?: string; event_name: string; category: string; event_date?: string; event_time?: string;
   location?: string; registration_fee?: number; driver_allowance_per_trip?: number;
   driver_recruitment_open?: boolean; qr_code_token?: string; ticket_qr_mode?: TicketQrMode;
-  pass_approval_rule?: PassApprovalRule; description: string; status?: 'Active' | 'Closed';
+  pass_approval_rule?: PassApprovalRule; is_public_registration?: boolean;
+  public_slug?: string | null; guest_fee?: number | null; guest_capacity?: number;
+  description: string; status?: 'Active' | 'Closed';
+}
+
+function slugifyTitle(val: string): string {
+  return val
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 interface BudgetModalProps {
@@ -68,6 +80,11 @@ export default function BudgetModal({
   const [qrToken, setQrToken] = useState('');
   const [status, setStatus] = useState<'Active' | 'Closed'>('Active');
   const [description, setDescription] = useState('');
+  const [isPublicRegistration, setIsPublicRegistration] = useState(false);
+  const [publicSlug, setPublicSlug] = useState('');
+  const [guestFeeInput, setGuestFeeInput] = useState('');
+  const [guestCapacityInput, setGuestCapacityInput] = useState('0');
+  const [copiedPublicLink, setCopiedPublicLink] = useState(false);
   const [saving, setSaving] = useState(false);
   const [localPassOverrides, setLocalPassOverrides] = useState<Record<string, boolean>>({});
   const [feeFilter, setFeeFilter] = useState<'Pending' | 'Verified' | 'Rejected'>('Pending');
@@ -110,6 +127,15 @@ export default function BudgetModal({
       setQrToken(initialData.qr_code_token || (initialData.id ? initialData.id.slice(0, 6).toUpperCase() : 'EV2026'));
       setStatus(initialData.status || 'Active');
       setDescription(initialData.description || '');
+      setIsPublicRegistration(Boolean(initialData.is_public_registration));
+      setPublicSlug(initialData.public_slug || '');
+      setGuestFeeInput(
+        initialData.guest_fee !== null && initialData.guest_fee !== undefined
+          ? String(initialData.guest_fee)
+          : ''
+      );
+      setGuestCapacityInput(String(initialData.guest_capacity ?? 0));
+      setCopiedPublicLink(false);
     } else {
       setEventName(''); setCategory(departments[0] || 'Member');
       setEventDate(new Date().toISOString().split('T')[0]); setEventTime('08:00 PM - 10:00 PM');
@@ -117,6 +143,8 @@ export default function BudgetModal({
       setDriverRecruitmentOpen(true); setUseEntryPass(false); setPassRule('auto_after_payment');
       setQrToken(Math.random().toString(36).substring(2, 8).toUpperCase());
       setStatus('Active'); setDescription('');
+      setIsPublicRegistration(false); setPublicSlug(''); setGuestFeeInput(''); setGuestCapacityInput('0');
+      setCopiedPublicLink(false);
     }
   }, [initialData, isOpen, departments]);
 
@@ -151,18 +179,41 @@ export default function BudgetModal({
     e.preventDefault();
     setSaving(true);
     try {
+      const normalizedSlug = slugifyTitle(
+        publicSlug.trim() || (isPublicRegistration ? eventName : '')
+      );
+      const guestFeeParsed =
+        guestFeeInput.trim() === ''
+          ? null
+          : Math.max(0, parseFloat(guestFeeInput) || 0);
+      const guestCapParsed = Math.max(0, parseInt(guestCapacityInput, 10) || 0);
+
       const basePayload = {
         event_name: eventName.trim(), category, event_date: eventDate, event_time: eventTime.trim(),
         location: location.trim(), registration_fee: reqFeeNum, driver_allowance_per_trip: allowanceNum,
         driver_recruitment_open: driverRecruitmentOpen, qr_code_token: qrToken,
         description: description.trim(), status,
       };
+      const extendedPayload = {
+        ...basePayload,
+        ticket_qr_mode: modeValue,
+        pass_approval_rule: passRule,
+        is_public_registration: isPublicRegistration,
+        public_slug: normalizedSlug || null,
+        guest_fee: guestFeeParsed,
+        guest_capacity: guestCapParsed,
+      };
       if (isEditing && eventId) {
         const { error } = await supabase
           .from('budgets')
-          .update({ ...basePayload, ticket_qr_mode: modeValue, pass_approval_rule: passRule })
+          .update(extendedPayload)
           .eq('id', eventId);
-        if (error) await supabase.from('budgets').update(basePayload).eq('id', eventId);
+        if (error) {
+          await supabase
+            .from('budgets')
+            .update({ ...basePayload, ticket_qr_mode: modeValue, pass_approval_rule: passRule })
+            .eq('id', eventId);
+        }
         if (profile && initialData) {
           const changes = computeFieldChanges([
             { field: 'Activity Name', before: initialData.event_name, after: basePayload.event_name },
@@ -189,9 +240,11 @@ export default function BudgetModal({
       } else {
         const { error } = await supabase
           .from('budgets')
-          .insert({ ...basePayload, ticket_qr_mode: modeValue, pass_approval_rule: passRule, allocated_amount: 0, spent_amount: 0 });
+          .insert({ ...extendedPayload, allocated_amount: 0, spent_amount: 0 });
         if (error) {
-          await supabase.from('budgets').insert({ ...basePayload, allocated_amount: 0, spent_amount: 0 });
+          await supabase
+            .from('budgets')
+            .insert({ ...basePayload, ticket_qr_mode: modeValue, pass_approval_rule: passRule, allocated_amount: 0, spent_amount: 0 });
         }
         void emitClubNotification({
           targetUserId: null,
@@ -351,6 +404,100 @@ export default function BudgetModal({
                   <div className="flex items-end pb-2">
                     <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer"><input type="checkbox" checked={driverRecruitmentOpen} onChange={(e) => setDriverRecruitmentOpen(e.target.checked)} /><span>Enable Carpool</span></label>
                   </div>
+                </div>
+
+                {/* Public / Guest Registration Settings */}
+                <div className="p-3.5 rounded-xl bg-white border border-emerald-200 space-y-3">
+                  <label className="flex items-center justify-between gap-2 font-bold text-slate-800 cursor-pointer">
+                    <span className="flex items-center gap-1.5">
+                      <Globe className="w-4 h-4 text-emerald-600" />
+                      <span>Open for Public / Guest Registration</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={isPublicRegistration}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setIsPublicRegistration(checked);
+                        if (checked && !publicSlug.trim()) {
+                          const generated =
+                            slugifyTitle(eventName) ||
+                            `event-${Math.random().toString(36).slice(2, 6)}`;
+                          setPublicSlug(generated);
+                        }
+                      }}
+                    />
+                  </label>
+
+                  {isPublicRegistration && (
+                    <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">
+                          Public Link Slug (/e/...)
+                        </label>
+                        <div className="flex gap-2">
+                          <div className="flex-1 flex items-center rounded-xl border bg-slate-50 px-2.5 py-1.5 font-mono text-[11px]">
+                            <span className="text-slate-400 mr-0.5">/e/</span>
+                            <input
+                              type="text"
+                              value={publicSlug}
+                              onChange={(e) => setPublicSlug(e.target.value)}
+                              onBlur={() => setPublicSlug((s) => slugifyTitle(s))}
+                              placeholder="chess-open-2026"
+                              className="w-full bg-transparent font-bold text-slate-900 focus:outline-none"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const clean =
+                                slugifyTitle(publicSlug) ||
+                                slugifyTitle(eventName) ||
+                                'event';
+                              const origin =
+                                typeof window !== 'undefined' ? window.location.origin : '';
+                              await navigator.clipboard.writeText(`${origin}/e/${clean}`);
+                              setCopiedPublicLink(true);
+                              setTimeout(() => setCopiedPublicLink(false), 2000);
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>{copiedPublicLink ? 'Copied!' : 'Copy Public Link'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">
+                            Guest Fee (RM, Optional)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={guestFeeInput}
+                            onChange={(e) => setGuestFeeInput(e.target.value)}
+                            placeholder={`Default: RM ${reqFeeNum.toFixed(2)}`}
+                            className="w-full rounded-xl border bg-white px-3 py-1.5 font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-bold text-slate-700 mb-1">
+                            Guest Capacity (0 = Unlimited)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={guestCapacityInput}
+                            onChange={(e) => setGuestCapacityInput(e.target.value)}
+                            className="w-full rounded-xl border bg-white px-3 py-1.5 font-bold"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

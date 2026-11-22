@@ -178,6 +178,10 @@ export interface Budget {
   payment_qr_url?: string;
   payment_bank_info?: string;
   show_payment_qr?: boolean;
+  is_public_registration?: boolean;
+  public_slug?: string | null;
+  guest_fee?: number | null;
+  guest_capacity?: number;
   description: string;
   status: 'Active' | 'Closed';
   deleted_at?: string | null;
@@ -251,6 +255,7 @@ export interface Claim {
   matric_no: string;
   phone_number: string;
   budget_id: string | null;
+  pre_claim_id?: string | null;
   custom_event_name?: string;
   title: string;
   category: string;
@@ -280,6 +285,76 @@ export interface Claim {
   treasurer_verified_at?: string | null;
   final_approved_by?: string | null;
   final_approved_at?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  created_at: string;
+}
+
+export type PreClaimStatus =
+  | 'Pending'
+  | 'Pre-Approved'
+  | 'Advance Disbursed'
+  | 'Receipt Submitted'
+  | 'Settled'
+  | 'Rejected'
+  | 'Cancelled';
+
+export interface PreClaim {
+  id: string;
+  user_id: string;
+  requester_name: string;
+  matric_no: string;
+  phone_number: string;
+  budget_id: string | null;
+  custom_event_name?: string;
+  title: string;
+  category: string;
+  estimated_amount: number;
+  approved_cap?: number | null;
+  needed_date: string;
+  reason?: string;
+  quote_url?: string;
+  needs_cash_advance: boolean;
+  advance_amount?: number;
+  payment_info?: string;
+  claimant_qr_url?: string;
+  advance_disbursed_amount?: number;
+  advance_disbursed_at?: string | null;
+  advance_proof_url?: string;
+  advance_account_type?: AccountType;
+  return_balance_amount?: number;
+  return_proof_url?: string;
+  return_verified_by?: string | null;
+  return_verified_at?: string | null;
+  linked_claim_id?: string | null;
+  status: PreClaimStatus;
+  treasurer_verified_by?: string | null;
+  treasurer_verified_at?: string | null;
+  reviewed_by?: string | null;
+  review_remarks?: string | null;
+  reviewed_at?: string | null;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  created_at: string;
+}
+
+export interface PublicGuestRegistration {
+  id: string;
+  budget_id: string;
+  lookup_code: string;
+  guest_name: string;
+  institution_or_matric: string;
+  email: string;
+  phone_number: string;
+  amount_paid: number;
+  account_type?: AccountType;
+  receipt_url: string;
+  receipt_file_name: string;
+  payment_status: 'Free' | 'Pending' | 'Verified' | 'Rejected';
+  pass_approved: boolean;
+  qr_checked_in: boolean;
+  qr_checked_in_at?: string | null;
+  notes?: string;
   deleted_at?: string | null;
   deleted_by?: string | null;
   created_at: string;

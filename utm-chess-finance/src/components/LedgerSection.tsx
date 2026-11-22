@@ -8,6 +8,8 @@ import {
   BudgetPlanItem,
   EventRsvp,
   Claim,
+  PreClaim,
+  PublicGuestRegistration,
   ActivityFeePayment,
   ActivityLogEntry,
   AccountType,
@@ -67,7 +69,9 @@ interface LedgerSectionProps {
   budgetPlanItems?: BudgetPlanItem[];
   rsvps?: EventRsvp[];
   claims: Claim[];
+  preClaims?: PreClaim[];
   feePayments?: ActivityFeePayment[];
+  guestRegistrations?: PublicGuestRegistration[];
   logs?: ActivityLogEntry[];
   profile: UserProfile;
   canEdit?: boolean;
@@ -89,7 +93,7 @@ type EditableCellField = 'date' | 'title' | 'event' | 'in' | 'out';
 interface UnifiedFinanceRow {
   uid: string;
   recordId: string;
-  source: 'LEDGER' | 'CLAIM' | 'FEE';
+  source: 'LEDGER' | 'CLAIM' | 'FEE' | 'GUEST_FEE';
   date: string;
   createdAt: string;
   entryType: 'IN' | 'OUT';
@@ -105,6 +109,7 @@ interface UnifiedFinanceRow {
   rawLedger?: LedgerEntryItem;
   rawClaim?: Claim;
   rawFee?: ActivityFeePayment;
+  rawGuest?: PublicGuestRegistration;
 }
 
 interface ParsedImportRow {
@@ -408,7 +413,9 @@ export default function LedgerSection({
   budgetPlanItems = [],
   rsvps = [],
   claims,
+  preClaims = [],
   feePayments = [],
+  guestRegistrations = [],
   logs = [],
   profile,
   canEdit = true,
@@ -426,7 +433,7 @@ export default function LedgerSection({
   const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
 
   const openProfileForLedgerRow = (row: UnifiedFinanceRow) => {
-    if (!onOpenMemberProfile) return;
+    if (!onOpenMemberProfile || row.source === 'GUEST_FEE') return;
     if (row.rawClaim) {
       onOpenMemberProfile({
         userId: row.rawClaim.user_id,
@@ -528,17 +535,51 @@ export default function LedgerSection({
     () => feePayments.filter((f) => f.status === 'Verified'),
     [feePayments]
   );
+  const verifiedGuestFeesList = useMemo(
+    () =>
+      guestRegistrations.filter(
+        (g) => !g.deleted_at && g.payment_status === 'Verified' && Number(g.amount_paid) > 0
+      ),
+    [guestRegistrations]
+  );
   const pendingFeesTotal = useMemo(
     () =>
       feePayments
         .filter((f) => f.status === 'Pending')
-        .reduce((s, f) => s + Number(f.amount_paid), 0),
-    [feePayments]
+        .reduce((s, f) => s + Number(f.amount_paid), 0) +
+      guestRegistrations
+        .filter((g) => !g.deleted_at && g.payment_status === 'Pending')
+        .reduce((s, g) => s + Number(g.amount_paid), 0),
+    [feePayments, guestRegistrations]
   );
   const approvedClaimsList = useMemo(
     () => claims.filter((c) => c.status === 'Approved'),
     [claims]
   );
+
+  // Reserved balance from Pre-Approved pre-claims whose cash advance hasn't been disbursed yet
+  const reservedPreClaimsTotal = useMemo(
+    () =>
+      preClaims
+        .filter(
+          (pc) =>
+            !pc.deleted_at &&
+            pc.status === 'Pre-Approved' &&
+            Number(pc.advance_disbursed_amount || 0) <= 0
+        )
+        .reduce((s, pc) => s + Number(pc.approved_cap ?? pc.estimated_amount ?? 0), 0),
+    [preClaims]
+  );
+
+  const resolveClaimNetDeduction = (c: Claim): { netAmt: number; advGiven: number } => {
+    const linkedPc =
+      (c.pre_claim_id ? preClaims.find((pc) => pc.id === c.pre_claim_id) : undefined) ||
+      preClaims.find((pc) => pc.linked_claim_id === c.id);
+    const advGiven = linkedPc ? Number(linkedPc.advance_disbursed_amount || 0) : 0;
+    const rawAmt = Number(c.amount) || 0;
+    const netAmt = advGiven > 0 ? Math.max(0, rawAmt - advGiven) : rawAmt;
+    return { netAmt, advGiven };
+  };
 
   const openingTotal = Number(openingBank) + Number(openingCash);
 
@@ -574,12 +615,21 @@ export default function LedgerSection({
       else bankIn += amt;
     }
 
+    for (const g of verifiedGuestFeesList) {
+      const amt = Number(g.amount_paid) || 0;
+      const acct = accountOf(g.account_type);
+      verifiedFeesIn += amt;
+      if (acct === 'Cash') cashIn += amt;
+      else bankIn += amt;
+    }
+
     for (const c of approvedClaimsList) {
-      const amt = Number(c.amount) || 0;
+      const { netAmt } = resolveClaimNetDeduction(c);
+      if (netAmt <= 0) continue;
       const acct = accountOf(c.account_type);
-      approvedClaimsOut += amt;
-      if (acct === 'Cash') cashOut += amt;
-      else bankOut += amt;
+      approvedClaimsOut += netAmt;
+      if (acct === 'Cash') cashOut += netAmt;
+      else bankOut += netAmt;
     }
 
     const totalIn = manualIn + verifiedFeesIn;
@@ -589,7 +639,8 @@ export default function LedgerSection({
     const totalSavings = currentBank + currentCash;
 
     return { totalIn, totalOut, currentBank, currentCash, totalSavings };
-  }, [entries, verifiedFeesList, approvedClaimsList, openingBank, openingCash]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, verifiedFeesList, verifiedGuestFeesList, approvedClaimsList, preClaims, openingBank, openingCash]);
 
   // Unified chronological rows (oldest -> newest) starting from openingTotal
   const unifiedRows = useMemo<UnifiedFinanceRow[]>(() => {
@@ -619,6 +670,8 @@ export default function LedgerSection({
     }
 
     for (const c of approvedClaimsList) {
+      const { netAmt, advGiven } = resolveClaimNetDeduction(c);
+      if (advGiven > 0 && netAmt <= 0) continue;
       const matchedBudget = budgets.find((b) => b.id === c.budget_id);
       raw.push({
         uid: `claim-${c.id}`,
@@ -630,10 +683,10 @@ export default function LedgerSection({
         eventName: normalizeScopeName(matchedBudget?.event_name || c.custom_event_name),
         budgetId: c.budget_id,
         category: c.category || 'Claim',
-        title: c.title,
+        title: advGiven > 0 ? `${c.title} (Net Top-Up after Advance)` : c.title,
         personShort: shortPersonName(c.claimant_name),
         accountType: accountOf(c.account_type),
-        amount: Number(c.amount) || 0,
+        amount: netAmt,
         attachmentUrl: c.payout_proof_url || c.receipt_url,
         rawClaim: c,
       });
@@ -660,6 +713,27 @@ export default function LedgerSection({
       });
     }
 
+    for (const g of verifiedGuestFeesList) {
+      const matchedBudget = budgets.find((b) => b.id === g.budget_id);
+      raw.push({
+        uid: `guest-${g.id}`,
+        recordId: g.id,
+        source: 'GUEST_FEE',
+        date: g.created_at?.split('T')[0] || '',
+        createdAt: g.created_at || '',
+        entryType: 'IN',
+        eventName: normalizeScopeName(matchedBudget?.event_name || 'Activity Fee'),
+        budgetId: g.budget_id,
+        category: 'Guest Fee',
+        title: `Guest Fee — ${g.guest_name}`,
+        personShort: shortPersonName(g.guest_name),
+        accountType: accountOf(g.account_type),
+        amount: Number(g.amount_paid) || 0,
+        attachmentUrl: g.receipt_url,
+        rawGuest: g,
+      });
+    }
+
     raw.sort((a, b) => {
       const dc = (a.date || '').localeCompare(b.date || '');
       if (dc !== 0) return dc;
@@ -671,7 +745,8 @@ export default function LedgerSection({
       running += row.entryType === 'IN' ? row.amount : -row.amount;
       return { ...row, runningBalance: running };
     });
-  }, [entries, approvedClaimsList, verifiedFeesList, budgets, openingTotal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, approvedClaimsList, verifiedFeesList, verifiedGuestFeesList, preClaims, budgets, openingTotal]);
 
   const activityOptions = useMemo(() => {
     const names = new Set<string>(['General Club Fund']);
@@ -764,7 +839,9 @@ export default function LedgerSection({
           ? r.budgetId === budget.id || r.eventName === matchName
           : isGeneralEventName(r.eventName)
       );
-      const feesIn = rows.filter((r) => r.source === 'FEE').reduce((s, r) => s + r.amount, 0);
+      const feesIn = rows
+        .filter((r) => r.source === 'FEE' || r.source === 'GUEST_FEE')
+        .reduce((s, r) => s + r.amount, 0);
       const manIn = rows
         .filter((r) => r.source === 'LEDGER' && r.entryType === 'IN')
         .reduce((s, r) => s + r.amount, 0);
@@ -1085,6 +1162,8 @@ export default function LedgerSection({
           ? 'claims'
           : row.source === 'FEE'
           ? 'activity_fee_payments'
+          : row.source === 'GUEST_FEE'
+          ? 'public_guest_registrations'
           : 'ledger_entries';
       const { error } = await supabase
         .from(table)
@@ -1096,7 +1175,12 @@ export default function LedgerSection({
       }
       void recordEditHistory({
         actor: profile,
-        category: row.source === 'CLAIM' ? 'Claims' : row.source === 'FEE' ? 'Fees' : 'Finance',
+        category:
+          row.source === 'CLAIM'
+            ? 'Claims'
+            : row.source === 'FEE' || row.source === 'GUEST_FEE'
+            ? 'Fees'
+            : 'Finance',
         table,
         recordId: row.recordId,
         recordTitle: row.title,
@@ -1159,10 +1243,17 @@ export default function LedgerSection({
         ? 'claims'
         : row.source === 'FEE'
         ? 'activity_fee_payments'
+        : row.source === 'GUEST_FEE'
+        ? 'public_guest_registrations'
         : 'ledger_entries';
     await softDeleteRecord({
       actor: profile,
-      category: row.source === 'CLAIM' ? 'Claims' : row.source === 'FEE' ? 'Fees' : 'Finance',
+      category:
+        row.source === 'CLAIM'
+          ? 'Claims'
+          : row.source === 'FEE' || row.source === 'GUEST_FEE'
+          ? 'Fees'
+          : 'Finance',
       table,
       recordId: row.recordId,
       recordTitle: row.title,
@@ -1244,6 +1335,9 @@ export default function LedgerSection({
       ? unifiedRows.filter((r) => r.budgetId === scopeBudget.id || r.eventName === scopeBudget.event_name)
       : unifiedRows;
     const scFees = scopeBudget ? feePayments.filter((f) => f.budget_id === scopeBudget.id) : feePayments;
+    const scGuests = scopeBudget
+      ? guestRegistrations.filter((g) => !g.deleted_at && g.budget_id === scopeBudget.id && Number(g.amount_paid) > 0)
+      : guestRegistrations.filter((g) => !g.deleted_at && Number(g.amount_paid) > 0);
     const scClaims = scopeBudget ? claims.filter((c) => c.budget_id === scopeBudget.id) : claims;
     const scRsvps = scopeBudget ? rsvps.filter((r) => r.budget_id === scopeBudget.id) : rsvps;
 
@@ -1315,17 +1409,29 @@ export default function LedgerSection({
       },
       {
         name: '3_Fee_Payments',
-        headers: ['Date', 'Activity', 'Student Name', 'Matric No', 'Amount (RM)', 'Account', 'Status', 'Receipt URL'],
-        rows: scFees.map((f) => [
-          f.created_at?.split('T')[0] || '',
-          budgets.find((b) => b.id === f.budget_id)?.event_name || 'Activity',
-          f.student_name,
-          f.matric_no,
-          Number(f.amount_paid),
-          accountOf(f.account_type),
-          f.status,
-          f.receipt_url,
-        ]),
+        headers: ['Date', 'Activity', 'Participant Name', 'Matric / Lookup', 'Amount (RM)', 'Account', 'Status', 'Receipt URL'],
+        rows: [
+          ...scFees.map((f) => [
+            f.created_at?.split('T')[0] || '',
+            budgets.find((b) => b.id === f.budget_id)?.event_name || 'Activity',
+            f.student_name,
+            f.matric_no,
+            Number(f.amount_paid),
+            accountOf(f.account_type),
+            f.status,
+            f.receipt_url,
+          ]),
+          ...scGuests.map((g) => [
+            g.created_at?.split('T')[0] || '',
+            budgets.find((b) => b.id === g.budget_id)?.event_name || 'Activity',
+            `${g.guest_name} (Guest Fee)`,
+            g.lookup_code,
+            Number(g.amount_paid),
+            accountOf(g.account_type),
+            g.payment_status,
+            g.receipt_url,
+          ]),
+        ],
       },
       {
         name: '4_Claims',
@@ -1498,6 +1604,13 @@ export default function LedgerSection({
           <div className="text-xs text-slate-500 font-medium">
             Bank RM {formatRM(mathSummary.currentBank)} · Cash RM {formatRM(mathSummary.currentCash)}
           </div>
+          {reservedPreClaimsTotal > 0 && (
+            <div className="text-[11px] text-amber-700 font-semibold pt-0.5">
+              Reserved (Pre-Claims): RM {formatRM(reservedPreClaimsTotal)} · Safe-to-Spend:{' '}
+              {mathSummary.totalSavings - reservedPreClaimsTotal < 0 ? '-' : ''}RM{' '}
+              {formatRM(mathSummary.totalSavings - reservedPreClaimsTotal)}
+            </div>
+          )}
         </div>
 
         {/* 2. Starting Savings (Initial Balance) */}
@@ -1812,6 +1925,11 @@ export default function LedgerSection({
                                   Fee
                                 </span>
                               )}
+                              {row.source === 'GUEST_FEE' && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">
+                                  Guest Fee
+                                </span>
+                              )}
                               {isLedgerEditable ? (
                                 <button
                                   type="button"
@@ -2059,6 +2177,8 @@ export default function LedgerSection({
                                     ? 'claims'
                                     : row.source === 'FEE'
                                     ? 'activity_fee_payments'
+                                    : row.source === 'GUEST_FEE'
+                                    ? 'public_guest_registrations'
                                     : 'ledger_entries',
                                 recordId: row.recordId,
                                 title: row.title,
