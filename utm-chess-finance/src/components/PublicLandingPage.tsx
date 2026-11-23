@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import NetworkStatusBanner from './NetworkStatusBanner';
 import {
   supabase,
   isSupabaseConfigured,
@@ -61,6 +62,8 @@ import {
   EyeOff,
   Edit3,
   CheckCircle2,
+  Loader2,
+  ArrowLeft,
 } from 'lucide-react';
 
 export interface PublicLandingPageProps {
@@ -532,6 +535,15 @@ export default function PublicLandingPage({
   const [lightboxPost, setLightboxPost] = useState<Announcement | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [submittingAuth, setSubmittingAuth] = useState(false);
+  const [authSuccessMsg, setAuthSuccessMsg] = useState<string | null>(null);
+  const [navigatingEventSlug, setNavigatingEventSlug] = useState<string | null>(null);
+  const [navFeedbackPill, setNavFeedbackPill] = useState<string | null>(null);
+  const [publicFetchError, setPublicFetchError] = useState<string | null>(null);
+
+  const showNavFeedback = useCallback((msg: string) => {
+    setNavFeedbackPill(msg);
+    setTimeout(() => setNavFeedbackPill((prev) => (prev === msg ? null : prev)), 2200);
+  }, []);
 
   useEffect(() => {
     if (initialConfig) {
@@ -566,158 +578,169 @@ export default function PublicLandingPage({
     }
   }, [configReady]);
 
-  useEffect(() => {
+  const fetchPublicData = useCallback(async () => {
     if (!isSupabaseConfigured) {
       setLoadingPublic(false);
       setConfigReady(true);
       return;
     }
 
-    let active = true;
-    (async () => {
-      try {
-        const [settingsRes, statsRes, budgetsRes, annRes] = await Promise.all([
-          supabase.from('club_settings_public').select('*').eq('id', 1).maybeSingle(),
-          supabase.rpc('get_public_club_stats'),
-          supabase
-            .from('budgets')
-            .select(
-              'id, event_name, category, event_date, event_time, location, registration_fee, guest_fee, guest_capacity, is_public_registration, public_slug, description, status, created_at'
-            )
-            .is('deleted_at', null)
-            .eq('is_public_registration', true)
-            .eq('status', 'Active')
-            .order('event_date', { ascending: true }),
-          supabase
-            .from('announcements')
-            .select(
-              'id, title, subtitle, content, poster_url, external_link, link_label, is_pinned, show_in_carousel, created_by, created_at'
-            )
-            .is('deleted_at', null)
-            .order('created_at', { ascending: false })
-            .limit(12),
-        ]);
+    setPublicFetchError(null);
+    try {
+      const [settingsRes, statsRes, budgetsRes, annRes] = await Promise.all([
+        supabase.from('club_settings_public').select('*').eq('id', 1).maybeSingle(),
+        supabase.rpc('get_public_club_stats'),
+        supabase
+          .from('budgets')
+          .select(
+            'id, event_name, category, event_date, event_time, location, registration_fee, guest_fee, guest_capacity, is_public_registration, public_slug, description, status, created_at'
+          )
+          .is('deleted_at', null)
+          .eq('is_public_registration', true)
+          .eq('status', 'Active')
+          .order('event_date', { ascending: true }),
+        supabase
+          .from('announcements')
+          .select(
+            'id, title, subtitle, content, poster_url, external_link, link_label, is_pinned, show_in_carousel, created_by, created_at'
+          )
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false })
+          .limit(12),
+      ]);
 
-        if (!active) return;
+      if (settingsRes.error && budgetsRes.error) {
+        setPublicFetchError('Network latency or offline issue prevented refreshing the latest club data.');
+      }
 
-        let nextClubName = clubName;
-        let nextLogoUrl = logoUrl;
-        let nextBatch = currentBatch;
-        let nextTagline = tagline;
-        let nextClubAbout = clubAbout;
-        let nextIg = instagramUrl;
-        let nextEmail = contactEmail;
-        let nextConfig: PublicLandingConfig | null = storedLandingConfig;
+      let nextClubName = clubName;
+      let nextLogoUrl = logoUrl;
+      let nextBatch = currentBatch;
+      let nextTagline = tagline;
+      let nextClubAbout = clubAbout;
+      let nextIg = instagramUrl;
+      let nextEmail = contactEmail;
+      let nextConfig: PublicLandingConfig | null = storedLandingConfig;
 
-        if (settingsRes.data) {
-          const s = settingsRes.data as Record<string, unknown>;
-          if (s.club_name) {
-            nextClubName = String(s.club_name);
-            setClubName(nextClubName);
-          }
-          if (s.logo_url !== undefined && s.logo_url !== null) {
-            nextLogoUrl = String(s.logo_url);
-            setLogoUrl(nextLogoUrl);
-          }
-          if (s.current_batch) {
-            nextBatch = String(s.current_batch);
-            setCurrentBatch(nextBatch);
-          }
-          if (s.club_tagline) {
-            nextTagline = String(s.club_tagline);
-            setTagline(nextTagline);
-          }
-          if (s.club_about !== undefined && s.club_about !== null) {
-            nextClubAbout = String(s.club_about);
-            setClubAbout(nextClubAbout);
-          }
-          if (s.instagram_url !== undefined && s.instagram_url !== null) {
-            nextIg = String(s.instagram_url);
-            setInstagramUrl(nextIg);
-          }
-          if (s.contact_email !== undefined && s.contact_email !== null) {
-            nextEmail = String(s.contact_email);
-            setContactEmail(nextEmail);
-          }
-          if (s.public_landing_config && typeof s.public_landing_config === 'object') {
-            nextConfig = s.public_landing_config as PublicLandingConfig;
-            setStoredLandingConfig(nextConfig);
-          } else {
-            nextConfig = null;
-            setStoredLandingConfig(null);
-          }
-          setConfigReady(true);
+      if (settingsRes.data) {
+        const s = settingsRes.data as Record<string, unknown>;
+        if (s.club_name) {
+          nextClubName = String(s.club_name);
+          setClubName(nextClubName);
         }
-
-        let nextStats: PublicStats | undefined;
-        if (statsRes.data && typeof statsRes.data === 'object') {
-          const st = statsRes.data as Partial<PublicStats>;
-          nextStats = {
-            open_events_count: Number(st.open_events_count || 0),
-            total_events_count: Number(st.total_events_count || 0),
-          };
-          setStats(nextStats);
+        if (s.logo_url !== undefined && s.logo_url !== null) {
+          nextLogoUrl = String(s.logo_url);
+          setLogoUrl(nextLogoUrl);
         }
+        if (s.current_batch) {
+          nextBatch = String(s.current_batch);
+          setCurrentBatch(nextBatch);
+        }
+        if (s.club_tagline) {
+          nextTagline = String(s.club_tagline);
+          setTagline(nextTagline);
+        }
+        if (s.club_about !== undefined && s.club_about !== null) {
+          nextClubAbout = String(s.club_about);
+          setClubAbout(nextClubAbout);
+        }
+        if (s.instagram_url !== undefined && s.instagram_url !== null) {
+          nextIg = String(s.instagram_url);
+          setInstagramUrl(nextIg);
+        }
+        if (s.contact_email !== undefined && s.contact_email !== null) {
+          nextEmail = String(s.contact_email);
+          setContactEmail(nextEmail);
+        }
+        if (s.public_landing_config && typeof s.public_landing_config === 'object') {
+          nextConfig = s.public_landing_config as PublicLandingConfig;
+          setStoredLandingConfig(nextConfig);
+        } else {
+          nextConfig = null;
+          setStoredLandingConfig(null);
+        }
+        setConfigReady(true);
+      }
 
-        const rawEvents = (budgetsRes.data || []) as Budget[];
-        const validSlugEvents = rawEvents.filter((b) => Boolean(b.public_slug?.trim()));
-        const enrichedEvents: PublicEventCard[] = await Promise.all(
-          validSlugEvents.map(async (b) => {
-            let regCount = 0;
-            if (b.public_slug) {
-              const { data: rpcEv } = await supabase.rpc('get_public_event_by_slug', {
-                p_slug: b.public_slug,
-              });
-              if (rpcEv && typeof rpcEv === 'object' && 'guest_registered_count' in rpcEv) {
-                regCount = Number(
-                  (rpcEv as { guest_registered_count?: unknown }).guest_registered_count || 0
-                );
-              }
+      let nextStats: PublicStats | undefined;
+      if (statsRes.data && typeof statsRes.data === 'object') {
+        const st = statsRes.data as Partial<PublicStats>;
+        nextStats = {
+          open_events_count: Number(st.open_events_count || 0),
+          total_events_count: Number(st.total_events_count || 0),
+        };
+        setStats(nextStats);
+      }
+
+      const rawEvents = (budgetsRes.data || []) as Budget[];
+      const validSlugEvents = rawEvents.filter((b) => Boolean(b.public_slug?.trim()));
+      const enrichedEvents: PublicEventCard[] = await Promise.all(
+        validSlugEvents.map(async (b) => {
+          let regCount = 0;
+          if (b.public_slug) {
+            const { data: rpcEv } = await supabase.rpc('get_public_event_by_slug', {
+              p_slug: b.public_slug,
+            });
+            if (rpcEv && typeof rpcEv === 'object' && 'guest_registered_count' in rpcEv) {
+              regCount = Number(
+                (rpcEv as { guest_registered_count?: unknown }).guest_registered_count || 0
+              );
             }
-            const effFee = Number(b.guest_fee ?? b.registration_fee ?? 0);
-            return {
-              ...b,
-              effective_fee: effFee,
-              guest_registered_count: regCount,
-            };
-          })
-        );
-        if (active) setOpenEvents(enrichedEvents);
+          }
+          const effFee = Number(b.guest_fee ?? b.registration_fee ?? 0);
+          return {
+            ...b,
+            effective_fee: effFee,
+            guest_registered_count: regCount,
+          };
+        })
+      );
+      if (budgetsRes.data) {
+        setOpenEvents(enrichedEvents);
+      }
 
-        const anns = (annRes.data || []) as Announcement[];
-        const nextCarousel = anns.filter((a) => a.show_in_carousel);
-        const nextHighlights = anns.filter((a) => a.is_pinned).slice(0, 4);
+      const anns = (annRes.data || []) as Announcement[];
+      const nextCarousel = anns.filter((a) => a.show_in_carousel);
+      const nextHighlights = anns.filter((a) => a.is_pinned).slice(0, 4);
+      if (annRes.data) {
         setCarouselPosts(nextCarousel);
         setHighlightPosts(nextHighlights);
-
-        if (settingsRes.data) {
-          writeCachedPublicSnapshot({
-            clubName: nextClubName,
-            logoUrl: nextLogoUrl,
-            currentBatch: nextBatch,
-            tagline: nextTagline,
-            clubAbout: nextClubAbout,
-            instagramUrl: nextIg,
-            contactEmail: nextEmail,
-            config: nextConfig,
-            stats: nextStats,
-            openEvents: enrichedEvents as unknown as Array<Record<string, unknown>>,
-            carouselPosts: nextCarousel as unknown as Array<Record<string, unknown>>,
-            highlightPosts: nextHighlights as unknown as Array<Record<string, unknown>>,
-          });
-        }
-      } finally {
-        if (active) {
-          setLoadingPublic(false);
-          setConfigReady(true);
-        }
       }
-    })();
 
-    return () => {
-      active = false;
-    };
+      if (settingsRes.data) {
+        writeCachedPublicSnapshot({
+          clubName: nextClubName,
+          logoUrl: nextLogoUrl,
+          currentBatch: nextBatch,
+          tagline: nextTagline,
+          clubAbout: nextClubAbout,
+          instagramUrl: nextIg,
+          contactEmail: nextEmail,
+          config: nextConfig,
+          stats: nextStats,
+          openEvents: (budgetsRes.data ? enrichedEvents : openEvents) as unknown as Array<
+            Record<string, unknown>
+          >,
+          carouselPosts: (annRes.data ? nextCarousel : carouselPosts) as unknown as Array<
+            Record<string, unknown>
+          >,
+          highlightPosts: (annRes.data ? nextHighlights : highlightPosts) as unknown as Array<
+            Record<string, unknown>
+          >,
+        });
+      }
+    } catch {
+      setPublicFetchError('Network connection issue while syncing club showcase. Using cached view.');
+    } finally {
+      setLoadingPublic(false);
+      setConfigReady(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    void fetchPublicData();
+  }, [fetchPublicData]);
 
   useEffect(() => {
     if (carouselPosts.length <= 1 || lightboxPost || authModalOpen) return;
@@ -748,14 +771,22 @@ export default function PublicLandingPage({
   const openAuth = (targetMode: 'login' | 'signup') => {
     if (isPreview) return;
     setAuthError(null);
+    setAuthSuccessMsg(null);
     setAuthMode(targetMode);
     setAuthModalOpen(true);
   };
 
   const scrollToTop = () => {
     if (isPreview) return;
+    const hadModalOpen = authModalOpen || Boolean(lightboxPost);
+    setAuthModalOpen(false);
+    setLightboxPost(null);
     if (typeof window !== 'undefined') {
+      const scrolledDown = window.scrollY > 40;
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (hadModalOpen || scrolledDown) {
+        showNavFeedback('Returned to main page');
+      }
     }
   };
 
@@ -1329,10 +1360,20 @@ export default function PublicLandingPage({
                             ) : (
                               <Link
                                 href={`/e/${ev.public_slug}`}
+                                onClick={() => setNavigatingEventSlug(ev.public_slug || ev.id)}
                                 className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl ${theme.primaryBtn} text-xs font-extrabold transition`}
                               >
-                                <span>Register as Guest</span>
-                                <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+                                {navigatingEventSlug === (ev.public_slug || ev.id) ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Opening...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>Register as Guest</span>
+                                    <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+                                  </>
+                                )}
                               </Link>
                             )}
                           </div>
@@ -1673,6 +1714,11 @@ export default function PublicLandingPage({
   if (!configReady && !isPreview) {
     return (
       <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+        <NetworkStatusBanner
+          networkError={publicFetchError}
+          onRetry={() => void fetchPublicData()}
+          onReconnected={() => void fetchPublicData()}
+        />
         <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-xl border-b border-slate-200/80">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -1716,6 +1762,24 @@ export default function PublicLandingPage({
 
   return (
     <div className={`min-h-screen flex flex-col ${theme.pageBg} text-slate-900 relative overflow-x-hidden break-words`}>
+      {!isPreview && (
+        <NetworkStatusBanner
+          networkError={publicFetchError}
+          onRetry={() => void fetchPublicData()}
+          onReconnected={() => void fetchPublicData()}
+        />
+      )}
+      {navigatingEventSlug && !isPreview && (
+        <div className="fixed top-0 inset-x-0 z-50 h-1 bg-emerald-100 overflow-hidden">
+          <div className="h-full w-1/2 bg-emerald-600 animate-pulse rounded-r-full" />
+        </div>
+      )}
+      {navFeedbackPill && !isPreview && (
+        <div className="fixed bottom-5 right-5 z-50 px-3.5 py-2 rounded-full bg-slate-900/90 text-white text-xs font-bold shadow-lg flex items-center gap-1.5">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          <span>{navFeedbackPill}</span>
+        </div>
+      )}
       <style>{`
         @keyframes plFloatSlow {
           0%, 100% { transform: translateY(0px) translateX(0px); }
@@ -2421,21 +2485,38 @@ export default function PublicLandingPage({
             </button>
 
             <div className={`bg-gradient-to-b from-slate-100/80 via-white to-white p-6 text-center text-slate-900 border-b ${theme.navBorder}`}>
-              {logoUrl && !isPdfMedia(logoUrl) ? (
-                <img
-                  src={logoUrl}
-                  alt={clubName}
-                  className={`w-14 h-14 rounded-2xl object-cover mx-auto mb-2 bg-white shadow-sm border ${theme.softBorder}`}
-                />
-              ) : (
-                <div
-                  className={`w-13 h-13 rounded-2xl ${theme.primaryBtn} flex items-center justify-center mx-auto mb-2 shadow-sm`}
-                >
-                  <Layers className="w-7 h-7" />
-                </div>
-              )}
-              <h2 className="text-lg font-extrabold text-slate-900">{clubName}</h2>
+              <button
+                type="button"
+                onClick={scrollToTop}
+                title="Return to main page"
+                className="inline-flex flex-col items-center cursor-pointer group"
+              >
+                {logoUrl && !isPdfMedia(logoUrl) ? (
+                  <img
+                    src={logoUrl}
+                    alt={clubName}
+                    className={`w-14 h-14 rounded-2xl object-cover mx-auto mb-2 bg-white shadow-sm border ${theme.softBorder} transition group-hover:scale-105`}
+                  />
+                ) : (
+                  <div
+                    className={`w-13 h-13 rounded-2xl ${theme.primaryBtn} flex items-center justify-center mx-auto mb-2 shadow-sm transition group-hover:scale-105`}
+                  >
+                    <Layers className="w-7 h-7" />
+                  </div>
+                )}
+                <h2 className="text-lg font-extrabold text-slate-900 group-hover:text-emerald-700 transition">
+                  {clubName}
+                </h2>
+              </button>
               <p className="text-xs text-slate-500 mt-0.5">Member Portal Access</p>
+              <button
+                type="button"
+                onClick={scrollToTop}
+                className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-emerald-700 cursor-pointer"
+              >
+                <ArrowLeft className="w-3 h-3" />
+                <span>Return to main page</span>
+              </button>
             </div>
 
             <div className="grid grid-cols-2 bg-slate-100 p-1 m-5 mb-2 rounded-2xl">
@@ -2443,6 +2524,7 @@ export default function PublicLandingPage({
                 type="button"
                 onClick={() => {
                   setAuthError(null);
+                  setAuthSuccessMsg(null);
                   setAuthMode('login');
                 }}
                 className={`py-2 text-xs rounded-xl transition cursor-pointer ${
@@ -2457,6 +2539,7 @@ export default function PublicLandingPage({
                 type="button"
                 onClick={() => {
                   setAuthError(null);
+                  setAuthSuccessMsg(null);
                   setAuthMode('signup');
                 }}
                 className={`py-2 text-xs rounded-xl transition cursor-pointer ${
@@ -2473,27 +2556,38 @@ export default function PublicLandingPage({
               onSubmit={async (e) => {
                 e.preventDefault();
                 setAuthError(null);
+                setAuthSuccessMsg(null);
                 setSubmittingAuth(true);
                 try {
-                  const res =
-                    authMode === 'signup'
-                      ? await supabase.auth.signUp({
-                          email: email.trim(),
-                          password,
-                          options: {
-                            data: {
-                              full_name: fullName.trim(),
-                              matric_no: matricNo.trim().toUpperCase(),
-                              phone_number: phoneNumber.trim(),
-                              role: 'member',
-                            },
-                          },
-                        })
-                      : await supabase.auth.signInWithPassword({
-                          email: email.trim(),
-                          password,
-                        });
-                  if (res.error) setAuthError(res.error.message);
+                  if (authMode === 'signup') {
+                    const res = await supabase.auth.signUp({
+                      email: email.trim(),
+                      password,
+                      options: {
+                        data: {
+                          full_name: fullName.trim(),
+                          matric_no: matricNo.trim().toUpperCase(),
+                          phone_number: phoneNumber.trim(),
+                          role: 'member',
+                        },
+                      },
+                    });
+                    if (res.error) {
+                      setAuthError(res.error.message);
+                    } else if (!res.data.session) {
+                      setAuthSuccessMsg(
+                        'Account registered! Please check your email inbox to confirm, or sign in if verification is disabled.'
+                      );
+                    }
+                  } else {
+                    const res = await supabase.auth.signInWithPassword({
+                      email: email.trim(),
+                      password,
+                    });
+                    if (res.error) setAuthError(res.error.message);
+                  }
+                } catch {
+                  setAuthError('Network error connecting to ClubSync. Please check your connection and try again.');
                 } finally {
                   setSubmittingAuth(false);
                 }
@@ -2547,21 +2641,35 @@ export default function PublicLandingPage({
                 className="w-full rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 text-sm"
                 required
               />
-              {authError && <div className="text-rose-600 font-semibold">{authError}</div>}
+              {authError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">
+                  {authError}
+                </div>
+              )}
+              {authSuccessMsg && (
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold">
+                  {authSuccessMsg}
+                </div>
+              )}
               <button
                 type="submit"
                 disabled={submittingAuth}
-                className={`w-full py-2.5 rounded-xl font-bold text-sm shadow-sm cursor-pointer disabled:opacity-60 ${
+                className={`w-full py-2.5 rounded-xl font-bold text-sm shadow-sm cursor-pointer disabled:opacity-60 inline-flex items-center justify-center gap-2 ${
                   authMode === 'login'
                     ? theme.primaryBtn
                     : 'bg-slate-800 hover:bg-slate-700 text-white'
                 }`}
               >
-                {submittingAuth
-                  ? 'Please wait...'
-                  : authMode === 'login'
-                  ? 'Sign In'
-                  : 'Create Member Account'}
+                {submittingAuth && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>
+                  {submittingAuth
+                    ? authMode === 'login'
+                      ? 'Signing in...'
+                      : 'Creating account...'
+                    : authMode === 'login'
+                    ? 'Sign In'
+                    : 'Create Member Account'}
+                </span>
               </button>
             </form>
           </div>

@@ -122,6 +122,10 @@ export default function AuditReviewModal({
   const [deletingClaim, setDeletingClaim] = useState(false);
   const [compareMatch, setCompareMatch] = useState<DuplicateClaimMatch | null>(null);
   const [copiedDeepLink, setCopiedDeepLink] = useState(false);
+  const [auditCheckLoading, setAuditCheckLoading] = useState(false);
+  const [auditCheckResult, setAuditCheckResult] = useState<string | null>(null);
+  const [auditCheckSource, setAuditCheckSource] = useState<'gemini' | 'local' | null>(null);
+  const [auditCheckErr, setAuditCheckErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (claim) {
@@ -138,6 +142,10 @@ export default function AuditReviewModal({
       setIsEditingClaim(false);
       setConfirmDeleteClaim(false);
       setCompareMatch(null);
+      setAuditCheckLoading(false);
+      setAuditCheckResult(null);
+      setAuditCheckSource(null);
+      setAuditCheckErr(null);
       setEditTitle(claim.title || '');
       setEditCategory(claim.category || departments[0] || 'Member');
       setEditAmount(String(claim.amount ?? ''));
@@ -687,10 +695,81 @@ export default function AuditReviewModal({
     }
   };
 
+  const parsedAiFlags = claim.ai_ocr_summary?.includes('| Flags:')
+    ? claim.ai_ocr_summary
+        .split('| Flags:')[1]
+        ?.split(';')
+        .map((s) => s.trim())
+        .filter(Boolean) || []
+    : [];
+
+  const handleRunAiAuditCheck = async () => {
+    if (auditCheckLoading) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setAuditCheckErr('You are offline. Reconnect to run AI Audit Check.');
+      return;
+    }
+    setAuditCheckErr(null);
+    setAuditCheckLoading(true);
+    try {
+      const evAlloc = budget ? Number(budget.allocated_amount || 0) : null;
+      const evSpent = budget ? Number(budget.spent_amount || 0) : null;
+      const evRemaining =
+        evAlloc !== null && evSpent !== null ? Number((evAlloc - evSpent).toFixed(2)) : null;
+
+      const res = await fetch('/api/ai/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message:
+            'Run a concise 3-bullet audit check for this claim: (1) Amount & OCR match, (2) Event budget impact, (3) Duplicate or OCR red flags.',
+          history: [],
+          mode: 'audit',
+          role: isOwner ? 'owner' : 'treasurer',
+          context: {
+            claim_audit: {
+              id: claim.id,
+              title: claim.title,
+              category: claim.category,
+              amount: Number(claim.amount),
+              expense_date: claim.expense_date,
+              merchant_name: claim.merchant_name,
+              status: claim.status,
+              ai_extracted_amount: claim.ai_extracted_amount,
+              ai_extracted_merchant: claim.ai_extracted_merchant,
+              ai_extracted_date: claim.ai_extracted_date,
+              ai_confidence: claim.ai_confidence,
+              ai_ocr_summary: claim.ai_ocr_summary || null,
+              anomaly_flags: parsedAiFlags,
+              event_name: budget?.event_name || claim.custom_event_name || 'General Club Expense',
+              event_allocated_budget: evAlloc,
+              event_spent_amount: evSpent,
+              event_remaining_budget: evRemaining,
+              duplicate_matches_count: duplicateMatches.length,
+              approval_threshold: approvalThreshold,
+            },
+          },
+        }),
+      });
+      if (!res.ok) {
+        throw new Error('Could not complete AI audit check.');
+      }
+      const data = (await res.json()) as { reply?: string; source?: 'gemini' | 'local' };
+      setAuditCheckResult(data.reply || 'No audit summary available.');
+      setAuditCheckSource(data.source === 'gemini' ? 'gemini' : 'local');
+    } catch (err: unknown) {
+      setAuditCheckErr(
+        err instanceof Error ? err.message : 'Unable to run AI Audit Check right now.'
+      );
+    } finally {
+      setAuditCheckLoading(false);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl border border-emerald-200 max-w-3xl w-full overflow-hidden my-8">
-        <div className="bg-emerald-800 text-white px-6 py-4 flex items-center justify-between gap-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 backdrop-blur-xs p-2.5 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-2xl border border-emerald-200 max-w-3xl w-full overflow-hidden my-4 sm:my-8">
+        <div className="bg-emerald-800 text-white px-4 sm:px-6 py-4 flex items-center justify-between gap-2 sm:gap-3">
           <div className="min-w-0">
             <span className="text-[11px] uppercase tracking-wider text-amber-300 font-bold">
               Claim Details &amp; Reimbursement Proof
@@ -938,7 +1017,7 @@ export default function AuditReviewModal({
             </div>
           </form>
         ) : (
-        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[82vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6 max-h-[82vh] overflow-y-auto overflow-x-hidden">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-bold text-emerald-900 uppercase">
@@ -1010,32 +1089,60 @@ export default function AuditReviewModal({
               )}
             </div>
 
-            {(claim.ai_extracted_amount !== null || claim.ai_extracted_merchant || claim.ai_extracted_date) && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-[11px] text-emerald-950 space-y-1">
+            {(claim.ai_extracted_amount !== null ||
+              claim.ai_extracted_merchant ||
+              claim.ai_extracted_date ||
+              claim.ai_ocr_summary) && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-[11px] text-emerald-950 space-y-1.5">
                 <div className="font-extrabold flex items-center gap-1 text-emerald-800">
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
                   <span>
                     Scanned Receipt Key Info
                     {claim.ai_confidence ? ` (${claim.ai_confidence}% match)` : ''}
                   </span>
                 </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-slate-700">
-                  {claim.ai_extracted_amount !== null && (
-                    <span>
-                      Amount: <strong className="text-slate-900">RM {Number(claim.ai_extracted_amount).toFixed(2)}</strong>
-                    </span>
-                  )}
-                  {claim.ai_extracted_merchant && (
-                    <span>
-                      Merchant: <strong className="text-slate-900">{claim.ai_extracted_merchant}</strong>
-                    </span>
-                  )}
-                  {claim.ai_extracted_date && (
-                    <span>
-                      Date: <strong className="text-slate-900">{claim.ai_extracted_date}</strong>
-                    </span>
-                  )}
-                </div>
+                {(claim.ai_extracted_amount !== null ||
+                  claim.ai_extracted_merchant ||
+                  claim.ai_extracted_date) && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-slate-700">
+                    {claim.ai_extracted_amount !== null && (
+                      <span>
+                        Amount:{' '}
+                        <strong className="text-slate-900">
+                          RM {Number(claim.ai_extracted_amount).toFixed(2)}
+                        </strong>
+                      </span>
+                    )}
+                    {claim.ai_extracted_merchant && (
+                      <span>
+                        Merchant: <strong className="text-slate-900">{claim.ai_extracted_merchant}</strong>
+                      </span>
+                    )}
+                    {claim.ai_extracted_date && (
+                      <span>
+                        Date: <strong className="text-slate-900">{claim.ai_extracted_date}</strong>
+                      </span>
+                    )}
+                  </div>
+                )}
+                {parsedAiFlags.length > 0 && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-amber-950 space-y-0.5">
+                    <div className="font-extrabold text-amber-800 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                      <span>AI Verification Flags</span>
+                    </div>
+                    <ul className="list-disc pl-4 space-y-0.5">
+                      {parsedAiFlags.map((flag, i) => (
+                        <li key={i}>{flag}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {parsedAiFlags.length === 0 && claim.ai_ocr_summary && (
+                  <div className="text-[10px] text-slate-500 break-words">
+                    {claim.ai_ocr_summary}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1251,6 +1358,45 @@ export default function AuditReviewModal({
                     >
                       View Proof <ExternalLink className="w-3 h-3 inline ml-0.5" />
                     </a>
+                  </div>
+                )}
+
+                {isTreasurer && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5 space-y-2.5 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Reviewer Audit Assistant</span>
+                      </span>
+                      <button
+                        type="button"
+                        disabled={auditCheckLoading}
+                        onClick={() => void handleRunAiAuditCheck()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white font-bold text-[11px] cursor-pointer shrink-0"
+                      >
+                        {auditCheckLoading ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-3 h-3 text-emerald-300" />
+                        )}
+                        <span>{auditCheckLoading ? 'Checking...' : 'AI Audit Check'}</span>
+                      </button>
+                    </div>
+                    {auditCheckErr && (
+                      <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-semibold">
+                        {auditCheckErr}
+                      </div>
+                    )}
+                    {auditCheckResult && (
+                      <div className="p-3 rounded-xl bg-white border border-slate-200 space-y-1.5">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 block">
+                          {auditCheckSource === 'gemini' ? 'Gemini AI Risk Check' : 'Automated Audit Check'}
+                        </span>
+                        <div className="text-[11px] text-slate-700 whitespace-pre-line leading-relaxed">
+                          {auditCheckResult}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

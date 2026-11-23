@@ -31,6 +31,11 @@ export interface ScannedReceiptData {
   merchant: string;
   date: string | null;
   suggestedCategory: string;
+  suggestedEvent?: string | null;
+  taxAmount?: number | null;
+  lineItems?: { name: string; amount: number }[];
+  anomalyFlags?: string[];
+  scanEngine?: 'ai' | 'ocr';
   confidence: number;
   rawText?: string;
   items?: ScannedReceiptItem[];
@@ -41,6 +46,8 @@ export interface ReceiptDropzoneProps {
   selectedFile?: File | null;
   file?: File | null;
   userId?: string;
+  activeEvents?: string[];
+  categories?: string[];
   onFileSelect: (file: File | null) => void;
   onUploadedUrl?: (url: string | null) => void;
   onScanComplete?: (data: ScannedReceiptData) => void;
@@ -235,6 +242,8 @@ export default function ReceiptDropzone({
   selectedFile,
   file,
   userId,
+  activeEvents = [],
+  categories = [],
   onFileSelect,
   onUploadedUrl,
   onScanComplete,
@@ -242,6 +251,8 @@ export default function ReceiptDropzone({
   const [internalFile, setInternalFile] = useState<File | null>(null);
   const [sourceFiles, setSourceFiles] = useState<File[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [scanEngineBadge, setScanEngineBadge] = useState<'ai' | 'ocr' | null>(null);
+  const [scanStatusLabel, setScanStatusLabel] = useState<string>('');
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -366,7 +377,95 @@ export default function ReceiptDropzone({
     }
   };
 
-  const runOcrOnFiles = async (filesToScan: File[]) => {
+  const runAiVisionScan = async (
+    imageFile: File,
+    allFiles: File[]
+  ): Promise<boolean> => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return false;
+    }
+    try {
+      setScanStatusLabel('AI Smart Scan...');
+      setProgress(25);
+      const dataUrl = await fileToDataUrl(imageFile);
+      const res = await fetch('/api/ai/scan-receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: dataUrl,
+          mimeType: imageFile.type || 'image/jpeg',
+          activeEvents,
+          categories,
+        }),
+      });
+      if (!res.ok) return false;
+      const json = (await res.json()) as {
+        fallback?: boolean;
+        data?: {
+          merchant?: string;
+          date?: string | null;
+          total_amount?: number | null;
+          tax_amount?: number | null;
+          line_items?: { name: string; amount: number }[];
+          suggested_category?: string;
+          suggested_event?: string | null;
+          anomaly_flags?: string[];
+          confidence?: number;
+        };
+      };
+      if (json.fallback || !json.data) {
+        return false;
+      }
+
+      const d = json.data;
+      const merchantStr = (d.merchant || '').trim();
+      const totalAmt =
+        typeof d.total_amount === 'number' && Number.isFinite(d.total_amount)
+          ? d.total_amount
+          : null;
+      const aiItems = Array.isArray(d.line_items) ? d.line_items : [];
+      const mappedItems: ScannedReceiptItem[] =
+        aiItems.length > 0
+          ? aiItems.map((it, idx) => ({
+              fileName: idx === 0 ? imageFile.name : `item-${idx + 1}`,
+              amount: typeof it.amount === 'number' ? it.amount : null,
+              merchant: it.name || merchantStr || 'Item',
+              date: d.date || null,
+              confidence: d.confidence ?? 90,
+            }))
+          : [
+              {
+                fileName: imageFile.name,
+                amount: totalAmt,
+                merchant: merchantStr,
+                date: d.date || null,
+                confidence: d.confidence ?? 90,
+              },
+            ];
+
+      setProgress(100);
+      setScanEngineBadge('ai');
+      onScanComplete?.({
+        amount: totalAmt,
+        merchant: merchantStr,
+        date: d.date || null,
+        suggestedCategory: (d.suggested_category || '').trim(),
+        suggestedEvent: d.suggested_event ?? null,
+        taxAmount: typeof d.tax_amount === 'number' ? d.tax_amount : null,
+        lineItems: aiItems,
+        anomalyFlags: Array.isArray(d.anomaly_flags) ? d.anomaly_flags : [],
+        scanEngine: 'ai',
+        confidence: typeof d.confidence === 'number' ? d.confidence : 90,
+        items: mappedItems,
+        fileNames: allFiles.map((f) => f.name),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const runOcrOnFiles = async (filesToScan: File[], primaryImageForAi?: File | null) => {
     if (!onScanComplete || filesToScan.length === 0) return;
     setErrorMsg(null);
 
@@ -379,7 +478,25 @@ export default function ReceiptDropzone({
     }
 
     setScanning(true);
-    setProgress(0);
+    setProgress(10);
+    setScanEngineBadge(null);
+
+    // Try AI Smart Scan first (falls back cleanly to local Tesseract OCR if offline/no key)
+    const aiTarget =
+      primaryImageForAi &&
+      !(primaryImageForAi.type === 'application/pdf' || primaryImageForAi.name.toLowerCase().endsWith('.pdf'))
+        ? primaryImageForAi
+        : imageTargets[0];
+
+    const aiOk = await runAiVisionScan(aiTarget, filesToScan);
+    if (aiOk) {
+      setScanning(false);
+      setProgress(0);
+      setScanStatusLabel('');
+      return;
+    }
+
+    setScanStatusLabel('Local OCR...');
     interface OcrWorker {
       recognize: (img: Blob) => Promise<{ data: { text: string; confidence: number } }>;
       terminate: () => Promise<unknown>;
@@ -439,11 +556,13 @@ export default function ReceiptDropzone({
         return;
       }
 
+      setScanEngineBadge('ocr');
       onScanComplete({
         amount: totalAmount,
         merchant: uniqueMerchants,
         date: firstDate,
         suggestedCategory: '',
+        scanEngine: 'ocr',
         confidence: avgConfidence,
         rawText: rawTexts.join('\n---\n'),
         items: scannedItems,
@@ -473,6 +592,7 @@ export default function ReceiptDropzone({
       }
       setScanning(false);
       setProgress(0);
+      setScanStatusLabel('');
     }
   };
 
@@ -511,6 +631,7 @@ export default function ReceiptDropzone({
       setUploadingReceipt(false);
       setInternalFile(null);
       setSourceFiles([]);
+      setScanEngineBadge(null);
       onUploadedUrl?.(null);
       onFileSelect(null);
       return;
@@ -556,7 +677,7 @@ export default function ReceiptDropzone({
     onFileSelect(finalFile);
 
     const uploadPromise = uploadFileImmediately(finalFile);
-    const ocrPromise = autoScan && onScanComplete ? runOcrOnFiles(effectiveSources) : Promise.resolve();
+    const ocrPromise = autoScan && onScanComplete ? runOcrOnFiles(effectiveSources, finalFile) : Promise.resolve();
     await Promise.all([uploadPromise, ocrPromise]);
   };
 
@@ -623,7 +744,7 @@ export default function ReceiptDropzone({
     if (!uploadedReceiptUrl && !uploadingReceipt) {
       void uploadFileImmediately(activeFile);
     }
-    await runOcrOnFiles(targets);
+    await runOcrOnFiles(targets, activeFile);
   };
 
   return (
@@ -811,22 +932,39 @@ export default function ReceiptDropzone({
 
       {activeFile && (
         <div className="rounded-xl bg-slate-50 border border-slate-200 p-2.5 space-y-2">
-          <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="font-semibold text-slate-700 truncate">
-              {activeFile.name}
-              {sourceFiles.length > 1 ? ` (${sourceFiles.length} receipts stacked)` : ''}
-            </span>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="font-semibold text-slate-700 truncate">
+                {activeFile.name}
+                {sourceFiles.length > 1 ? ` (${sourceFiles.length} receipts stacked)` : ''}
+              </span>
+              {scanEngineBadge && (
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold shrink-0 ${
+                    scanEngineBadge === 'ai'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {scanEngineBadge === 'ai' ? 'AI Vision' : 'Local OCR'}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2 shrink-0">
               {onScanComplete && (
                 <button
                   type="button"
                   disabled={scanning}
                   onClick={() => void handleScan()}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-70 text-white font-bold text-[11px] cursor-pointer"
-                  title="Reads amount, date and merchant from the receipt image(s)"
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-70 text-white font-bold text-[11px] cursor-pointer"
+                  title="Reads amount, date, merchant & flags from the receipt image(s)"
                 >
                   {scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                  <span>{scanning ? `Reading receipt… ${progress}%` : 'Scan Receipt'}</span>
+                  <span>
+                    {scanning
+                      ? `${scanStatusLabel || 'Reading receipt…'} ${progress}%`
+                      : 'AI Smart Scan'}
+                  </span>
                 </button>
               )}
               <button

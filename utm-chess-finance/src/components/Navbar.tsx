@@ -32,6 +32,7 @@ export default function Navbar({
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
+  const [returningHome, setReturningHome] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<{
     prompt: () => Promise<void>;
     userChoice: Promise<{ outcome: string }>;
@@ -103,6 +104,10 @@ export default function Navbar({
   };
 
   const handleNav = (tab: NavTab) => {
+    if (tab === 'activities' && activeTab !== 'activities') {
+      setReturningHome(true);
+      setTimeout(() => setReturningHome(false), 700);
+    }
     onSelectTab(tab);
     setDrawerOpen(false);
     if (typeof window !== 'undefined') {
@@ -150,6 +155,9 @@ export default function Navbar({
             >
               {renderLogo()}
               <span className="text-sm sm:text-base font-extrabold tracking-tight group-hover:text-emerald-500 transition truncate">{clubName || 'ClubSync'}</span>
+              {returningHome && (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500 shrink-0" />
+              )}
               <span className={`hidden sm:inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border shrink-0 ${darkMode ? 'bg-white/5 border-white/10 text-emerald-300' : 'bg-emerald-50 text-emerald-800 border-emerald-200'}`}>{currentBatch}</span>
               {isOwner ? <span className="hidden xs:inline-flex sm:inline-flex px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-amber-400 text-slate-950 shrink-0"><Crown className="w-3 h-3 inline mr-0.5" />Owner</span> : isAdminOrOwner ? <span className="hidden xs:inline-flex sm:inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-600 text-white shrink-0">Admin</span> : null}
             </button>

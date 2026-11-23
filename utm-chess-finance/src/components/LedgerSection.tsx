@@ -23,6 +23,9 @@ import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/
 import { waLink } from '@/lib/whatsapp';
 import type { MemberLookupHint } from '@/lib/memberLookup';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
+import AiBudgetCopilot from './AiBudgetCopilot';
+import ErrorBoundary from './ErrorBoundary';
+import { LedgerSkeleton } from './LoadingSkeletons';
 import {
   Search,
   Plus,
@@ -84,6 +87,7 @@ interface LedgerSectionProps {
   onSelectClaim?: (claim: Claim) => void;
   onRefresh: (msg: string) => void;
   onOpenMemberProfile?: (hint: MemberLookupHint) => void;
+  loading?: boolean;
 }
 
 type FinanceTabView = 'sheet' | 'activity' | 'unpaid' | 'plan';
@@ -428,6 +432,7 @@ export default function LedgerSection({
   onSelectClaim,
   onRefresh,
   onOpenMemberProfile,
+  loading = false,
 }: LedgerSectionProps) {
   const [activeView, setActiveView] = useState<FinanceTabView>('sheet');
   const [historyTarget, setHistoryTarget] = useState<HistoryModalTarget | null>(null);
@@ -1589,8 +1594,82 @@ export default function LedgerSection({
     onRefresh('Removed Budget Plan line');
   };
 
+  const aiFinanceContext = useMemo(() => {
+    const pendingClaims = claims.filter((c) => !c.deleted_at && c.status === 'Pending');
+    const catTotals = new Map<string, number>();
+    unifiedRows
+      .filter((r) => r.entryType === 'OUT')
+      .forEach((r) => {
+        const key = r.category || 'Other Expense';
+        catTotals.set(key, (catTotals.get(key) || 0) + r.amount);
+      });
+
+    return {
+      finance: {
+        opening_balance: openingTotal,
+        current_savings: mathSummary.totalSavings,
+        bank_balance: mathSummary.currentBank,
+        cash_balance: mathSummary.currentCash,
+        total_in: mathSummary.totalIn,
+        total_out: mathSummary.totalOut,
+        pending_claims_total: pendingClaims.reduce((s, c) => s + Number(c.amount || 0), 0),
+        pending_fees_total: pendingFeesTotal,
+        reserved_preclaims: reservedPreClaimsTotal,
+      },
+      events_budget: budgets
+        .filter((b) => !b.deleted_at)
+        .map((b) => {
+          const evPending = pendingClaims
+            .filter((c) => c.budget_id === b.id)
+            .reduce((s, c) => s + Number(c.amount || 0), 0);
+          return {
+            event_name: b.event_name,
+            status: b.status,
+            event_date: b.event_date,
+            allocated: Number(b.allocated_amount || 0),
+            spent: Number(b.spent_amount || 0),
+            pending_claims_amount: evPending,
+          };
+        }),
+      category_breakdown: Array.from(catTotals.entries())
+        .map(([category, total]) => ({ category, total: Number(total.toFixed(2)) }))
+        .sort((a, b) => b.total - a.total),
+      pending_claims: pendingClaims.slice(0, 20).map((c) => ({
+        id: c.id,
+        title: c.title,
+        event:
+          budgets.find((b) => b.id === c.budget_id)?.event_name ||
+          c.custom_event_name ||
+          'General Club Fund',
+        amount: Number(c.amount || 0),
+        date: c.expense_date,
+        status: c.status,
+      })),
+    };
+  }, [
+    claims,
+    unifiedRows,
+    openingTotal,
+    mathSummary,
+    pendingFeesTotal,
+    reservedPreClaimsTotal,
+    budgets,
+  ]);
+
+  if (loading) {
+    return <LedgerSkeleton />;
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-slate-900">
+      {(canEdit || profile.role === 'owner' || profile.role === 'treasurer') && (
+        <ErrorBoundary sectionName="AI Finance Copilot">
+          <AiBudgetCopilot
+            role={profile.role === 'owner' ? 'owner' : 'treasurer'}
+            financeContext={aiFinanceContext}
+          />
+        </ErrorBoundary>
+      )}
       {/* ===================== TOP SUMMARY STRIP (4 CALM BLOCKS) ===================== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 border-b border-slate-200 bg-white">
         {/* 1. Current Club Savings */}
@@ -1800,8 +1879,219 @@ export default function LedgerSection({
             </div>
           </div>
 
-          {/* 7-Column Crisp Spreadsheet Table */}
-          <div className="overflow-x-auto">
+          {/* Mobile Stacked Transaction Cards (< 768px) */}
+          <div className="md:hidden divide-y divide-slate-200">
+            {/* Pinned Starting Savings Card */}
+            <div className="p-4 bg-emerald-50/70 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-mono text-slate-500">{openingDate}</div>
+                  <div className="font-extrabold text-sm text-slate-900">Starting Club Savings</div>
+                  <div className="text-[11px] text-slate-600 mt-0.5">
+                    Bank RM {formatRM(openingBank)} · Cash RM {formatRM(openingCash)}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="inline-block px-2 py-0.5 rounded-md border border-emerald-200 bg-white text-[10px] font-bold text-emerald-800">
+                    Opening Balance
+                  </span>
+                  <div className="font-mono font-extrabold text-sm text-slate-900 mt-1">
+                    RM {formatRM(openingTotal)}
+                  </div>
+                </div>
+              </div>
+              {canEdit && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={openOpeningSavingsModal}
+                    className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-white hover:bg-emerald-100/70 text-emerald-800 font-bold text-xs cursor-pointer"
+                  >
+                    Edit Initial Savings
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {displayedRows.length === 0 ? (
+              <div className="py-8 px-4 text-center text-xs text-slate-400">
+                No matching transactions yet. Tap + Income or + Expense above to add one.
+              </div>
+            ) : (
+              displayedRows.map((row) => (
+                <div key={`mob-${row.uid}`} className="p-4 space-y-2.5 bg-white">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                        <span className="font-mono text-slate-500">{row.date}</span>
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-md border text-[10px] font-bold ${getActivityBadgeStyle(
+                            row.eventName
+                          )}`}
+                        >
+                          {row.eventName}
+                        </span>
+                        {row.source === 'CLAIM' && (
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">
+                            Claim
+                          </span>
+                        )}
+                        {row.source === 'FEE' && (
+                          <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200 text-[10px] font-bold">
+                            Fee
+                          </span>
+                        )}
+                        {row.source === 'GUEST_FEE' && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">
+                            Guest Fee
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-bold text-sm text-slate-900 break-words">
+                        {row.title}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                        <span>{row.personShort}</span>
+                        <span>·</span>
+                        {canEdit ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleAccountType(row)}
+                            className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded font-semibold text-[10px] border cursor-pointer ${
+                              row.accountType === 'Cash'
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-slate-100 text-slate-700 border-slate-200'
+                            }`}
+                          >
+                            {row.accountType === 'Cash' ? (
+                              <Banknote className="w-2.5 h-2.5" />
+                            ) : (
+                              <Landmark className="w-2.5 h-2.5" />
+                            )}
+                            <span>{row.accountType}</span>
+                          </button>
+                        ) : (
+                          <span className="font-semibold text-slate-600">{row.accountType}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0 space-y-0.5">
+                      <div
+                        className={`font-mono font-extrabold text-sm ${
+                          row.entryType === 'IN' ? 'text-emerald-700' : 'text-rose-600'
+                        }`}
+                      >
+                        {row.entryType === 'IN' ? '+' : '-'}RM {formatRM(row.amount)}
+                      </div>
+                      <div className="text-[11px] font-mono font-bold text-slate-500">
+                        Bal: {row.runningBalance < 0 ? '-' : ''}RM {formatRM(row.runningBalance)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+                    {row.attachmentUrl && (
+                      <a
+                        href={row.attachmentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-[11px] font-bold"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Receipt</span>
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setHistoryTarget({
+                          table:
+                            row.source === 'CLAIM'
+                              ? 'claims'
+                              : row.source === 'FEE'
+                              ? 'activity_fee_payments'
+                              : row.source === 'GUEST_FEE'
+                              ? 'public_guest_registrations'
+                              : 'ledger_entries',
+                          recordId: row.recordId,
+                          title: row.title,
+                        })
+                      }
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold cursor-pointer"
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      <span>History</span>
+                    </button>
+                    {canEdit && row.source === 'LEDGER' && row.rawLedger && (
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(row.rawLedger!)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit</span>
+                      </button>
+                    )}
+                    {canEdit && row.source === 'FEE' && row.rawFee && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingFeeItem(row.rawFee!);
+                          setEditFeeAmount(String(row.rawFee!.amount_paid));
+                          setEditFeeStatus(row.rawFee!.status);
+                          setEditFeeAccount(accountOf(row.rawFee!.account_type));
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Edit</span>
+                      </button>
+                    )}
+                    {canEdit && row.source === 'CLAIM' && row.rawClaim && onSelectClaim && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectClaim(row.rawClaim!)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Review</span>
+                      </button>
+                    )}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteRow(row)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-600 text-[11px] font-bold cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between font-semibold text-slate-600">
+                <span>
+                  {displayedRows.length} transaction{displayedRows.length === 1 ? '' : 's'}
+                  {hasSheetFilters ? ' (filtered)' : ''}
+                </span>
+                <span className="font-mono font-extrabold text-slate-900">
+                  Closing: {sheetFooterTotals.closing < 0 ? '-' : ''}RM {formatRM(sheetFooterTotals.closing)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] font-mono font-bold">
+                <span className="text-emerald-700">+RM {formatRM(sheetFooterTotals.inTotal)} IN</span>
+                <span className="text-rose-600">-RM {formatRM(sheetFooterTotals.outTotal)} OUT</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 7-Column Crisp Spreadsheet Table (Desktop) */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-600">

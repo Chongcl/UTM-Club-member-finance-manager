@@ -371,7 +371,29 @@ export default function ClaimFormModal({
   const handleScanComplete = (data: ScannedReceiptData) => {
     setScannedData(data);
     setExtraFileNames(data.fileNames || []);
-    if (data.items && data.items.length > 0) {
+    if (data.lineItems && data.lineItems.length > 0) {
+      const prefix = data.merchant ? `${data.merchant} — ` : '';
+      const aiRows: ClaimReceiptLineItem[] = data.lineItems.map((it, idx) => ({
+        id: `scan-${Date.now()}-${idx}`,
+        shop: `${prefix}${it.name}`.slice(0, 100),
+        amount: it.amount.toFixed(2),
+        date: data.date || undefined,
+      }));
+      if (data.taxAmount && data.taxAmount > 0) {
+        const itemsSum = data.lineItems.reduce((s, it) => s + it.amount, 0);
+        if (data.amount !== null && Math.abs(data.amount - itemsSum) >= 0.02) {
+          aiRows.push({
+            id: `scan-${Date.now()}-tax`,
+            shop: `${prefix}Tax / SST`,
+            amount: data.taxAmount.toFixed(2),
+            date: data.date || undefined,
+          });
+        }
+      }
+      setLineItems(aiRows);
+      if (data.merchant) setMerchantName(data.merchant);
+      if (data.amount !== null) setAmount(data.amount.toFixed(2));
+    } else if (data.items && data.items.length > 0) {
       const scannedRows: ClaimReceiptLineItem[] = data.items.map((it, idx) => ({
         id: `scan-${Date.now()}-${idx}`,
         shop: it.merchant || '',
@@ -381,16 +403,27 @@ export default function ClaimFormModal({
         rawText: it.rawText,
       }));
       syncFromLineItems(scannedRows);
+      if (data.amount !== null) setAmount(data.amount.toFixed(2));
     } else {
       if (data.amount !== null) setAmount(data.amount.toFixed(2));
       if (data.merchant) setMerchantName(data.merchant);
     }
-    if (data.amount !== null && (!data.items || data.items.length === 0)) {
-      setAmount(data.amount.toFixed(2));
-    }
     if (data.date) setExpenseDate(data.date);
-    if (data.suggestedCategory && departments.includes(data.suggestedCategory)) {
-      setCategory(data.suggestedCategory);
+    if (data.suggestedCategory) {
+      const exactCat =
+        departments.find((d) => d.toLowerCase() === data.suggestedCategory.toLowerCase()) ||
+        departments.find((d) =>
+          d.toLowerCase().includes(data.suggestedCategory.toLowerCase())
+        );
+      if (exactCat) setCategory(exactCat);
+    }
+    if (data.suggestedEvent && !eventManuallyPicked) {
+      const matchedBudget = budgets.find(
+        (b) => b.event_name.toLowerCase() === data.suggestedEvent?.toLowerCase()
+      );
+      if (matchedBudget) {
+        setSelectedEventOption(matchedBudget.id);
+      }
     }
     if (!title) {
       setTitle(
@@ -512,8 +545,12 @@ export default function ClaimFormModal({
       }${itemsTag ? ` ${itemsTag}` : ''}`;
 
       const cleanMerchant = merchantName.trim() || 'Merchant';
+      const aiFlagsPart =
+        scannedData?.anomalyFlags && scannedData.anomalyFlags.length > 0
+          ? ` | Flags: ${scannedData.anomalyFlags.join('; ')}`
+          : '';
       const scannedSummary = scannedData
-        ? `Scanned (${scannedData.confidence}%): RM ${scannedData.amount?.toFixed(2) ?? '-'} | ${scannedData.merchant || '-'} | ${scannedData.date || '-'}`
+        ? `${scannedData.scanEngine === 'ai' ? 'AI Vision' : 'Local OCR'} (${scannedData.confidence}%): RM ${scannedData.amount?.toFixed(2) ?? '-'} | ${scannedData.merchant || '-'} | ${scannedData.date || '-'}${aiFlagsPart}`
         : `Receipt attached (${file.name})`;
 
       const corePayload = {
@@ -534,7 +571,7 @@ export default function ClaimFormModal({
       };
 
       const candidates: Record<string, unknown>[] = [
-        // Tier 1: Full modern schema with pre_claim_id link
+        // Tier 1: Full modern schema with pre_claim_id link + AI summary notes
         {
           ...corePayload,
           ...(linkedPreClaim ? { pre_claim_id: linkedPreClaim.id } : {}),
@@ -542,6 +579,7 @@ export default function ClaimFormModal({
           ai_extracted_merchant: scannedData?.merchant || null,
           ai_extracted_date: scannedData?.date ?? null,
           ai_confidence: scannedData?.confidence ?? null,
+          ai_ocr_summary: scannedSummary,
           payment_info: paymentSummary,
           claimant_qr_url: finalClaimantQr,
         },
@@ -940,9 +978,9 @@ export default function ClaimFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl border border-emerald-200 max-w-xl w-full overflow-hidden my-8">
-        <div className="bg-emerald-800 text-white px-6 py-4 flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 backdrop-blur-xs p-2.5 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-2xl border border-emerald-200 max-w-xl w-full overflow-hidden my-4 sm:my-8">
+        <div className="bg-emerald-800 text-white px-4 sm:px-6 py-4 flex items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-bold">
               {mode === 'receipt' ? 'Submit Claim' : 'Pre-Claim Request'}
@@ -1105,7 +1143,7 @@ export default function ClaimFormModal({
           <form
             onSubmit={handleReceiptSubmit}
             noValidate
-            className="p-6 space-y-4 max-h-[72vh] overflow-y-auto"
+            className="p-4 sm:p-6 space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden"
           >
             {errorMsg && (
               <div className="flex items-center gap-2 text-xs bg-red-50 text-red-700 px-3.5 py-2.5 rounded-xl border border-red-200 font-semibold">
@@ -1119,6 +1157,8 @@ export default function ClaimFormModal({
                 <ReceiptDropzone
                   selectedFile={file}
                   userId={profile.id}
+                  activeEvents={budgets.filter((b) => b.status === 'Active').map((b) => b.event_name)}
+                  categories={departments}
                   onFileSelect={(f) => {
                     setFile(f);
                     if (!f) {
@@ -1132,15 +1172,33 @@ export default function ClaimFormModal({
                 />
 
                 {scannedData && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-900">
-                    <span className="font-bold flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
-                      <span>
-                        {scannedData.amount !== null ? `RM ${scannedData.amount.toFixed(2)}` : 'Scanned'}
-                        {scannedData.merchant ? ` · ${scannedData.merchant}` : ''}
-                        {scannedData.date ? ` · ${scannedData.date}` : ''}
+                  <div className="space-y-2">
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-900">
+                      <span className="font-bold flex items-center gap-1.5 min-w-0">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                        <span className="truncate">
+                          {scannedData.amount !== null ? `RM ${scannedData.amount.toFixed(2)}` : 'Scanned'}
+                          {scannedData.merchant ? ` · ${scannedData.merchant}` : ''}
+                          {scannedData.date ? ` · ${scannedData.date}` : ''}
+                        </span>
                       </span>
-                    </span>
+                      <span className="px-2 py-0.5 rounded-full bg-white border border-emerald-200 text-[10px] font-extrabold shrink-0">
+                        {scannedData.scanEngine === 'ai' ? 'AI Vision' : 'Local OCR'} · {scannedData.confidence}%
+                      </span>
+                    </div>
+                    {scannedData.anomalyFlags && scannedData.anomalyFlags.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-950 space-y-1">
+                        <div className="font-extrabold flex items-center gap-1.5 text-amber-800">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          <span>Receipt Verification Notes</span>
+                        </div>
+                        <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
+                          {scannedData.anomalyFlags.map((flag, i) => (
+                            <li key={i}>{flag}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1274,6 +1332,20 @@ export default function ClaimFormModal({
                       />
                       <span>Separate purchase — continue</span>
                     </label>
+                  </div>
+                )}
+
+                {scannedData?.anomalyFlags && scannedData.anomalyFlags.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs text-amber-950 space-y-1">
+                    <div className="font-extrabold flex items-center gap-1.5 text-amber-800">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>AI Receipt Notes (Please double-check before submitting)</span>
+                    </div>
+                    <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
+                      {scannedData.anomalyFlags.map((flag, i) => (
+                        <li key={i}>{flag}</li>
+                      ))}
+                    </ul>
                   </div>
                 )}
 

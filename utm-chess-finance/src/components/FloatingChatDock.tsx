@@ -26,6 +26,9 @@ import {
   Trash2,
   Hash,
   User,
+  Sparkles,
+  RotateCcw,
+  WifiOff,
 } from 'lucide-react';
 
 interface FloatingChatDockProps {
@@ -40,6 +43,8 @@ interface FloatingChatDockProps {
   openDmWithUserId?: string | null;
   onClearOpenDmTarget?: () => void;
   onUpdatedPublicReadAt?: (iso: string) => void;
+  aiContext?: Record<string, unknown>;
+  aiRole?: 'member' | 'treasurer' | 'owner';
 }
 
 interface RoomSummary {
@@ -128,8 +133,107 @@ export default function FloatingChatDock({
   openDmWithUserId = null,
   onClearOpenDmTarget,
   onUpdatedPublicReadAt,
+  aiContext,
+  aiRole,
 }: FloatingChatDockProps) {
-  const [viewTab, setViewTab] = useState<'public' | 'dms' | 'people'>('public');
+  const resolvedAiRole: 'member' | 'treasurer' | 'owner' =
+    aiRole || (profile.role === 'owner' ? 'owner' : profile.role === 'treasurer' && isAdminMode ? 'treasurer' : 'member');
+  const [viewTab, setViewTab] = useState<'public' | 'dms' | 'people' | 'ai'>('public');
+
+  interface AiChatBubble {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    source?: 'gemini' | 'local';
+  }
+  const [aiMessages, setAiMessages] = useState<AiChatBubble[]>([]);
+  const [aiDraft, setAiDraft] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiOfflineNotice, setAiOfflineNotice] = useState<string | null>(null);
+  const aiScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const aiStarterChips =
+    resolvedAiRole === 'treasurer' || resolvedAiRole === 'owner'
+      ? [
+          'Summarize club budget health',
+          'Which claims need my review?',
+          'Spot high-spend categories',
+        ]
+      : [
+          'How do I submit a claim?',
+          'What events are coming up?',
+          'Check my pending claims & loans',
+        ];
+
+  useEffect(() => {
+    if (viewTab === 'ai' && aiScrollRef.current) {
+      aiScrollRef.current.scrollTop = aiScrollRef.current.scrollHeight;
+    }
+  }, [aiMessages, aiLoading, viewTab]);
+
+  const sendAiQuestion = async (rawPrompt: string) => {
+    const clean = rawPrompt.trim();
+    if (!clean || aiLoading) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setAiOfflineNotice('You are offline. Reconnect to reach the AI assistant (showing local guide fallback when available).');
+    } else {
+      setAiOfflineNotice(null);
+    }
+
+    const userMsg: AiChatBubble = {
+      id: `u_${Date.now()}`,
+      role: 'user',
+      content: clean,
+    };
+    const nextHistory = [...aiMessages, userMsg].slice(-6).map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    setAiMessages((prev) => [...prev, userMsg]);
+    setAiDraft('');
+    setAiLoading(true);
+    try {
+      const res = await fetch('/api/ai/assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: clean,
+          history: nextHistory,
+          mode: 'portal',
+          role: resolvedAiRole,
+          context: aiContext || {},
+        }),
+      });
+      if (!res.ok) throw new Error('Assistant unavailable');
+      const data = (await res.json()) as {
+        reply?: string;
+        source?: 'gemini' | 'local';
+      };
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: `a_${Date.now()}`,
+          role: 'assistant',
+          content: data.reply || 'Sorry, I could not generate a reply right now.',
+          source: data.source === 'gemini' ? 'gemini' : 'local',
+        },
+      ]);
+    } catch {
+      setAiMessages((prev) => [
+        ...prev,
+        {
+          id: `a_${Date.now()}`,
+          role: 'assistant',
+          content:
+            'Unable to reach the assistant server right now. Check your internet connection or use the portal tabs (**Home & Activities**, **Claims**, **Equipment**) directly.',
+          source: 'local',
+        },
+      ]);
+    } finally {
+      setAiLoading(false);
+    }
+  };
   const [directory, setDirectory] = useState<ChatDirectoryMember[]>([]);
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [publicRoom, setPublicRoom] = useState<PublicRoomInfo | null>(null);
@@ -1092,7 +1196,13 @@ export default function FloatingChatDock({
               <MessageCircle className="w-4 h-4 text-emerald-400" />
               <span className="text-sm font-extrabold">Club Chat</span>
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white/10 text-emerald-200">
-                {viewTab === 'public' ? 'Club Lounge' : viewTab === 'dms' ? 'Direct Messages' : 'Member Directory'}
+                {viewTab === 'public'
+                  ? 'Club Lounge'
+                  : viewTab === 'dms'
+                  ? 'Direct Messages'
+                  : viewTab === 'people'
+                  ? 'Member Directory'
+                  : 'Ask AI'}
               </span>
             </div>
             <button
@@ -1106,8 +1216,8 @@ export default function FloatingChatDock({
             </button>
           </div>
 
-          {/* 3 Tabs: Public | DMs | People */}
-          <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 text-xs font-bold shrink-0">
+          {/* 4 Tabs: Public | DMs | People | Ask AI */}
+          <div className="grid grid-cols-4 border-b border-slate-200 bg-slate-50 text-[11px] font-bold shrink-0">
             <button
               type="button"
               onClick={() => {
@@ -1121,7 +1231,7 @@ export default function FloatingChatDock({
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Hash className="w-3.5 h-3.5" />
+              <Hash className="w-3.5 h-3.5 shrink-0" />
               <span>Public</span>
               {publicHasUnread && viewTab !== 'public' && (
                 <span className="w-2 h-2 rounded-full bg-emerald-600" />
@@ -1158,13 +1268,153 @@ export default function FloatingChatDock({
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Users className="w-3.5 h-3.5" />
+              <Users className="w-3.5 h-3.5 shrink-0" />
               <span>People ({Math.max(0, directory.length - 1)})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setViewTab('ai');
+                setEmojiOpen(false);
+              }}
+              className={`py-2.5 border-b-2 cursor-pointer transition inline-flex items-center justify-center gap-1 ${
+                viewTab === 'ai'
+                  ? 'border-emerald-600 text-emerald-800 bg-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Ask AI</span>
             </button>
           </div>
 
           {viewTab === 'public' ? (
             renderMessageFeed(true)
+          ) : viewTab === 'ai' ? (
+            <div className="flex-1 flex flex-col min-h-0 bg-slate-50">
+              <div className="px-3 py-2 border-b border-slate-200 bg-white flex items-center justify-between gap-2 text-[11px] shrink-0">
+                <div className="flex items-center gap-1.5 text-slate-700 font-bold">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>
+                    {resolvedAiRole === 'member'
+                      ? 'Member Portal Guide'
+                      : 'Treasurer & Portal Assistant'}
+                  </span>
+                </div>
+                {aiMessages.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAiMessages([]);
+                      setAiOfflineNotice(null);
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Clear Chat</span>
+                  </button>
+                )}
+              </div>
+
+              {aiOfflineNotice && (
+                <div className="mx-3 mt-2 px-2.5 py-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 font-semibold flex items-center gap-1.5 shrink-0">
+                  <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>{aiOfflineNotice}</span>
+                </div>
+              )}
+
+              <div ref={aiScrollRef} className="flex-1 overflow-y-auto p-3 space-y-2.5 text-xs">
+                {aiMessages.length === 0 ? (
+                  <div className="space-y-3 py-2">
+                    <div className="p-3 rounded-2xl bg-white border border-emerald-100 shadow-2xs space-y-1.5">
+                      <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Hi {profile.full_name.split(' ')[0]}! How can I help?</span>
+                      </p>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        {resolvedAiRole === 'member'
+                          ? 'Ask about upcoming club activities, how to submit claims or pre-claims, your own claim status, or equipment loans.'
+                          : 'Ask about club budget health, pending claims awaiting review, upcoming activities, or category spending.'}
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-1">
+                        Quick Prompts
+                      </p>
+                      <div className="flex flex-col gap-1.5">
+                        {aiStarterChips.map((chip) => (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() => void sendAiQuestion(chip)}
+                            className="text-left px-3 py-2 rounded-xl bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-slate-800 font-semibold text-[11px] transition cursor-pointer"
+                          >
+                            {chip}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  aiMessages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${
+                        msg.role === 'user' ? 'items-end' : 'items-start'
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[88%] rounded-2xl px-3 py-2 leading-relaxed whitespace-pre-line ${
+                          msg.role === 'user'
+                            ? 'bg-emerald-600 text-white rounded-br-sm font-medium'
+                            : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-2xs'
+                        }`}
+                      >
+                        {msg.content}
+                      </div>
+                      {msg.role === 'assistant' && msg.source && (
+                        <span className="mt-1 px-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                          {msg.source === 'gemini' ? 'AI' : 'Quick Guide'}
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
+
+                {aiLoading && (
+                  <div className="flex items-start">
+                    <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-3 py-2 flex items-center gap-1.5 text-slate-600 text-[11px] font-semibold">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                      <span>Thinking...</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void sendAiQuestion(aiDraft);
+                }}
+                className="p-2.5 border-t border-slate-200 bg-white flex items-center gap-2 shrink-0"
+              >
+                <input
+                  type="text"
+                  value={aiDraft}
+                  onChange={(e) => setAiDraft(e.target.value)}
+                  placeholder="Ask ClubSync Assistant..."
+                  className="flex-1 min-w-0 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:bg-white"
+                />
+                <button
+                  type="submit"
+                  disabled={aiLoading || !aiDraft.trim()}
+                  className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white cursor-pointer shrink-0"
+                  aria-label="Send question to AI"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </form>
+            </div>
           ) : (
             <>
               {viewTab === 'people' && (

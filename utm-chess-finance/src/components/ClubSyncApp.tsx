@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   supabase,
@@ -61,6 +61,13 @@ import RecordHistoryModal, { HistoryModalTarget } from '@/components/RecordHisto
 import NotificationBell from '@/components/NotificationBell';
 import FloatingChatDock from '@/components/FloatingChatDock';
 import MemberProfileModal from '@/components/MemberProfileModal';
+import NetworkStatusBanner from '@/components/NetworkStatusBanner';
+import ErrorBoundary from '@/components/ErrorBoundary';
+import {
+  DashboardSkeleton,
+  ClaimsSkeleton,
+  QueryErrorCard,
+} from '@/components/LoadingSkeletons';
 import { findMemberRecord, MemberLookupHint } from '@/lib/memberLookup';
 import {
   filterActiveRecords,
@@ -194,6 +201,8 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [roleMode, setRoleMode] = useState<'member' | 'admin' | 'owner'>('member');
   const [authLoading, setAuthLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [networkError, setNetworkError] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(false);
 
   const [clubName, setClubName] = useState(initialPublicSnapshot?.clubName || 'ClubSync');
@@ -446,20 +455,26 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
   }, []);
 
   const fetchAllData = useCallback(async () => {
-    let activeUid = sessionUserId;
-    if (!activeUid) {
-      const { data: authData } = await supabase.auth.getUser();
-      activeUid = authData.user?.id || null;
+    if (!isSupabaseConfigured) {
+      setDataLoading(false);
+      return;
     }
+    setDataLoading(true);
+    try {
+      let activeUid = sessionUserId;
+      if (!activeUid) {
+        const { data: authData } = await supabase.auth.getUser();
+        activeUid = authData.user?.id || null;
+      }
 
-    const meRes = activeUid
-      ? await supabase.from('users').select('*').eq('id', activeUid).maybeSingle()
-      : { data: null };
-    const meProfile = meRes.data ? normalizeProfile(meRes.data as Record<string, unknown>) : null;
-    if (meProfile) {
-      setProfile(meProfile);
-      if (meProfile.role === 'member') setRoleMode('member');
-    }
+      const meRes = activeUid
+        ? await supabase.from('users').select('*').eq('id', activeUid).maybeSingle()
+        : { data: null };
+      const meProfile = meRes.data ? normalizeProfile(meRes.data as Record<string, unknown>) : null;
+      if (meProfile) {
+        setProfile(meProfile);
+        if (meProfile.role === 'member') setRoleMode('member');
+      }
 
     const callerIsOwner = meProfile?.role === 'owner';
     const callerCanViewSensitive =
@@ -514,6 +529,13 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
         ? supabase.from('public_guest_registrations').select('*').order('created_at', { ascending: false })
         : Promise.resolve({ data: null }),
     ]);
+
+      const coreErrors = [bRes.error, cRes.error, mRes.error, sRes.error].filter(Boolean);
+      if (coreErrors.length > 0 && !bRes.data && !sRes.data) {
+        setNetworkError('Unable to reach the club database. Please check your internet connection and retry.');
+      } else {
+        setNetworkError(null);
+      }
 
     if (bRes.data) setBudgets(bRes.data as Budget[]);
     if (cRes.data) setClaims(cRes.data as Claim[]);
@@ -614,6 +636,11 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
         setDepartments((prev) => (prev.join('|') === depts.join('|') ? prev : depts));
         setDepartmentsText(depts.join('\n'));
       }
+    }
+    } catch {
+      setNetworkError('Unable to reach the club database. Please check your internet connection and retry.');
+    } finally {
+      setDataLoading(false);
     }
   }, [sessionUserId]);
 
@@ -877,18 +904,26 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
       setAuthLoading(false);
       return;
     }
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setSessionUserId(session.user.id);
-        fetchOrCreateProfile(
-          session.user.id,
-          session.user.email || '',
-          session.user.user_metadata as Record<string, string>
-        );
-        fetchAllData();
-      }
-      setAuthLoading(false);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (session?.user) {
+          setSessionUserId(session.user.id);
+          fetchOrCreateProfile(
+            session.user.id,
+            session.user.email || '',
+            session.user.user_metadata as Record<string, string>
+          );
+          fetchAllData();
+        } else {
+          setDataLoading(false);
+        }
+        setAuthLoading(false);
+      })
+      .catch(() => {
+        setAuthLoading(false);
+        setDataLoading(false);
+      });
     const { data: sub } = supabase.auth.onAuthStateChange((ev, session) => {
       if (ev === 'PASSWORD_RECOVERY') {
         setRecoveryError(null);
@@ -1414,6 +1449,8 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
     setProfile(null);
     setSessionUserId(null);
     setRoleMode('member');
+    setDataLoading(true);
+    setNetworkError(null);
     setBudgets([]);
     setClaims([]);
     setPreClaims([]);
@@ -1540,6 +1577,155 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
       document.body
     );
   };
+
+  const aiPortalContext = useMemo<Record<string, unknown>>(() => {
+    if (!profile) return {};
+
+    const eventsSummary = activeBudgets.slice(0, 15).map((b) => ({
+      event_name: b.event_name,
+      event_date: b.event_date,
+      event_time: b.event_time || '',
+      location: b.location || '',
+      registration_fee: Number(b.registration_fee || 0),
+      status: b.status,
+    }));
+
+    const announcementsSummary = activeAnnouncements.slice(0, 5).map((a) => ({
+      title: a.title,
+      created_at: a.created_at,
+    }));
+
+    const myClaimsSummary = activeClaims
+      .filter((c) => c.user_id === profile.id)
+      .slice(0, 15)
+      .map((c) => ({
+        title: c.title,
+        amount: Number(c.amount || 0),
+        category: c.category,
+        status: c.status,
+        expense_date: c.expense_date,
+      }));
+
+    const myLoansSummary = activeEquipmentLoans
+      .filter((l) => l.user_id === profile.id)
+      .slice(0, 10)
+      .map((l) => ({
+        item_name: l.item_name,
+        quantity: l.quantity,
+        status: l.status,
+        due_date: l.return_date,
+      }));
+
+    const baseCtx: Record<string, unknown> = {
+      club_name: clubName,
+      events: eventsSummary,
+      announcements: announcementsSummary,
+      my_claims: myClaimsSummary,
+      my_loans: myLoansSummary,
+    };
+
+    const canViewAiFinance =
+      isAdminOrOwner &&
+      (effectivePermissions.can_manage_finance || effectivePermissions.can_manage_claims_fees);
+
+    if (canViewAiFinance) {
+      let bankIn = 0;
+      let bankOut = 0;
+      let cashIn = 0;
+      let cashOut = 0;
+      let totalIn = 0;
+      let totalOut = 0;
+
+      for (const e of activeLedgerEntries) {
+        const amt = Number(e.amount) || 0;
+        const isCash = e.account_type === 'Cash';
+        if (e.entry_type === 'IN') {
+          totalIn += amt;
+          if (isCash) cashIn += amt;
+          else bankIn += amt;
+        } else {
+          totalOut += amt;
+          if (isCash) cashOut += amt;
+          else bankOut += amt;
+        }
+      }
+
+      for (const f of activeFeePayments) {
+        if (f.status !== 'Verified') continue;
+        const amt = Number(f.amount_paid) || 0;
+        totalIn += amt;
+        if (f.account_type === 'Cash') cashIn += amt;
+        else bankIn += amt;
+      }
+
+      for (const g of activeGuestRegistrations) {
+        if (g.payment_status !== 'Verified') continue;
+        const amt = Number(g.amount_paid) || 0;
+        totalIn += amt;
+        if (g.account_type === 'Cash') cashIn += amt;
+        else bankIn += amt;
+      }
+
+      for (const c of activeClaims) {
+        if (c.status !== 'Approved') continue;
+        const linkedPc =
+          (c.pre_claim_id ? activePreClaims.find((pc) => pc.id === c.pre_claim_id) : undefined) ||
+          activePreClaims.find((pc) => pc.linked_claim_id === c.id);
+        const advGiven = linkedPc ? Number(linkedPc.advance_disbursed_amount || 0) : 0;
+        const rawAmt = Number(c.amount) || 0;
+        const netAmt = advGiven > 0 ? Math.max(0, rawAmt - advGiven) : rawAmt;
+        if (netAmt <= 0) continue;
+        totalOut += netAmt;
+        if (c.account_type === 'Cash') cashOut += netAmt;
+        else bankOut += netAmt;
+      }
+
+      const bankBalance = Number(openingBankBalance) + bankIn - bankOut;
+      const cashBalance = Number(openingCashBalance) + cashIn - cashOut;
+      const pendingClaimsList = activeClaims.filter((c) => c.status === 'Pending');
+      const pendingClaimsTotal = pendingClaimsList.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+
+      baseCtx.finance = {
+        current_savings: bankBalance + cashBalance,
+        bank_balance: bankBalance,
+        cash_balance: cashBalance,
+        total_in: totalIn,
+        total_out: totalOut,
+        pending_claims_total: pendingClaimsTotal,
+      };
+      baseCtx.pending_claims = pendingClaimsList.slice(0, 15).map((c) => {
+        const matchedEvent = activeBudgets.find((b) => b.id === c.budget_id);
+        return {
+          title: c.title,
+          amount: Number(c.amount || 0),
+          category: c.category,
+          event: matchedEvent?.event_name || c.custom_event_name || 'General Club Fund',
+          date: c.expense_date,
+        };
+      });
+    }
+
+    return baseCtx;
+  }, [
+    profile,
+    clubName,
+    activeBudgets,
+    activeAnnouncements,
+    activeClaims,
+    activePreClaims,
+    activeEquipmentLoans,
+    activeLedgerEntries,
+    activeFeePayments,
+    activeGuestRegistrations,
+    openingBankBalance,
+    openingCashBalance,
+    isAdminOrOwner,
+    effectivePermissions.can_manage_finance,
+    effectivePermissions.can_manage_claims_fees,
+  ]);
+
+  const isInitialLoading = dataLoading && budgets.length === 0 && allMembers.length === 0;
+  const isInitialFatalError = Boolean(networkError) && budgets.length === 0 && allMembers.length === 0;
 
   if (authLoading)
     return (
@@ -1752,6 +1938,12 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           }
         />
 
+        <NetworkStatusBanner
+          networkError={networkError}
+          onRetry={() => void fetchAllData()}
+          onReconnected={() => void fetchAllData()}
+        />
+
         {toastMessage && (
           <div className="fixed bottom-24 md:bottom-20 right-4 z-[80] bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold border border-emerald-500/40">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -1760,9 +1952,19 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
         )}
 
         <main className="max-w-7xl w-full mx-auto px-4 pt-6 pb-24 md:pb-6 space-y-6 flex-1">
-          {activeTab === 'activities' && (
-            <div className="space-y-8">
-              <CinematicHub
+          {activeTab === 'activities' &&
+            (isInitialLoading ? (
+              <DashboardSkeleton darkMode={isDarkCanvas} />
+            ) : isInitialFatalError ? (
+              <QueryErrorCard
+                message={networkError || 'Unable to load club activities right now.'}
+                onRetry={() => void fetchAllData()}
+                darkMode={isDarkCanvas}
+              />
+            ) : (
+              <ErrorBoundary sectionName="Activities & Hub">
+                <div className="space-y-8">
+                  <CinematicHub
                 announcements={activeAnnouncements}
                 polls={activePolls}
                 pollVotes={pollVotes}
@@ -2279,26 +2481,41 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                 </div>
               </section>
             </div>
-          )}
+              </ErrorBoundary>
+            ))}
 
           {activeTab === 'equipment' && (
-            <div className="text-slate-900">
-              <EquipmentSection
-                items={activeEquipmentItems}
-                loans={activeEquipmentLoans}
-                profile={profile}
-                isAdmin={isAdminOrOwner && effectivePermissions.can_manage_equipment}
-                logs={activityLogs}
-                onOpenMemberProfile={handleOpenMemberProfile}
-                onRefresh={(m: string) => {
-                  refreshEquipment();
-                  showToast(m);
-                }}
-              />
-            </div>
+            <ErrorBoundary sectionName="Equipment Management">
+              <div className="text-slate-900">
+                <EquipmentSection
+                  items={activeEquipmentItems}
+                  loans={activeEquipmentLoans}
+                  profile={profile}
+                  isAdmin={isAdminOrOwner && effectivePermissions.can_manage_equipment}
+                  logs={activityLogs}
+                  onOpenMemberProfile={handleOpenMemberProfile}
+                  onRefresh={(m: string) => {
+                    refreshEquipment();
+                    showToast(m);
+                  }}
+                />
+              </div>
+            </ErrorBoundary>
           )}
 
           {activeTab === 'claims' && (() => {
+            if (isInitialLoading) {
+              return <ClaimsSkeleton darkMode={isDarkCanvas} />;
+            }
+            if (isInitialFatalError) {
+              return (
+                <QueryErrorCard
+                  message={networkError || 'Unable to load claims right now.'}
+                  onRetry={() => void fetchAllData()}
+                  darkMode={isDarkCanvas}
+                />
+              );
+            }
             const receiptStatusPills = ['ALL', 'Pending', 'Approved', 'Rejected'] as const;
             const preClaimStatusPills = [
               'ALL',
@@ -2333,7 +2550,8 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
             });
 
             return (
-              <section className="bg-white/90 backdrop-blur-xl text-slate-900 rounded-3xl border border-emerald-100 overflow-hidden shadow-xs">
+              <ErrorBoundary sectionName="Claims & Pre-Claims">
+                <section className="bg-white/90 backdrop-blur-xl text-slate-900 rounded-3xl border border-emerald-100 overflow-hidden shadow-xs">
                 <div className="p-5 border-b flex flex-wrap justify-between items-center gap-3">
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-2">
@@ -2820,32 +3038,37 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                     </table>
                   </div>
                 )}
-              </section>
+                </section>
+              </ErrorBoundary>
             );
           })()}
 
           {activeTab === 'profile' && (
-            <div className="text-slate-900">
-              <ProfileSection
-                profile={profile}
-                departments={departments}
-                budgets={budgets}
-                myRsvps={rsvps.filter((r) => r.user_id === profile.id)}
-                myFeePayments={feePayments.filter((f) => f.user_id === profile.id)}
-                onUpdated={(u: Partial<UserProfile>, m: string) => {
-                  setProfile((p) => (p ? { ...p, ...u } : null));
-                  refreshMembersAndSettings();
-                  showToast(m);
-                }}
-                onSignOut={handleSignOut}
-              />
-            </div>
+            <ErrorBoundary sectionName="My Profile">
+              <div className="text-slate-900">
+                <ProfileSection
+                  profile={profile}
+                  departments={departments}
+                  budgets={budgets}
+                  myRsvps={rsvps.filter((r) => r.user_id === profile.id)}
+                  myFeePayments={feePayments.filter((f) => f.user_id === profile.id)}
+                  onUpdated={(u: Partial<UserProfile>, m: string) => {
+                    setProfile((p) => (p ? { ...p, ...u } : null));
+                    refreshMembersAndSettings();
+                    showToast(m);
+                  }}
+                  onSignOut={handleSignOut}
+                />
+              </div>
+            </ErrorBoundary>
           )}
 
           {activeTab === 'ledger' && isAdminOrOwner && (
-            <div className="text-slate-900">
-              <LedgerSection
-                entries={activeLedgerEntries}
+            <ErrorBoundary sectionName="Club Ledger">
+              <div className="text-slate-900">
+                <LedgerSection
+                  loading={isInitialLoading}
+                  entries={activeLedgerEntries}
                 events={activeBudgets.map((b) => ({ id: b.id, event_name: b.event_name }))}
                 budgets={activeBudgets}
                 budgetPlanItems={activeBudgetPlanItems}
@@ -2891,11 +3114,13 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                   showToast(m);
                 }}
               />
-            </div>
+              </div>
+            </ErrorBoundary>
           )}
 
           {activeTab === 'members' && isAdminOrOwner && (
-            <div className="space-y-6 text-slate-900">
+            <ErrorBoundary sectionName="Members & Club Settings">
+              <div className="space-y-6 text-slate-900">
               <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-emerald-100 p-6 space-y-4 shadow-xs">
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-extrabold flex items-center gap-2">
@@ -3420,23 +3645,26 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                   </table>
                 </div>
               </section>
-            </div>
+              </div>
+            </ErrorBoundary>
           )}
 
           {activeTab === 'logs' && isAdminOrOwner && (
-            <ActivityLogSection
-              logs={activityLogs}
-              deletedRecords={deletedRecords}
-              profile={profile}
-              onRefresh={(m: string) => {
-                if (m.toLowerCase().includes('restor')) {
-                  fetchAllData();
-                } else {
-                  refreshLogs();
-                }
-                showToast(m);
-              }}
-            />
+            <ErrorBoundary sectionName="Activity & Audit Logs">
+              <ActivityLogSection
+                logs={activityLogs}
+                deletedRecords={deletedRecords}
+                profile={profile}
+                onRefresh={(m: string) => {
+                  if (m.toLowerCase().includes('restor')) {
+                    fetchAllData();
+                  } else {
+                    refreshLogs();
+                  }
+                  showToast(m);
+                }}
+              />
+            </ErrorBoundary>
           )}
         </main>
       </div>
@@ -3846,21 +4074,25 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           setIsChatOpen(true);
         }}
       />
-      <FloatingChatDock
-        profile={profile}
-        departments={departments}
-        isOpen={isChatOpen}
-        onToggleOpen={setIsChatOpen}
-        unreadCount={unreadChatCount}
-        onUnreadCountChange={setUnreadChatCount}
-        isAdminMode={isAdminOrOwner}
-        onOpenMemberProfile={(member) => handleOpenMemberDirect(member)}
-        openDmWithUserId={chatDmTargetUserId}
-        onClearOpenDmTarget={() => setChatDmTargetUserId(null)}
-        onUpdatedPublicReadAt={(iso) =>
-          setProfile((prev) => (prev ? { ...prev, public_chat_read_at: iso } : prev))
-        }
-      />
+      <ErrorBoundary sectionName="Club Chat & AI Assistant">
+        <FloatingChatDock
+          profile={profile}
+          departments={departments}
+          isOpen={isChatOpen}
+          onToggleOpen={setIsChatOpen}
+          unreadCount={unreadChatCount}
+          onUnreadCountChange={setUnreadChatCount}
+          isAdminMode={isAdminOrOwner}
+          onOpenMemberProfile={(member) => handleOpenMemberDirect(member)}
+          openDmWithUserId={chatDmTargetUserId}
+          onClearOpenDmTarget={() => setChatDmTargetUserId(null)}
+          onUpdatedPublicReadAt={(iso) =>
+            setProfile((prev) => (prev ? { ...prev, public_chat_read_at: iso } : prev))
+          }
+          aiContext={aiPortalContext}
+          aiRole={isOwner ? 'owner' : isAdminOrOwner ? 'treasurer' : 'member'}
+        />
+      </ErrorBoundary>
       <MobileBottomNav
         activeTab={activeTab}
         onSelectTab={setActiveTab}

@@ -132,6 +132,8 @@ export default function PublicEventPage() {
   const slug = String(slugParam || '').trim();
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [navigatingHome, setNavigatingHome] = useState(false);
   const [eventData, setEventData] = useState<PublicEventPayload | null>(null);
   const [activeTab, setActiveTab] = useState<'register' | 'check'>('register');
 
@@ -164,11 +166,16 @@ export default function PublicEventPage() {
       return;
     }
     setLoading(true);
+    setLoadError(null);
     try {
       const { data, error } = await supabase.rpc('get_public_event_by_slug', {
         p_slug: slug,
       });
-      if (error || !data) {
+      if (error) {
+        setLoadError('Network issue loading event details. Please check your connection and retry.');
+        return;
+      }
+      if (!data) {
         setEventData({ found: false });
       } else {
         const payload = data as PublicEventPayload;
@@ -185,6 +192,8 @@ export default function PublicEventPage() {
           setAmountPaid(effFee > 0 ? effFee.toFixed(2) : '0');
         }
       }
+    } catch {
+      setLoadError('Network issue loading event details. Please check your connection and retry.');
     } finally {
       setLoading(false);
     }
@@ -370,6 +379,41 @@ export default function PublicEventPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-slate-100 p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl border border-rose-200 shadow-xl p-8 text-center space-y-4">
+          <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <h1 className="text-xl font-extrabold text-slate-900">Connection Issue</h1>
+          <p className="text-xs text-slate-600 leading-relaxed">{loadError}</p>
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => void loadEvent()}
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold cursor-pointer"
+            >
+              <span>Retry</span>
+            </button>
+            <Link
+              href="/"
+              onClick={() => setNavigatingHome(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
+            >
+              {navigatingHome ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <ArrowLeft className="w-3.5 h-3.5" />
+              )}
+              <span>{navigatingHome ? 'Returning...' : 'Back to Club Portal'}</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!eventData?.found) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-slate-100 p-4">
@@ -383,10 +427,15 @@ export default function PublicEventPage() {
           </p>
           <Link
             href="/"
+            onClick={() => setNavigatingHome(true)}
             className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold transition"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to Club Portal</span>
+            {navigatingHome ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <ArrowLeft className="w-4 h-4" />
+            )}
+            <span>{navigatingHome ? 'Returning to portal...' : 'Back to Club Portal'}</span>
           </Link>
         </div>
       </div>
@@ -526,10 +575,20 @@ export default function PublicEventPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50/80 via-white to-slate-50 text-slate-900">
+      {navigatingHome && (
+        <div className="fixed top-0 inset-x-0 z-50 h-1 bg-emerald-100 overflow-hidden">
+          <div className="h-full w-1/2 bg-emerald-600 animate-pulse rounded-r-full" />
+        </div>
+      )}
       {/* Top Branding Bar */}
       <header className="bg-white/90 backdrop-blur-xl border-b border-emerald-100 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
-          <Link href="/" title="Return to Main Homepage" className="flex items-center gap-3 min-w-0 group">
+          <Link
+            href="/"
+            onClick={() => setNavigatingHome(true)}
+            title="Return to Main Homepage"
+            className="flex items-center gap-3 min-w-0 group"
+          >
             {logoUrl && !isPdfUrl(logoUrl) ? (
               <img
                 src={logoUrl}
@@ -542,16 +601,26 @@ export default function PublicEventPage() {
               </div>
             )}
             <div className="min-w-0">
-              <div className="font-extrabold text-sm text-slate-900 group-hover:text-emerald-700 transition-colors truncate">{clubName}</div>
-              <div className="text-[11px] text-slate-500 truncate">Public Guest Event Portal</div>
+              <div className="font-extrabold text-sm text-slate-900 group-hover:text-emerald-700 transition-colors truncate flex items-center gap-1.5">
+                <span className="truncate">{clubName}</span>
+                {navigatingHome && <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 shrink-0" />}
+              </div>
+              <div className="text-[11px] text-slate-500 truncate">
+                {navigatingHome ? 'Returning to main portal...' : 'Public Guest Event Portal'}
+              </div>
             </div>
           </Link>
           <Link
             href="/"
+            onClick={() => setNavigatingHome(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold shrink-0 transition"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Club Portal</span>
+            {navigatingHome ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+            ) : (
+              <ArrowLeft className="w-3.5 h-3.5" />
+            )}
+            <span>{navigatingHome ? 'Returning...' : 'Back to Club Portal'}</span>
           </Link>
         </div>
       </header>
