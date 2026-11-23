@@ -278,73 +278,11 @@ function Reveal({
 
 function AnimatedMetricValue({
   value,
-  animationLevel,
 }: {
   value: string;
-  animationLevel: AnimationLevel;
+  animationLevel?: AnimationLevel;
 }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const match = /^(\d+(?:\.\d+)?)([^\d/].*)?$/.exec((value || '').trim());
-  const targetNum = match ? Number(match[1]) : null;
-  const suffix = match?.[2] || '';
-  const hasDecimal = Boolean(match?.[1]?.includes('.'));
-
-  const [displayNum, setDisplayNum] = useState<number>(targetNum ?? 0);
-  const [hasAnimated, setHasAnimated] = useState(false);
-
-  useEffect(() => {
-    if (targetNum === null || animationLevel === 'off') {
-      setDisplayNum(targetNum ?? 0);
-      return;
-    }
-    const node = ref.current;
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      setDisplayNum(targetNum);
-      return;
-    }
-
-    let rafId = 0;
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (!hasAnimated && entries.some((e) => e.isIntersecting)) {
-          setHasAnimated(true);
-          const duration = animationLevel === 'vivid' ? 1100 : 800;
-          const start = performance.now();
-          const tick = (now: number) => {
-            const p = Math.min(1, (now - start) / duration);
-            const eased = 1 - Math.pow(1 - p, 3);
-            setDisplayNum(targetNum * eased);
-            if (p < 1) {
-              rafId = requestAnimationFrame(tick);
-            } else {
-              setDisplayNum(targetNum);
-            }
-          };
-          rafId = requestAnimationFrame(tick);
-          obs.disconnect();
-        }
-      },
-      { threshold: 0.25 }
-    );
-
-    obs.observe(node);
-    return () => {
-      obs.disconnect();
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, [targetNum, animationLevel, hasAnimated]);
-
-  if (targetNum === null || Number.isNaN(targetNum)) {
-    return <span ref={ref}>{value}</span>;
-  }
-
-  const formatted = hasDecimal ? displayNum.toFixed(1) : Math.round(displayNum).toString();
-  return (
-    <span ref={ref}>
-      {formatted}
-      {suffix}
-    </span>
-  );
+  return <span>{value}</span>;
 }
 
 function EditableSectionWrapper({
@@ -839,6 +777,7 @@ export default function PublicLandingPage({
   };
 
   const activeSlide = carouselPosts[slideIdx] || carouselPosts[0] || null;
+  const openEventsCount = Math.max(stats.open_events_count, openEvents.length);
   const visibleColumns = resolvedConfig.footer_columns.filter(
     (col) => col.title.trim() || col.links.some((l) => l.label.trim() && l.url.trim())
   );
@@ -2022,13 +1961,13 @@ export default function PublicLandingPage({
 
                   {resolvedConfig.hero_show_stats && (
                     <div className="flex flex-wrap items-center gap-2.5">
-                      <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 text-xs">
-                        <Ticket className="w-4 h-4 text-emerald-300" />
-                        <span className="font-extrabold">
-                          {openEvents.length || stats.open_events_count}
-                        </span>
-                        <span className="text-slate-300">Open Events</span>
-                      </div>
+                      {openEventsCount > 0 && (
+                        <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 text-xs">
+                          <Ticket className="w-4 h-4 text-emerald-300" />
+                          <span className="font-extrabold">{openEventsCount}</span>
+                          <span className="text-slate-300">Open Events</span>
+                        </div>
+                      )}
                       <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 text-xs">
                         <Calendar className="w-4 h-4 text-emerald-300" />
                         <span className="text-slate-300">Active Batch:</span>
@@ -2107,13 +2046,13 @@ export default function PublicLandingPage({
 
                 {resolvedConfig.hero_show_stats && (
                   <div className="flex flex-wrap items-center justify-center gap-2.5">
-                    <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
-                      <Ticket className={`w-4 h-4 ${theme.accentText}`} />
-                      <span className="font-extrabold text-slate-900">
-                        {openEvents.length || stats.open_events_count}
-                      </span>
-                      <span className="text-slate-500 font-medium">Open Events</span>
-                    </div>
+                    {openEventsCount > 0 && (
+                      <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
+                        <Ticket className={`w-4 h-4 ${theme.accentText}`} />
+                        <span className="font-extrabold text-slate-900">{openEventsCount}</span>
+                        <span className="text-slate-500 font-medium">Open Events</span>
+                      </div>
+                    )}
                     <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
                       <Calendar className={`w-4 h-4 ${theme.accentText}`} />
                       <span className="text-slate-500 font-medium">Active Batch:</span>
@@ -2193,13 +2132,13 @@ export default function PublicLandingPage({
 
                 {resolvedConfig.hero_show_stats && (
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
-                      <Ticket className={`w-4 h-4 ${theme.accentText}`} />
-                      <span className="font-extrabold text-slate-900">
-                        {openEvents.length || stats.open_events_count}
-                      </span>
-                      <span className="text-slate-500 font-medium">Open Events</span>
-                    </div>
+                    {openEventsCount > 0 && (
+                      <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
+                        <Ticket className={`w-4 h-4 ${theme.accentText}`} />
+                        <span className="font-extrabold text-slate-900">{openEventsCount}</span>
+                        <span className="text-slate-500 font-medium">Open Events</span>
+                      </div>
+                    )}
                     <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 shadow-2xs text-xs">
                       <Calendar className={`w-4 h-4 ${theme.accentText}`} />
                       <span className="text-slate-500 font-medium">Active Batch:</span>

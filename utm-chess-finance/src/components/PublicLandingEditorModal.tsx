@@ -276,6 +276,44 @@ export default function PublicLandingEditorModal({
   const [expandedItemIds, setExpandedItemIds] = useState<Record<string, boolean>>({});
   const [draggedSectionId, setDraggedSectionId] = useState<LandingSectionId | null>(null);
   const [draggedItemKey, setDraggedItemKey] = useState<string | null>(null);
+  const [activeDragHandleKey, setActiveDragHandleKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activeDragHandleKey && !draggedItemKey && !draggedSectionId) return;
+    const clearDrag = () => {
+      setActiveDragHandleKey(null);
+      setDraggedItemKey(null);
+      setDraggedSectionId(null);
+    };
+    window.addEventListener('pointerup', clearDrag);
+    window.addEventListener('dragend', clearDrag);
+    return () => {
+      window.removeEventListener('pointerup', clearDrag);
+      window.removeEventListener('dragend', clearDrag);
+    };
+  }, [activeDragHandleKey, draggedItemKey, draggedSectionId]);
+
+  const isBlockedDragTarget = (target: EventTarget | null) =>
+    target instanceof HTMLElement &&
+    Boolean(target.closest('input, textarea, select, [contenteditable="true"], a'));
+
+  const getDragHandleHandlers = (key: string, draggingNow: boolean) => ({
+    onMouseEnter: () => setActiveDragHandleKey(key),
+    onMouseLeave: () => {
+      if (!draggingNow) {
+        setActiveDragHandleKey((prev) => (prev === key ? null : prev));
+      }
+    },
+    onPointerDown: (e: React.PointerEvent) => {
+      e.stopPropagation();
+      setActiveDragHandleKey(key);
+    },
+    onMouseDown: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setActiveDragHandleKey(key);
+    },
+    onClick: (e: React.MouseEvent) => e.stopPropagation(),
+  });
 
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -998,11 +1036,18 @@ export default function PublicLandingEditorModal({
             <div className="space-y-2">
               {draft.metrics_items.map((item, idx) => {
                 const isOpenItem = expandedItemIds[item.id] ?? idx === 0;
+                const dragKey = `metric:${item.id}`;
                 return (
                   <div
                     key={item.id}
-                    draggable
-                    onDragStart={() => setDraggedItemKey(item.id)}
+                    draggable={activeDragHandleKey === dragKey}
+                    onDragStart={(e) => {
+                      if (activeDragHandleKey !== dragKey || isBlockedDragTarget(e.target)) {
+                        e.preventDefault();
+                        return;
+                      }
+                      setDraggedItemKey(item.id);
+                    }}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => {
                       if (!draggedItemKey || draggedItemKey === item.id) return;
@@ -1015,16 +1060,27 @@ export default function PublicLandingEditorModal({
                         );
                       }
                       setDraggedItemKey(null);
+                      setActiveDragHandleKey(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedItemKey(null);
+                      setActiveDragHandleKey(null);
                     }}
                     className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden"
                   >
                     <div className="px-2.5 py-2 flex items-center justify-between gap-1 bg-white border-b border-slate-100">
+                      <span
+                        {...getDragHandleHandlers(dragKey, draggedItemKey === item.id)}
+                        className="p-0.5 rounded hover:bg-slate-200/70 text-slate-400 hover:text-slate-700 shrink-0 cursor-grab active:cursor-grabbing inline-flex items-center"
+                        title="Drag to reorder"
+                      >
+                        <GripVertical className="w-3.5 h-3.5" />
+                      </span>
                       <button
                         type="button"
                         onClick={() => toggleItemExpanded(item.id)}
                         className="flex items-center gap-1.5 min-w-0 flex-1 text-left cursor-pointer"
                       >
-                        <GripVertical className="w-3.5 h-3.5 text-slate-400 shrink-0 cursor-grab" />
                         <span className="font-extrabold text-slate-900 truncate">
                           {item.value || '0'} — {item.label || 'Untitled'}
                         </span>
@@ -1228,11 +1284,18 @@ export default function PublicLandingEditorModal({
             <div className="space-y-2">
               {draft.about_features.map((feat, idx) => {
                 const isOpenItem = expandedItemIds[feat.id] ?? idx === 0;
+                const dragKey = `feat:${feat.id}`;
                 return (
                   <div
                     key={feat.id}
-                    draggable
-                    onDragStart={() => setDraggedItemKey(feat.id)}
+                    draggable={activeDragHandleKey === dragKey}
+                    onDragStart={(e) => {
+                      if (activeDragHandleKey !== dragKey || isBlockedDragTarget(e.target)) {
+                        e.preventDefault();
+                        return;
+                      }
+                      setDraggedItemKey(feat.id);
+                    }}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => {
                       if (!draggedItemKey || draggedItemKey === feat.id) return;
@@ -1245,16 +1308,27 @@ export default function PublicLandingEditorModal({
                         );
                       }
                       setDraggedItemKey(null);
+                      setActiveDragHandleKey(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedItemKey(null);
+                      setActiveDragHandleKey(null);
                     }}
                     className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden"
                   >
                     <div className="px-2.5 py-2 flex items-center justify-between gap-1 bg-white border-b border-slate-100">
+                      <span
+                        {...getDragHandleHandlers(dragKey, draggedItemKey === feat.id)}
+                        className="p-0.5 rounded hover:bg-slate-200/70 text-slate-400 hover:text-slate-700 shrink-0 cursor-grab active:cursor-grabbing inline-flex items-center"
+                        title="Drag to reorder"
+                      >
+                        <GripVertical className="w-3.5 h-3.5" />
+                      </span>
                       <button
                         type="button"
                         onClick={() => toggleItemExpanded(feat.id)}
                         className="flex items-center gap-1.5 min-w-0 flex-1 text-left cursor-pointer"
                       >
-                        <GripVertical className="w-3.5 h-3.5 text-slate-400 shrink-0 cursor-grab" />
                         <FeatureIcon name={feat.icon} className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                         <span className="font-bold text-slate-900 truncate">
                           {feat.title || 'Untitled Feature'}
@@ -1518,11 +1592,18 @@ export default function PublicLandingEditorModal({
             <div className="space-y-2">
               {draft.faq_items.map((item, idx) => {
                 const isOpenItem = expandedItemIds[item.id] ?? idx === 0;
+                const dragKey = `faq:${item.id}`;
                 return (
                   <div
                     key={item.id}
-                    draggable
-                    onDragStart={() => setDraggedItemKey(item.id)}
+                    draggable={activeDragHandleKey === dragKey}
+                    onDragStart={(e) => {
+                      if (activeDragHandleKey !== dragKey || isBlockedDragTarget(e.target)) {
+                        e.preventDefault();
+                        return;
+                      }
+                      setDraggedItemKey(item.id);
+                    }}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => {
                       if (!draggedItemKey || draggedItemKey === item.id) return;
@@ -1535,16 +1616,27 @@ export default function PublicLandingEditorModal({
                         );
                       }
                       setDraggedItemKey(null);
+                      setActiveDragHandleKey(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedItemKey(null);
+                      setActiveDragHandleKey(null);
                     }}
                     className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden"
                   >
                     <div className="px-2.5 py-2 flex items-center justify-between gap-1 bg-white border-b border-slate-100">
+                      <span
+                        {...getDragHandleHandlers(dragKey, draggedItemKey === item.id)}
+                        className="p-0.5 rounded hover:bg-slate-200/70 text-slate-400 hover:text-slate-700 shrink-0 cursor-grab active:cursor-grabbing inline-flex items-center"
+                        title="Drag to reorder"
+                      >
+                        <GripVertical className="w-3.5 h-3.5" />
+                      </span>
                       <button
                         type="button"
                         onClick={() => toggleItemExpanded(item.id)}
                         className="flex items-center gap-1.5 min-w-0 flex-1 text-left cursor-pointer"
                       >
-                        <GripVertical className="w-3.5 h-3.5 text-slate-400 shrink-0 cursor-grab" />
                         <span className="font-bold text-slate-900 truncate">
                           {item.question || 'Untitled Question'}
                         </span>
@@ -1748,11 +1840,18 @@ export default function PublicLandingEditorModal({
             <div className="space-y-3">
               {draft.footer_columns.map((col, colIdx) => {
                 const isOpenCol = expandedItemIds[col.id] ?? colIdx === 0;
+                const colDragKey = `col:${col.id}`;
                 return (
                   <div
                     key={col.id}
-                    draggable
-                    onDragStart={() => setDraggedItemKey(`col:${col.id}`)}
+                    draggable={activeDragHandleKey === colDragKey}
+                    onDragStart={(e) => {
+                      if (activeDragHandleKey !== colDragKey || isBlockedDragTarget(e.target)) {
+                        e.preventDefault();
+                        return;
+                      }
+                      setDraggedItemKey(colDragKey);
+                    }}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => {
                       if (!draggedItemKey?.startsWith('col:')) return;
@@ -1766,16 +1865,27 @@ export default function PublicLandingEditorModal({
                         );
                       }
                       setDraggedItemKey(null);
+                      setActiveDragHandleKey(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedItemKey(null);
+                      setActiveDragHandleKey(null);
                     }}
                     className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden"
                   >
                     <div className="px-2.5 py-2 flex items-center justify-between gap-1 bg-white border-b border-slate-200">
+                      <span
+                        {...getDragHandleHandlers(colDragKey, draggedItemKey === colDragKey)}
+                        className="p-0.5 rounded hover:bg-slate-200/70 text-slate-400 hover:text-slate-700 shrink-0 cursor-grab active:cursor-grabbing inline-flex items-center"
+                        title="Drag to reorder column"
+                      >
+                        <GripVertical className="w-3.5 h-3.5" />
+                      </span>
                       <button
                         type="button"
                         onClick={() => toggleItemExpanded(col.id)}
                         className="flex items-center gap-1.5 min-w-0 flex-1 text-left cursor-pointer"
                       >
-                        <GripVertical className="w-3.5 h-3.5 text-slate-400 shrink-0 cursor-grab" />
                         {isOpenCol ? (
                           <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         ) : (
@@ -1914,13 +2024,18 @@ export default function PublicLandingEditorModal({
                               PLATFORM_OPTIONS.find((o) => o.value === (lnk.platform || 'link')) ||
                               PLATFORM_OPTIONS[PLATFORM_OPTIONS.length - 1];
                             const testHref = normalizeExternalHref(lnk.url, lnk.platform);
+                            const lnkDragKey = `lnk:${col.id}:${lnk.id}`;
                             return (
                               <div
                                 key={lnk.id}
-                                draggable
+                                draggable={activeDragHandleKey === lnkDragKey}
                                 onDragStart={(e) => {
+                                  if (activeDragHandleKey !== lnkDragKey || isBlockedDragTarget(e.target)) {
+                                    e.preventDefault();
+                                    return;
+                                  }
                                   e.stopPropagation();
-                                  setDraggedItemKey(`lnk:${col.id}:${lnk.id}`);
+                                  setDraggedItemKey(lnkDragKey);
                                 }}
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={(e) => {
@@ -1940,12 +2055,23 @@ export default function PublicLandingEditorModal({
                                     );
                                   }
                                   setDraggedItemKey(null);
+                                  setActiveDragHandleKey(null);
+                                }}
+                                onDragEnd={() => {
+                                  setDraggedItemKey(null);
+                                  setActiveDragHandleKey(null);
                                 }}
                                 className="p-2 rounded-lg bg-white border border-slate-200 space-y-1.5"
                               >
                                 <div className="flex items-center justify-between gap-1">
                                   <div className="flex items-center gap-1.5 min-w-0">
-                                    <GripVertical className="w-3.5 h-3.5 text-slate-400 shrink-0 cursor-grab" />
+                                    <span
+                                      {...getDragHandleHandlers(lnkDragKey, draggedItemKey === lnkDragKey)}
+                                      className="p-0.5 rounded hover:bg-slate-200/70 text-slate-400 hover:text-slate-700 shrink-0 cursor-grab active:cursor-grabbing inline-flex items-center"
+                                      title="Drag to reorder link"
+                                    >
+                                      <GripVertical className="w-3.5 h-3.5" />
+                                    </span>
                                     <span className="p-1 rounded bg-slate-100 text-slate-700">
                                       <FooterPlatformIcon platform={lnk.platform} />
                                     </span>
@@ -2440,17 +2566,29 @@ export default function PublicLandingEditorModal({
                         );
                         const middleIdx = middleOnly.indexOf(secId);
 
+                        const secDragKey = `sec:${secId}`;
                         return (
                           <div
                             key={secId}
-                            draggable={meta.reorderable}
-                            onDragStart={() => meta.reorderable && setDraggedSectionId(secId)}
+                            draggable={meta.reorderable && activeDragHandleKey === secDragKey}
+                            onDragStart={(e) => {
+                              if (!meta.reorderable || activeDragHandleKey !== secDragKey || isBlockedDragTarget(e.target)) {
+                                e.preventDefault();
+                                return;
+                              }
+                              setDraggedSectionId(secId);
+                            }}
                             onDragOver={(e) => meta.reorderable && e.preventDefault()}
                             onDrop={() => {
                               if (meta.reorderable && draggedSectionId) {
                                 reorderMiddleSections(draggedSectionId, secId);
                               }
                               setDraggedSectionId(null);
+                              setActiveDragHandleKey(null);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedSectionId(null);
+                              setActiveDragHandleKey(null);
                             }}
                             onMouseEnter={() => setHoveredSectionId(secId)}
                             onMouseLeave={() => setHoveredSectionId(null)}
@@ -2465,7 +2603,13 @@ export default function PublicLandingEditorModal({
                               className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
                             >
                               {meta.reorderable ? (
-                                <GripVertical className="w-4 h-4 text-slate-400 shrink-0 cursor-grab" />
+                                <span
+                                  {...getDragHandleHandlers(secDragKey, draggedSectionId === secId)}
+                                  className="p-0.5 rounded hover:bg-slate-200/70 text-slate-400 hover:text-slate-700 shrink-0 cursor-grab active:cursor-grabbing inline-flex items-center"
+                                  title="Drag to reorder section"
+                                >
+                                  <GripVertical className="w-4 h-4" />
+                                </span>
                               ) : (
                                 <div className="w-4 shrink-0" />
                               )}

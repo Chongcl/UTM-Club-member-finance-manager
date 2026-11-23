@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
@@ -35,6 +36,7 @@ import {
   ShieldCheck,
   XCircle,
   KeyRound,
+  X,
 } from 'lucide-react';
 
 interface PublicEventPayload {
@@ -83,9 +85,12 @@ interface GuestSubmissionResult {
 
 interface GuestPassStatusResult {
   found: boolean;
+  multiple_matches?: boolean;
+  match_count?: number;
   id?: string;
   guest_name?: string;
   institution_or_matric?: string;
+  masked_email?: string;
   lookup_code?: string;
   selected_tier?: string;
   registration_note?: string;
@@ -94,12 +99,17 @@ interface GuestPassStatusResult {
   qr_checked_in?: boolean;
   qr_checked_in_at?: string | null;
   amount_paid?: number;
+  created_at?: string;
   event_id?: string;
   event_name?: string;
+  category?: string;
   event_date?: string;
   end_date?: string | null;
   event_time?: string;
   location?: string;
+  description?: string;
+  club_name?: string;
+  activity_config?: ActivityConfig | null;
   qr_payload?: string | null;
   unlock_mode?: string;
   access_link_url?: string | null;
@@ -137,6 +147,7 @@ export default function PublicEventPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [submissionResult, setSubmissionResult] = useState<GuestSubmissionResult | null>(null);
+  const [confirmationModalOpen, setConfirmationModalOpen] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedBank, setCopiedBank] = useState(false);
   const [copiedAccess, setCopiedAccess] = useState(false);
@@ -182,6 +193,15 @@ export default function PublicEventPage() {
   useEffect(() => {
     void loadEvent();
   }, [loadEvent]);
+
+  useEffect(() => {
+    if (!confirmationModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmationModalOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [confirmationModalOpen]);
 
   const handleCopy = async (text: string, which: 'code' | 'bank' | 'access') => {
     try {
@@ -292,6 +312,7 @@ export default function PublicEventPage() {
       }
 
       setSubmissionResult(res);
+      setConfirmationModalOpen(true);
       if (res.lookup_code) {
         setLookupInput(res.lookup_code);
       }
@@ -304,19 +325,31 @@ export default function PublicEventPage() {
   };
 
   const runPassLookup = async (queryText: string) => {
-    const clean = queryText.trim();
+    const clean = queryText.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
     if (!clean) return;
     setCheckingPass(true);
     setPassSearchAttempted(true);
     try {
-      const { data, error } = await supabase.rpc('check_guest_registration_status', {
+      const { data, error } = await supabase.rpc('lookup_public_event_registration', {
         p_slug: slug,
-        p_lookup_or_email: clean,
+        p_query: clean,
       });
-      if (error || !data) {
+      if (!error && data) {
+        setPassResult(data as GuestPassStatusResult);
+        return;
+      }
+
+      const { data: legacyData, error: legacyErr } = await supabase.rpc(
+        'check_guest_registration_status',
+        {
+          p_slug: slug,
+          p_lookup_or_email: clean,
+        }
+      );
+      if (legacyErr || !legacyData) {
         setPassResult({ found: false });
       } else {
-        setPassResult(data as GuestPassStatusResult);
+        setPassResult(legacyData as GuestPassStatusResult);
       }
     } finally {
       setCheckingPass(false);
@@ -642,12 +675,27 @@ export default function PublicEventPage() {
                   <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto">
                     <CheckCircle2 className="w-8 h-8" />
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
+                    <span
+                      className={`inline-block px-3 py-0.5 rounded-full text-[11px] font-extrabold ${
+                        submissionResult.pass_approved || submissionResult.payment_status === 'Free'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-amber-100 text-amber-900 border border-amber-200'
+                      }`}
+                    >
+                      {submissionResult.pass_approved || submissionResult.payment_status === 'Free'
+                        ? 'Confirmed Registration'
+                        : 'Submitted — Pending Payment Verification'}
+                    </span>
                     <h2 className="text-xl font-extrabold text-slate-900">
-                      Registration Received!
+                      {submissionResult.pass_approved || submissionResult.payment_status === 'Free'
+                        ? 'Registration Confirmed!'
+                        : 'Registration & Receipt Submitted!'}
                     </h2>
-                    <p className="text-xs text-slate-600">
-                      Save your lookup code below to check your status anytime.
+                    <p className="text-xs text-slate-600 max-w-md mx-auto">
+                      You can check your registration status anytime under{' '}
+                      <strong>&ldquo;Check My Status / Pass&rdquo;</strong> using your{' '}
+                      <strong>Full Name, Email (Gmail), Matric / ID, or Lookup Code</strong>.
                     </p>
                   </div>
 
@@ -687,8 +735,9 @@ export default function PublicEventPage() {
                       <div className="flex items-start gap-2.5">
                         <Lock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                         <p className="font-semibold leading-relaxed">
-                          Receipt submitted — check back anytime under{' '}
-                          <strong>&ldquo;Check My Status / Pass&rdquo;</strong> with code{' '}
+                          Your payment receipt for <strong>{eventData.event_name}</strong> has been
+                          submitted. Check back anytime using your <strong>Name, Email, Matric/ID</strong>,
+                          or code{' '}
                           <span className="font-mono font-extrabold">
                             {submissionResult.lookup_code}
                           </span>{' '}
@@ -1006,21 +1055,24 @@ export default function PublicEventPage() {
               <div className="space-y-5 text-xs">
                 <div>
                   <h2 className="text-base font-extrabold text-slate-900">
-                    Check Your Pass / Registration Status
+                    Check My Registration Status / Pass
                   </h2>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Enter your Lookup Code (e.g., <span className="font-mono">GST-XXXXXX</span>) or registration Email.
+                    Enter your <strong>Full Name</strong>, <strong>Email (Gmail)</strong>,{' '}
+                    <strong>Matric / ID</strong>, or <strong>Lookup Code</strong> (
+                    <span className="font-mono">GST-XXXXXX</span>) to verify your registration and
+                    view event details.
                   </p>
                 </div>
 
-                <form onSubmit={handleCheckPass} className="flex gap-2">
+                <form onSubmit={handleCheckPass} className="flex flex-col sm:flex-row gap-2">
                   <div className="relative flex-1">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       value={lookupInput}
                       onChange={(e) => setLookupInput(e.target.value)}
-                      placeholder="GST-XXXXXX or email@example.com"
+                      placeholder="Full Name, Email (Gmail), Matric No, or GST-XXXXXX"
                       className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2.5 text-sm font-medium"
                       required
                     />
@@ -1028,83 +1080,335 @@ export default function PublicEventPage() {
                   <button
                     type="submit"
                     disabled={checkingPass}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold cursor-pointer shrink-0 inline-flex items-center gap-1.5"
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold cursor-pointer shrink-0 inline-flex items-center justify-center gap-1.5"
                   >
                     {checkingPass && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    <span>Check</span>
+                    <span>Check Status</span>
                   </button>
                 </form>
 
-                {passSearchAttempted && !checkingPass && !passResult?.found && (
-                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center text-slate-500">
-                    No guest registration matched that Lookup Code or Email for this activity.
-                  </div>
-                )}
-
-                {passResult?.found && (
-                  <div className="p-5 rounded-3xl border border-emerald-200 bg-slate-50/70 space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <div className="text-base font-extrabold text-slate-900">
-                          {passResult.guest_name}
-                        </div>
-                        <div className="font-mono text-[11px] text-slate-500">
-                          {passResult.lookup_code}
-                          {passResult.institution_or_matric
-                            ? ` · ${passResult.institution_or_matric}`
-                            : ''}
-                          {passResult.selected_tier ? ` · ${passResult.selected_tier}` : ''}
-                        </div>
-                      </div>
-                      <span
-                        className={`px-3 py-1 rounded-full font-extrabold text-[11px] ${
-                          passResult.payment_status === 'Verified' ||
-                          passResult.payment_status === 'Free'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : passResult.payment_status === 'Rejected'
-                            ? 'bg-rose-100 text-rose-700'
-                            : 'bg-amber-100 text-amber-900'
-                        }`}
-                      >
-                        {passResult.payment_status === 'Verified'
-                          ? 'Verified ✓'
-                          : passResult.payment_status}
+                {passSearchAttempted && !checkingPass && passResult?.multiple_matches && (
+                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 space-y-1.5">
+                    <div className="font-extrabold flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        Multiple registrations ({passResult.match_count || '2+'}) matched that search
                       </span>
                     </div>
-
-                    {passResult.pass_approved || passResult.payment_status === 'Free' ? (
-                      renderUnlockedAccessCard({
-                        lookup_code: passResult.lookup_code,
-                        qr_payload: passResult.qr_payload,
-                        qr_checked_in: passResult.qr_checked_in,
-                        access_link_url: passResult.access_link_url,
-                        access_link_label: passResult.access_link_label,
-                        access_code: passResult.access_code,
-                        access_instructions: passResult.access_instructions,
-                        name: passResult.guest_name,
-                      })
-                    ) : passResult.payment_status === 'Rejected' ? (
-                      <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-center gap-2 font-semibold">
-                        <XCircle className="w-4 h-4 shrink-0" />
-                        <span>
-                          Your fee receipt could not be verified. Please contact the club treasurer or register again with a valid slip.
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 flex items-center gap-2 font-semibold">
-                        <Lock className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>
-                          Payment verification is still pending. Once the treasurer verifies your receipt, your pass or link will unlock right here!
-                        </span>
-                      </div>
-                    )}
+                    <p className="text-[11px] leading-relaxed text-amber-900">
+                      To protect participant privacy, please refine your search by entering your exact{' '}
+                      <strong>Email (Gmail)</strong>, <strong>Matric / ID</strong>, or{' '}
+                      <strong>Lookup Code</strong> (<span className="font-mono">GST-XXXXXX</span>).
+                    </p>
                   </div>
                 )}
+
+                {passSearchAttempted &&
+                  !checkingPass &&
+                  !passResult?.found &&
+                  !passResult?.multiple_matches && (
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1 text-slate-600">
+                      <div className="font-bold text-slate-800">Registration Not Found</div>
+                      <p className="text-[11px] text-slate-500">
+                        No registration matched that Name, Email, Matric/ID, or Lookup Code for this
+                        event. Check your spelling or register under the Register tab.
+                      </p>
+                    </div>
+                  )}
+
+                {passResult?.found &&
+                  (() => {
+                    const evCfg = resolveActivityConfig({
+                      event_date: passResult.event_date || eventData.event_date,
+                      end_date: passResult.end_date ?? eventData.end_date,
+                      registration_fee:
+                        eventData.effective_fee ?? eventData.guest_fee ?? eventData.registration_fee,
+                      activity_config: passResult.activity_config ?? eventData.activity_config,
+                    });
+                    const evName = passResult.event_name || eventData.event_name || 'Activity';
+                    const evSchedule = formatActivitySchedule(
+                      { event_date: passResult.event_date || eventData.event_date },
+                      evCfg
+                    );
+                    const evTime = passResult.event_time ?? eventData.event_time;
+                    const evLocation = passResult.location ?? eventData.location;
+                    const evDesc = passResult.description ?? eventData.description;
+                    const evClub = passResult.club_name || clubName;
+                    const evFormat = getFormatBadgeMeta(evCfg.format);
+                    const isConfirmedOrVerified =
+                      passResult.pass_approved ||
+                      passResult.payment_status === 'Verified' ||
+                      passResult.payment_status === 'Free';
+                    const paidNum = Number(passResult.amount_paid || 0);
+
+                    return (
+                      <div className="p-5 rounded-3xl border border-emerald-200 bg-slate-50/70 space-y-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="space-y-1 min-w-0">
+                            <div className="text-base font-extrabold text-slate-900">
+                              {passResult.guest_name}
+                            </div>
+                            <div className="font-mono text-[11px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                              <span>{passResult.lookup_code}</span>
+                              {passResult.institution_or_matric && (
+                                <span>· {passResult.institution_or_matric}</span>
+                              )}
+                              {passResult.masked_email && <span>· {passResult.masked_email}</span>}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px]">
+                              <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-bold text-slate-700">
+                                {paidNum > 0 ? `Paid RM ${paidNum.toFixed(2)}` : 'Free Admission'}
+                              </span>
+                              {passResult.selected_tier && (
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 font-bold text-emerald-800">
+                                  {passResult.selected_tier}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <span
+                            className={`px-3 py-1 rounded-full font-extrabold text-[11px] shrink-0 ${
+                              isConfirmedOrVerified
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : passResult.payment_status === 'Rejected'
+                                ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                                : 'bg-amber-100 text-amber-900 border border-amber-200'
+                            }`}
+                          >
+                            {passResult.payment_status === 'Verified'
+                              ? 'Registered · Verified ✓'
+                              : passResult.payment_status === 'Free'
+                              ? 'Registered · Confirmed ✓'
+                              : passResult.payment_status === 'Rejected'
+                              ? 'Rejected'
+                              : 'Registered · Pending Verification'}
+                          </span>
+                        </div>
+
+                        {/* Event Details Synced From Live Event Record */}
+                        <div className="p-4 rounded-2xl bg-white border border-slate-200/90 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">
+                              Registered Event Details · {evClub}
+                            </span>
+                            {evCfg.format !== 'physical' && (
+                              <span
+                                className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${evFormat.badgeClass}`}
+                              >
+                                {evFormat.label}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm font-extrabold text-slate-900">{evName}</div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] text-slate-600 pt-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span className="font-semibold">{evSchedule}</span>
+                            </div>
+                            {evTime && (
+                              <div className="flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span className="font-semibold">{evTime}</span>
+                              </div>
+                            )}
+                            {evLocation &&
+                              evCfg.format !== 'self_paced' &&
+                              evCfg.format !== 'fee_collection' && (
+                                <div className="flex items-center gap-1.5 sm:col-span-2">
+                                  <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <span className="font-semibold">{evLocation}</span>
+                                </div>
+                              )}
+                          </div>
+                          {evDesc && (
+                            <p className="text-[11px] text-slate-500 leading-relaxed whitespace-pre-line pt-1 border-t border-slate-100">
+                              {evDesc}
+                            </p>
+                          )}
+                        </div>
+
+                        {isConfirmedOrVerified ? (
+                          renderUnlockedAccessCard({
+                            lookup_code: passResult.lookup_code,
+                            qr_payload: passResult.qr_payload,
+                            qr_checked_in: passResult.qr_checked_in,
+                            access_link_url: passResult.access_link_url,
+                            access_link_label: passResult.access_link_label,
+                            access_code: passResult.access_code,
+                            access_instructions: passResult.access_instructions,
+                            name: passResult.guest_name,
+                          })
+                        ) : passResult.payment_status === 'Rejected' ? (
+                          <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 flex items-center gap-2 font-semibold">
+                            <XCircle className="w-4 h-4 shrink-0" />
+                            <span>
+                              Your fee receipt could not be verified. Please contact the club treasurer or register again with a valid slip.
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 flex items-center gap-2 font-semibold">
+                            <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>
+                              Your registration is recorded! Payment verification is still pending — once verified by the treasurer, your pass or access link will unlock right here.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
               </div>
             )}
           </div>
         </section>
       </main>
+
+      {/* Post-Registration Pop-Out Confirmation Notice Modal */}
+      {confirmationModalOpen &&
+        submissionResult?.ok &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            onClick={() => setConfirmationModalOpen(false)}
+            className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white text-slate-900 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-emerald-200"
+            >
+              <div className="bg-gradient-to-r from-emerald-800 to-teal-700 text-white px-6 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-200" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold">
+                      {submissionResult.pass_approved || submissionResult.payment_status === 'Free'
+                        ? 'Registration Confirmed!'
+                        : 'Registration Submitted!'}
+                    </h3>
+                    <p className="text-[11px] text-emerald-100">{clubName}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmationModalOpen(false)}
+                  className="p-1 rounded-lg hover:bg-white/15 cursor-pointer"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="font-extrabold text-sm text-slate-900">{guestName}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {email}
+                      {institution ? ` · ${institution}` : ''}
+                    </div>
+                  </div>
+                  <span
+                    className={`px-2.5 py-1 rounded-full font-extrabold text-[10px] ${
+                      submissionResult.pass_approved || submissionResult.payment_status === 'Free'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        : 'bg-amber-100 text-amber-900 border border-amber-200'
+                    }`}
+                  >
+                    {submissionResult.pass_approved || submissionResult.payment_status === 'Free'
+                      ? 'Confirmed ✓'
+                      : 'Pending Payment Verification'}
+                  </span>
+                </div>
+
+                {submissionResult.lookup_code && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 border-2 border-emerald-200 flex items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[10px] font-extrabold uppercase text-emerald-700 block">
+                        Your Lookup Code
+                      </span>
+                      <span className="text-lg font-mono font-extrabold text-emerald-950 tracking-wider">
+                        {submissionResult.lookup_code}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void handleCopy(submissionResult.lookup_code || '', 'code')
+                      }
+                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>{copiedCode ? 'Copied!' : 'Copy'}</span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                    Event Details
+                  </div>
+                  <div className="text-sm font-extrabold text-slate-900">
+                    {eventData.event_name}
+                  </div>
+                  <div className="text-[11px] text-slate-600 space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>{scheduleLabel}</span>
+                    </div>
+                    {eventData.event_time && (
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>{eventData.event_time}</span>
+                      </div>
+                    )}
+                    {eventData.location &&
+                      cfg.format !== 'self_paced' &&
+                      cfg.format !== 'fee_collection' && (
+                        <div className="flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>{eventData.location}</span>
+                        </div>
+                      )}
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-600 leading-relaxed bg-emerald-50/50 border border-emerald-100 rounded-xl p-3">
+                  You can check your status anytime using your{' '}
+                  <strong>Full Name, Email (Gmail), Matric / ID, or Lookup Code</strong> under{' '}
+                  <strong>Check My Status / Pass</strong>.
+                </p>
+
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmationModalOpen(false);
+                      setActiveTab('check');
+                      if (submissionResult.lookup_code) {
+                        void runPassLookup(submissionResult.lookup_code);
+                      }
+                    }}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold cursor-pointer text-center"
+                  >
+                    Check My Status Now →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmationModalOpen(false)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

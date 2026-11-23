@@ -1,4 +1,4 @@
--- Idempotent RPC fallback for changing login email directly when Supabase Auth rejects custom/university domains
+-- Idempotent RPC for instant authenticated login email update (no confirmation link required after password verification)
 CREATE OR REPLACE FUNCTION public.change_my_email(p_new_email text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -31,6 +31,7 @@ BEGIN
   UPDATE auth.users
   SET
     email = v_email,
+    raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('email', v_email, 'email_verified', true),
     email_change = '',
     email_change_token_new = '',
     email_confirmed_at = coalesce(email_confirmed_at, now()),

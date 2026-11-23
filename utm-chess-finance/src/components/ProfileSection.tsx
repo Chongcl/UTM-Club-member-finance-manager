@@ -510,42 +510,31 @@ export default function ProfileSection({
         return;
       }
 
-      const { data, error } = await supabase.auth.updateUser({ email: trimmedNewEmail });
-      if (error) {
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc('change_my_email', {
-          p_new_email: trimmedNewEmail,
-        });
-        if (!rpcErr && rpcRes && typeof rpcRes === 'object') {
-          const resObj = rpcRes as { ok?: boolean; email?: string; error?: string };
-          if (resObj.ok) {
-            const finalEmail = (resObj.email || trimmedNewEmail).trim();
-            await supabase.auth.refreshSession();
-            setPendingNewEmail(null);
-            setChangeEmailOpen(false);
-            onUpdated({ email: finalEmail }, 'Email updated successfully!');
-            return;
-          }
-          if (resObj.error) {
-            setEmailModalError(resObj.error);
-            return;
-          }
-        }
-        setEmailModalError(error.message || 'Could not update email address.');
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('change_my_email', {
+        p_new_email: trimmedNewEmail,
+      });
+      if (rpcErr) {
+        setEmailModalError(rpcErr.message || 'Could not update email address.');
         return;
       }
 
-      const updatedEmail = data.user?.email?.trim() || '';
-      if (updatedEmail.toLowerCase() === trimmedNewEmail) {
-        await supabase.from('users').update({ email: updatedEmail }).eq('id', profile.id);
-        setPendingNewEmail(null);
-        setChangeEmailOpen(false);
-        onUpdated({ email: updatedEmail }, 'Email updated successfully!');
-      } else {
-        const pending =
-          (data.user as { new_email?: string | null } | null)?.new_email || trimmedNewEmail;
-        setPendingNewEmail(pending);
-        setEmailModalSentTo(pending);
+      if (rpcRes && typeof rpcRes === 'object') {
+        const resObj = rpcRes as { ok?: boolean; email?: string; error?: string };
+        if (resObj.ok) {
+          const finalEmail = (resObj.email || trimmedNewEmail).trim();
+          await supabase.auth.refreshSession();
+          setPendingNewEmail(null);
+          setChangeEmailOpen(false);
+          onUpdated({ email: finalEmail }, 'Email updated successfully!');
+          return;
+        }
+        if (resObj.error) {
+          setEmailModalError(resObj.error);
+          return;
+        }
       }
+
+      setEmailModalError('Could not update email address.');
     } finally {
       setEmailModalSaving(false);
     }
@@ -1661,7 +1650,9 @@ export default function ProfileSection({
                   </div>
                   <div>
                     <h3 className="text-sm font-extrabold">Change Email Address</h3>
-                    <p className="text-[11px] text-emerald-100">Update your ClubSync sign-in email</p>
+                    <p className="text-[11px] text-emerald-100">
+                      Updates immediately once current password is verified
+                    </p>
                   </div>
                 </div>
                 <button
