@@ -23,8 +23,6 @@ import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/
 import { waLink } from '@/lib/whatsapp';
 import type { MemberLookupHint } from '@/lib/memberLookup';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
-import AiBudgetCopilot from './AiBudgetCopilot';
-import ErrorBoundary from './ErrorBoundary';
 import { LedgerSkeleton } from './LoadingSkeletons';
 import {
   Search,
@@ -1594,82 +1592,12 @@ export default function LedgerSection({
     onRefresh('Removed Budget Plan line');
   };
 
-  const aiFinanceContext = useMemo(() => {
-    const pendingClaims = claims.filter((c) => !c.deleted_at && c.status === 'Pending');
-    const catTotals = new Map<string, number>();
-    unifiedRows
-      .filter((r) => r.entryType === 'OUT')
-      .forEach((r) => {
-        const key = r.category || 'Other Expense';
-        catTotals.set(key, (catTotals.get(key) || 0) + r.amount);
-      });
-
-    return {
-      finance: {
-        opening_balance: openingTotal,
-        current_savings: mathSummary.totalSavings,
-        bank_balance: mathSummary.currentBank,
-        cash_balance: mathSummary.currentCash,
-        total_in: mathSummary.totalIn,
-        total_out: mathSummary.totalOut,
-        pending_claims_total: pendingClaims.reduce((s, c) => s + Number(c.amount || 0), 0),
-        pending_fees_total: pendingFeesTotal,
-        reserved_preclaims: reservedPreClaimsTotal,
-      },
-      events_budget: budgets
-        .filter((b) => !b.deleted_at)
-        .map((b) => {
-          const evPending = pendingClaims
-            .filter((c) => c.budget_id === b.id)
-            .reduce((s, c) => s + Number(c.amount || 0), 0);
-          return {
-            event_name: b.event_name,
-            status: b.status,
-            event_date: b.event_date,
-            allocated: Number(b.allocated_amount || 0),
-            spent: Number(b.spent_amount || 0),
-            pending_claims_amount: evPending,
-          };
-        }),
-      category_breakdown: Array.from(catTotals.entries())
-        .map(([category, total]) => ({ category, total: Number(total.toFixed(2)) }))
-        .sort((a, b) => b.total - a.total),
-      pending_claims: pendingClaims.slice(0, 20).map((c) => ({
-        id: c.id,
-        title: c.title,
-        event:
-          budgets.find((b) => b.id === c.budget_id)?.event_name ||
-          c.custom_event_name ||
-          'General Club Fund',
-        amount: Number(c.amount || 0),
-        date: c.expense_date,
-        status: c.status,
-      })),
-    };
-  }, [
-    claims,
-    unifiedRows,
-    openingTotal,
-    mathSummary,
-    pendingFeesTotal,
-    reservedPreClaimsTotal,
-    budgets,
-  ]);
-
   if (loading) {
     return <LedgerSkeleton />;
   }
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-slate-900">
-      {(canEdit || profile.role === 'owner' || profile.role === 'treasurer') && (
-        <ErrorBoundary sectionName="AI Finance Copilot">
-          <AiBudgetCopilot
-            role={profile.role === 'owner' ? 'owner' : 'treasurer'}
-            financeContext={aiFinanceContext}
-          />
-        </ErrorBoundary>
-      )}
       {/* ===================== TOP SUMMARY STRIP (4 CALM BLOCKS) ===================== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 border-b border-slate-200 bg-white">
         {/* 1. Current Club Savings */}

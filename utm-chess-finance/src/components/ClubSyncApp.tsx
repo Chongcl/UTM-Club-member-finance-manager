@@ -68,6 +68,10 @@ import {
   ClaimsSkeleton,
   QueryErrorCard,
 } from '@/components/LoadingSkeletons';
+import {
+  buildChatbotSnapshot,
+  ChatbotPermissions,
+} from '@/lib/chatbotEngine';
 import { findMemberRecord, MemberLookupHint } from '@/lib/memberLookup';
 import {
   filterActiveRecords,
@@ -107,6 +111,7 @@ import {
   History,
   Search,
   CalendarClock,
+  Bot,
 } from 'lucide-react';
 
 interface ConfirmDialogState {
@@ -302,6 +307,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
   const [claimsSearchQuery, setClaimsSearchQuery] = useState<string>('');
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatbotTrainerSignal, setChatbotTrainerSignal] = useState(0);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [profileModalMember, setProfileModalMember] = useState<ChatDirectoryMember | UserProfile | null>(null);
   const [chatDmTargetUserId, setChatDmTargetUserId] = useState<string | null>(null);
@@ -1578,151 +1584,64 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
     );
   };
 
-  const aiPortalContext = useMemo<Record<string, unknown>>(() => {
-    if (!profile) return {};
+  const chatbotPermissions = useMemo<ChatbotPermissions>(
+    () => ({
+      isAdmin: isAdminOrOwner,
+      isOwner,
+      canViewFinance:
+        isAdminOrOwner &&
+        (effectivePermissions.can_manage_finance ||
+          effectivePermissions.can_manage_claims_fees),
+    }),
+    [
+      isAdminOrOwner,
+      isOwner,
+      effectivePermissions.can_manage_finance,
+      effectivePermissions.can_manage_claims_fees,
+    ]
+  );
 
-    const eventsSummary = activeBudgets.slice(0, 15).map((b) => ({
-      event_name: b.event_name,
-      event_date: b.event_date,
-      event_time: b.event_time || '',
-      location: b.location || '',
-      registration_fee: Number(b.registration_fee || 0),
-      status: b.status,
-    }));
-
-    const announcementsSummary = activeAnnouncements.slice(0, 5).map((a) => ({
-      title: a.title,
-      created_at: a.created_at,
-    }));
-
-    const myClaimsSummary = activeClaims
-      .filter((c) => c.user_id === profile.id)
-      .slice(0, 15)
-      .map((c) => ({
-        title: c.title,
-        amount: Number(c.amount || 0),
-        category: c.category,
-        status: c.status,
-        expense_date: c.expense_date,
-      }));
-
-    const myLoansSummary = activeEquipmentLoans
-      .filter((l) => l.user_id === profile.id)
-      .slice(0, 10)
-      .map((l) => ({
-        item_name: l.item_name,
-        quantity: l.quantity,
-        status: l.status,
-        due_date: l.return_date,
-      }));
-
-    const baseCtx: Record<string, unknown> = {
-      club_name: clubName,
-      events: eventsSummary,
-      announcements: announcementsSummary,
-      my_claims: myClaimsSummary,
-      my_loans: myLoansSummary,
-    };
-
-    const canViewAiFinance =
-      isAdminOrOwner &&
-      (effectivePermissions.can_manage_finance || effectivePermissions.can_manage_claims_fees);
-
-    if (canViewAiFinance) {
-      let bankIn = 0;
-      let bankOut = 0;
-      let cashIn = 0;
-      let cashOut = 0;
-      let totalIn = 0;
-      let totalOut = 0;
-
-      for (const e of activeLedgerEntries) {
-        const amt = Number(e.amount) || 0;
-        const isCash = e.account_type === 'Cash';
-        if (e.entry_type === 'IN') {
-          totalIn += amt;
-          if (isCash) cashIn += amt;
-          else bankIn += amt;
-        } else {
-          totalOut += amt;
-          if (isCash) cashOut += amt;
-          else bankOut += amt;
-        }
-      }
-
-      for (const f of activeFeePayments) {
-        if (f.status !== 'Verified') continue;
-        const amt = Number(f.amount_paid) || 0;
-        totalIn += amt;
-        if (f.account_type === 'Cash') cashIn += amt;
-        else bankIn += amt;
-      }
-
-      for (const g of activeGuestRegistrations) {
-        if (g.payment_status !== 'Verified') continue;
-        const amt = Number(g.amount_paid) || 0;
-        totalIn += amt;
-        if (g.account_type === 'Cash') cashIn += amt;
-        else bankIn += amt;
-      }
-
-      for (const c of activeClaims) {
-        if (c.status !== 'Approved') continue;
-        const linkedPc =
-          (c.pre_claim_id ? activePreClaims.find((pc) => pc.id === c.pre_claim_id) : undefined) ||
-          activePreClaims.find((pc) => pc.linked_claim_id === c.id);
-        const advGiven = linkedPc ? Number(linkedPc.advance_disbursed_amount || 0) : 0;
-        const rawAmt = Number(c.amount) || 0;
-        const netAmt = advGiven > 0 ? Math.max(0, rawAmt - advGiven) : rawAmt;
-        if (netAmt <= 0) continue;
-        totalOut += netAmt;
-        if (c.account_type === 'Cash') cashOut += netAmt;
-        else bankOut += netAmt;
-      }
-
-      const bankBalance = Number(openingBankBalance) + bankIn - bankOut;
-      const cashBalance = Number(openingCashBalance) + cashIn - cashOut;
-      const pendingClaimsList = activeClaims.filter((c) => c.status === 'Pending');
-      const pendingClaimsTotal = pendingClaimsList.reduce((s, c) => s + (Number(c.amount) || 0), 0);
-
-      baseCtx.finance = {
-        current_savings: bankBalance + cashBalance,
-        bank_balance: bankBalance,
-        cash_balance: cashBalance,
-        total_in: totalIn,
-        total_out: totalOut,
-        pending_claims_total: pendingClaimsTotal,
-      };
-      baseCtx.pending_claims = pendingClaimsList.slice(0, 15).map((c) => {
-        const matchedEvent = activeBudgets.find((b) => b.id === c.budget_id);
-        return {
-          title: c.title,
-          amount: Number(c.amount || 0),
-          category: c.category,
-          event: matchedEvent?.event_name || c.custom_event_name || 'General Club Fund',
-          date: c.expense_date,
-        };
-      });
-    }
-
-    return baseCtx;
-  }, [
-    profile,
-    clubName,
-    activeBudgets,
-    activeAnnouncements,
-    activeClaims,
-    activePreClaims,
-    activeEquipmentLoans,
-    activeLedgerEntries,
-    activeFeePayments,
-    activeGuestRegistrations,
-    openingBankBalance,
-    openingCashBalance,
-    isAdminOrOwner,
-    effectivePermissions.can_manage_finance,
-    effectivePermissions.can_manage_claims_fees,
-  ]);
+  const chatbotSnapshot = useMemo(
+    () =>
+      buildChatbotSnapshot({
+        clubName,
+        currentBatch,
+        profile,
+        budgets: activeBudgets,
+        claims: activeClaims,
+        preClaims: activePreClaims,
+        rsvps: activeRsvps,
+        feePayments: activeFeePayments,
+        guestRegistrations: activeGuestRegistrations,
+        ledgerEntries: activeLedgerEntries,
+        equipmentItems: activeEquipmentItems,
+        equipmentLoans: activeEquipmentLoans,
+        announcements: activeAnnouncements,
+        openingBankBalance,
+        openingCashBalance,
+        claimThreshold,
+        contactEmail: contactEmailInput,
+      }),
+    [
+      clubName,
+      currentBatch,
+      profile,
+      activeBudgets,
+      activeClaims,
+      activePreClaims,
+      activeRsvps,
+      activeFeePayments,
+      activeGuestRegistrations,
+      activeLedgerEntries,
+      activeEquipmentItems,
+      activeEquipmentLoans,
+      activeAnnouncements,
+      openingBankBalance,
+      openingCashBalance,
+      claimThreshold,
+      contactEmailInput,
+    ]
+  );
 
   const isInitialLoading = dataLoading && budgets.length === 0 && allMembers.length === 0;
   const isInitialFatalError = Boolean(networkError) && budgets.length === 0 && allMembers.length === 0;
@@ -3122,14 +3041,24 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
             <ErrorBoundary sectionName="Members & Club Settings">
               <div className="space-y-6 text-slate-900">
               <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-emerald-100 p-6 space-y-4 shadow-xs">
-                <div className="flex justify-between items-center">
+                <div className="flex flex-wrap justify-between items-center gap-2">
                   <h3 className="text-sm font-extrabold flex items-center gap-2">
                     <Crown className="w-4 h-4 text-amber-500" />
                     <span>Club Settings, DuitNow / Payment QR &amp; Passcodes</span>
                   </h3>
-                  <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-900 border">
-                    {isOwner ? 'Owner' : 'Admin'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setChatbotTrainerSignal((n) => n + 1)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer"
+                    >
+                      <Bot className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>Train Portal Bot</span>
+                    </button>
+                    <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-900 border">
+                      {isOwner ? 'Owner' : 'Admin'}
+                    </span>
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
                   <div className="space-y-3">
@@ -4074,7 +4003,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           setIsChatOpen(true);
         }}
       />
-      <ErrorBoundary sectionName="Club Chat & AI Assistant">
+      <ErrorBoundary sectionName="Club Chat & Portal Bot">
         <FloatingChatDock
           profile={profile}
           departments={departments}
@@ -4089,8 +4018,25 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           onUpdatedPublicReadAt={(iso) =>
             setProfile((prev) => (prev ? { ...prev, public_chat_read_at: iso } : prev))
           }
-          aiContext={aiPortalContext}
-          aiRole={isOwner ? 'owner' : isAdminOrOwner ? 'treasurer' : 'member'}
+          chatbotSnapshot={chatbotSnapshot}
+          chatbotPermissions={chatbotPermissions}
+          faqItems={publicLandingConfig?.faq_items}
+          openTrainerSignal={chatbotTrainerSignal}
+          onNavigateAction={(action) => {
+            if (action === 'new_claim') {
+              setClaimModalInitMode('receipt');
+              setClaimModalPreClaimId(null);
+              setIsClaimModalOpen(true);
+            } else if (
+              action === 'activities' ||
+              action === 'equipment' ||
+              action === 'claims' ||
+              action === 'profile' ||
+              (action === 'ledger' && isAdminOrOwner)
+            ) {
+              setActiveTab(action);
+            }
+          }}
         />
       </ErrorBoundary>
       <MobileBottomNav

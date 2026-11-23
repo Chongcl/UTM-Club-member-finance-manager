@@ -28,8 +28,29 @@ import {
   User,
   Sparkles,
   RotateCcw,
-  WifiOff,
+  Bot,
+  Sliders,
+  Copy,
+  Check,
+  ArrowRight,
+  Lock,
 } from 'lucide-react';
+import type { PublicFaqItem } from '@/lib/publicLanding';
+import ChatbotTrainerModal from './ChatbotTrainerModal';
+import {
+  ChatbotActionTab,
+  ChatbotMatchResult,
+  ChatbotPermissions,
+  ChatbotRule,
+  ChatbotSnapshot,
+  getAdminStarterChips,
+  getMemberStarterChips,
+  loadLocalChatbotRules,
+  loadLocalUnanswered,
+  matchChatbotQuery,
+  saveLocalChatbotRules,
+  saveLocalUnanswered,
+} from '@/lib/chatbotEngine';
 
 interface FloatingChatDockProps {
   profile: UserProfile;
@@ -43,8 +64,11 @@ interface FloatingChatDockProps {
   openDmWithUserId?: string | null;
   onClearOpenDmTarget?: () => void;
   onUpdatedPublicReadAt?: (iso: string) => void;
-  aiContext?: Record<string, unknown>;
-  aiRole?: 'member' | 'treasurer' | 'owner';
+  chatbotSnapshot: ChatbotSnapshot;
+  chatbotPermissions: ChatbotPermissions;
+  faqItems?: PublicFaqItem[];
+  onNavigateAction?: (action: ChatbotActionTab) => void;
+  openTrainerSignal?: number;
 }
 
 interface RoomSummary {
@@ -133,105 +157,199 @@ export default function FloatingChatDock({
   openDmWithUserId = null,
   onClearOpenDmTarget,
   onUpdatedPublicReadAt,
-  aiContext,
-  aiRole,
+  chatbotSnapshot,
+  chatbotPermissions,
+  faqItems = [],
+  onNavigateAction,
+  openTrainerSignal = 0,
 }: FloatingChatDockProps) {
-  const resolvedAiRole: 'member' | 'treasurer' | 'owner' =
-    aiRole || (profile.role === 'owner' ? 'owner' : profile.role === 'treasurer' && isAdminMode ? 'treasurer' : 'member');
-  const [viewTab, setViewTab] = useState<'public' | 'dms' | 'people' | 'ai'>('public');
+  const [viewTab, setViewTab] = useState<'public' | 'dms' | 'people' | 'bot'>('public');
 
-  interface AiChatBubble {
+  interface BotChatMessage {
     id: string;
-    role: 'user' | 'assistant';
+    role: 'user' | 'bot';
     content: string;
-    source?: 'gemini' | 'local';
+    source?: ChatbotMatchResult['source'];
+    matchedLabel?: string;
+    actionTab?: ChatbotActionTab;
+    copyable?: boolean;
+    followUpChips?: string[];
   }
-  const [aiMessages, setAiMessages] = useState<AiChatBubble[]>([]);
-  const [aiDraft, setAiDraft] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiOfflineNotice, setAiOfflineNotice] = useState<string | null>(null);
-  const aiScrollRef = useRef<HTMLDivElement | null>(null);
+  const [botRules, setBotRules] = useState<ChatbotRule[]>([]);
+  const [botMessages, setBotMessages] = useState<BotChatMessage[]>([]);
+  const [botDraft, setBotDraft] = useState('');
+  const [trainerOpen, setTrainerOpen] = useState(false);
+  const [copiedBotId, setCopiedBotId] = useState<string | null>(null);
+  const botScrollRef = useRef<HTMLDivElement | null>(null);
+  const lastTrainerSignalRef = useRef(0);
 
-  const aiStarterChips =
-    resolvedAiRole === 'treasurer' || resolvedAiRole === 'owner'
-      ? [
-          'Summarize club budget health',
-          'Which claims need my review?',
-          'Spot high-spend categories',
-        ]
-      : [
-          'How do I submit a claim?',
-          'What events are coming up?',
-          'Check my pending claims & loans',
-        ];
+  const loadChatbotRules = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('chatbot_knowledge')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        const list = data as ChatbotRule[];
+        setBotRules(list);
+        saveLocalChatbotRules(list);
+        return;
+      }
+    } catch {
+      /* fallback below */
+    }
+    setBotRules(loadLocalChatbotRules());
+  }, []);
 
   useEffect(() => {
-    if (viewTab === 'ai' && aiScrollRef.current) {
-      aiScrollRef.current.scrollTop = aiScrollRef.current.scrollHeight;
+    if (isOpen || trainerOpen) {
+      void loadChatbotRules();
     }
-  }, [aiMessages, aiLoading, viewTab]);
+  }, [isOpen, trainerOpen, loadChatbotRules]);
 
-  const sendAiQuestion = async (rawPrompt: string) => {
+  useEffect(() => {
+    if (
+      openTrainerSignal > 0 &&
+      openTrainerSignal !== lastTrainerSignalRef.current &&
+      (isAdminMode || chatbotPermissions.isAdmin)
+    ) {
+      lastTrainerSignalRef.current = openTrainerSignal;
+      onToggleOpen(true);
+      setViewTab('bot');
+      setTrainerOpen(true);
+    }
+  }, [openTrainerSignal, isAdminMode, chatbotPermissions.isAdmin, onToggleOpen]);
+
+  useEffect(() => {
+    if (viewTab === 'bot' && botScrollRef.current) {
+      botScrollRef.current.scrollTop = botScrollRef.current.scrollHeight;
+    }
+  }, [botMessages, viewTab]);
+
+  const botStarterChips = (() => {
+    const base = chatbotPermissions.canViewFinance
+      ? getAdminStarterChips()
+      : getMemberStarterChips();
+    const pinnedCustom = botRules
+      .filter(
+        (r) =>
+          r.is_active &&
+          r.is_quick_chip &&
+          (r.audience === 'all' || chatbotPermissions.canViewFinance || chatbotPermissions.isAdmin)
+      )
+      .map((r) => r.question)
+      .filter(Boolean);
+    return Array.from(new Set([...base, ...pinnedCustom])).slice(0, 7);
+  })();
+
+  const logUnansweredQuery = async (queryText: string) => {
+    const clean = queryText.trim();
+    if (!clean) return;
+    let loggedRemote = false;
+    try {
+      const { error } = await supabase.rpc('log_chatbot_unanswered_query', {
+        p_query: clean,
+        p_role: profile.role || 'member',
+      });
+      if (!error) {
+        loggedRemote = true;
+      } else {
+        const { error: insErr } = await supabase.from('chatbot_unanswered_queries').insert({
+          query_text: clean,
+          user_role: profile.role || 'member',
+          hit_count: 1,
+          resolved: false,
+          last_asked_at: new Date().toISOString(),
+        });
+        if (!insErr) loggedRemote = true;
+      }
+    } catch {
+      /* fallback below */
+    }
+
+    if (!loggedRemote) {
+      const nowIso = new Date().toISOString();
+      const existing = loadLocalUnanswered();
+      const idx = existing.findIndex(
+        (it) => !it.resolved && it.query_text.trim().toLowerCase() === clean.toLowerCase()
+      );
+      if (idx >= 0) {
+        existing[idx] = {
+          ...existing[idx],
+          hit_count: existing[idx].hit_count + 1,
+          last_asked_at: nowIso,
+          user_role: profile.role || existing[idx].user_role,
+        };
+        saveLocalUnanswered([...existing]);
+      } else {
+        saveLocalUnanswered([
+          {
+            id: `local-uq-${Date.now()}`,
+            query_text: clean,
+            user_role: profile.role || 'member',
+            hit_count: 1,
+            resolved: false,
+            last_asked_at: nowIso,
+            created_at: nowIso,
+          },
+          ...existing,
+        ]);
+      }
+    }
+  };
+
+  const handleSendBotQuery = (rawPrompt: string) => {
     const clean = rawPrompt.trim();
-    if (!clean || aiLoading) return;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      setAiOfflineNotice('You are offline. Reconnect to reach the AI assistant (showing local guide fallback when available).');
-    } else {
-      setAiOfflineNotice(null);
-    }
+    if (!clean) return;
 
-    const userMsg: AiChatBubble = {
-      id: `u_${Date.now()}`,
+    const result = matchChatbotQuery(clean, {
+      customRules: botRules,
+      faqItems,
+      snapshot: chatbotSnapshot,
+      permissions: chatbotPermissions,
+    });
+
+    const userMsg: BotChatMessage = {
+      id: `u_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       role: 'user',
       content: clean,
     };
-    const nextHistory = [...aiMessages, userMsg].slice(-6).map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
 
-    setAiMessages((prev) => [...prev, userMsg]);
-    setAiDraft('');
-    setAiLoading(true);
-    try {
-      const res = await fetch('/api/ai/assistant', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: clean,
-          history: nextHistory,
-          mode: 'portal',
-          role: resolvedAiRole,
-          context: aiContext || {},
-        }),
-      });
-      if (!res.ok) throw new Error('Assistant unavailable');
-      const data = (await res.json()) as {
-        reply?: string;
-        source?: 'gemini' | 'local';
-      };
-      setAiMessages((prev) => [
-        ...prev,
-        {
-          id: `a_${Date.now()}`,
-          role: 'assistant',
-          content: data.reply || 'Sorry, I could not generate a reply right now.',
-          source: data.source === 'gemini' ? 'gemini' : 'local',
-        },
-      ]);
-    } catch {
-      setAiMessages((prev) => [
-        ...prev,
-        {
-          id: `a_${Date.now()}`,
-          role: 'assistant',
-          content:
-            'Unable to reach the assistant server right now. Check your internet connection or use the portal tabs (**Home & Activities**, **Claims**, **Equipment**) directly.',
-          source: 'local',
-        },
-      ]);
-    } finally {
-      setAiLoading(false);
+    const botMsg: BotChatMessage = {
+      id: `b_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      role: 'bot',
+      content: result.reply,
+      source: result.source,
+      matchedLabel: result.matchedLabel,
+      actionTab: result.actionTab,
+      copyable: result.copyable,
+      followUpChips: result.followUpChips,
+    };
+
+    setBotMessages((prev) => [...prev, userMsg, botMsg]);
+    setBotDraft('');
+
+    if (!result.matched) {
+      void logUnansweredQuery(clean);
+    }
+  };
+
+  const actionButtonLabel = (tab?: ChatbotActionTab): string | null => {
+    switch (tab) {
+      case 'new_claim':
+        return 'Open New Claim';
+      case 'activities':
+        return 'View Activities';
+      case 'equipment':
+        return 'Open Equipment';
+      case 'ledger':
+        return chatbotPermissions.canViewFinance ? 'View Ledger' : null;
+      case 'claims':
+        return 'View Claims';
+      case 'profile':
+        return 'My Profile';
+      default:
+        return null;
     }
   };
   const [directory, setDirectory] = useState<ChatDirectoryMember[]>([]);
@@ -826,23 +944,39 @@ export default function FloatingChatDock({
     return true;
   });
 
+  const trainerModalEl = (isAdminMode || chatbotPermissions.isAdmin) ? (
+    <ChatbotTrainerModal
+      isOpen={trainerOpen}
+      onClose={() => setTrainerOpen(false)}
+      rules={botRules}
+      onRulesChanged={(nextRules) => setBotRules(nextRules)}
+      snapshot={chatbotSnapshot}
+      permissions={chatbotPermissions}
+      faqItems={faqItems}
+      profile={profile}
+    />
+  ) : null;
+
   if (!isOpen) {
     return (
-      <button
-        type="button"
-        onClick={() => onToggleOpen(true)}
-        className="fixed bottom-20 right-4 md:bottom-5 md:right-5 z-40 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-xl border border-emerald-400/50 cursor-pointer transition hover:scale-105"
-        aria-label="Open Club Chat"
-        title="Club Chat"
-      >
-        <MessageCircle className="w-4 h-4 shrink-0" />
-        <span className="hidden sm:inline">Club Chat</span>
-        {unreadCount > 0 && (
-          <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow">
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
-        )}
-      </button>
+      <>
+        <button
+          type="button"
+          onClick={() => onToggleOpen(true)}
+          className="fixed bottom-20 right-4 md:bottom-5 md:right-5 z-40 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-xl border border-emerald-400/50 cursor-pointer transition hover:scale-105"
+          aria-label="Open Club Chat"
+          title="Club Chat"
+        >
+          <MessageCircle className="w-4 h-4 shrink-0" />
+          <span className="hidden sm:inline">Club Chat</span>
+          {unreadCount > 0 && (
+            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </button>
+        {trainerModalEl}
+      </>
     );
   }
 
@@ -1202,7 +1336,7 @@ export default function FloatingChatDock({
                   ? 'Direct Messages'
                   : viewTab === 'people'
                   ? 'Member Directory'
-                  : 'Ask AI'}
+                  : 'Portal Bot'}
               </span>
             </div>
             <button
@@ -1216,7 +1350,7 @@ export default function FloatingChatDock({
             </button>
           </div>
 
-          {/* 4 Tabs: Public | DMs | People | Ask AI */}
+          {/* 4 Tabs: Public | DMs | People | Portal Bot */}
           <div className="grid grid-cols-4 border-b border-slate-200 bg-slate-50 text-[11px] font-bold shrink-0">
             <button
               type="button"
@@ -1274,80 +1408,89 @@ export default function FloatingChatDock({
             <button
               type="button"
               onClick={() => {
-                setViewTab('ai');
+                setViewTab('bot');
                 setEmojiOpen(false);
               }}
               className={`py-2.5 border-b-2 cursor-pointer transition inline-flex items-center justify-center gap-1 ${
-                viewTab === 'ai'
+                viewTab === 'bot'
                   ? 'border-emerald-600 text-emerald-800 bg-white'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>Ask AI</span>
+              <Bot className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Portal Bot</span>
             </button>
           </div>
 
           {viewTab === 'public' ? (
             renderMessageFeed(true)
-          ) : viewTab === 'ai' ? (
+          ) : viewTab === 'bot' ? (
             <div className="flex-1 flex flex-col min-h-0 bg-slate-50">
+              {/* Portal Bot Greeting & Admin Controls */}
               <div className="px-3 py-2 border-b border-slate-200 bg-white flex items-center justify-between gap-2 text-[11px] shrink-0">
-                <div className="flex items-center gap-1.5 text-slate-700 font-bold">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span>
-                    {resolvedAiRole === 'member'
-                      ? 'Member Portal Guide'
-                      : 'Treasurer & Portal Assistant'}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <Bot className="w-3.5 h-3.5" />
                   </span>
+                  <div className="min-w-0">
+                    <div className="font-extrabold text-slate-900 truncate">
+                      ClubSync Portal Assistant
+                    </div>
+                    <div className="text-[10px] text-emerald-700 font-semibold truncate">
+                      Live Data &amp; Instant Help
+                    </div>
+                  </div>
                 </div>
-                {aiMessages.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAiMessages([]);
-                      setAiOfflineNotice(null);
-                    }}
-                    className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Clear Chat</span>
-                  </button>
-                )}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {(isAdminMode || chatbotPermissions.isAdmin) && (
+                    <button
+                      type="button"
+                      onClick={() => setTrainerOpen(true)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold cursor-pointer"
+                      title="Manage custom Q&A rules & unanswered queries"
+                    >
+                      <Sliders className="w-3 h-3 text-emerald-300" />
+                      <span>Train Bot</span>
+                    </button>
+                  )}
+                  {botMessages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setBotMessages([])}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Clear</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {aiOfflineNotice && (
-                <div className="mx-3 mt-2 px-2.5 py-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 font-semibold flex items-center gap-1.5 shrink-0">
-                  <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span>{aiOfflineNotice}</span>
-                </div>
-              )}
-
-              <div ref={aiScrollRef} className="flex-1 overflow-y-auto p-3 space-y-2.5 text-xs">
-                {aiMessages.length === 0 ? (
-                  <div className="space-y-3 py-2">
-                    <div className="p-3 rounded-2xl bg-white border border-emerald-100 shadow-2xs space-y-1.5">
+              <div ref={botScrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 text-xs">
+                {botMessages.length === 0 ? (
+                  <div className="space-y-3 py-1">
+                    <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 shadow-2xs space-y-1.5">
                       <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Hi {profile.full_name.split(' ')[0]}! How can I help?</span>
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Hi {profile.full_name.split(' ')[0]}! Instant ClubSync Help</span>
                       </p>
                       <p className="text-[11px] text-slate-600 leading-relaxed">
-                        {resolvedAiRole === 'member'
-                          ? 'Ask about upcoming club activities, how to submit claims or pre-claims, your own claim status, or equipment loans.'
-                          : 'Ask about club budget health, pending claims awaiting review, upcoming activities, or category spending.'}
+                        {chatbotPermissions.canViewFinance
+                          ? 'Tap a topic below or ask for live Bank/Cash balances, event budgets, pending claims, or monthly finance summaries.'
+                          : 'Tap a quick topic or ask about upcoming events, your own claims & loans, equipment stock, or claim steps.'}
                       </p>
                     </div>
                     <div className="space-y-1.5">
                       <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-1">
-                        Quick Prompts
+                        Quick Topics
                       </p>
-                      <div className="flex flex-col gap-1.5">
-                        {aiStarterChips.map((chip) => (
+                      <div className="flex flex-wrap gap-1.5">
+                        {botStarterChips.map((chip) => (
                           <button
                             key={chip}
                             type="button"
-                            onClick={() => void sendAiQuestion(chip)}
-                            className="text-left px-3 py-2 rounded-xl bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-slate-800 font-semibold text-[11px] transition cursor-pointer"
+                            onClick={() => handleSendBotQuery(chip)}
+                            className="text-left px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-slate-800 font-bold text-[11px] transition cursor-pointer shadow-2xs"
                           >
                             {chip}
                           </button>
@@ -1356,60 +1499,118 @@ export default function FloatingChatDock({
                     </div>
                   </div>
                 ) : (
-                  aiMessages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${
-                        msg.role === 'user' ? 'items-end' : 'items-start'
-                      }`}
-                    >
+                  botMessages.map((msg, idx) => {
+                    const isLatestBot = msg.role === 'bot' && idx === botMessages.length - 1;
+                    const navLabel = msg.role === 'bot' ? actionButtonLabel(msg.actionTab) : null;
+                    return (
                       <div
-                        className={`max-w-[88%] rounded-2xl px-3 py-2 leading-relaxed whitespace-pre-line ${
-                          msg.role === 'user'
-                            ? 'bg-emerald-600 text-white rounded-br-sm font-medium'
-                            : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-2xs'
-                        }`}
+                        key={msg.id}
+                        className={`flex flex-col ${
+                          msg.role === 'user' ? 'items-end' : 'items-start'
+                        } space-y-1.5`}
                       >
-                        {msg.content}
-                      </div>
-                      {msg.role === 'assistant' && msg.source && (
-                        <span className="mt-1 px-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                          {msg.source === 'gemini' ? 'AI' : 'Quick Guide'}
-                        </span>
-                      )}
-                    </div>
-                  ))
-                )}
+                        <div
+                          className={`max-w-[90%] rounded-2xl px-3 py-2.5 leading-relaxed whitespace-pre-line ${
+                            msg.role === 'user'
+                              ? 'bg-emerald-600 text-white rounded-br-sm font-medium'
+                              : msg.source === 'restricted'
+                              ? 'bg-amber-50 border border-amber-200 text-amber-950 rounded-bl-sm shadow-2xs'
+                              : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-2xs'
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
 
-                {aiLoading && (
-                  <div className="flex items-start">
-                    <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-3 py-2 flex items-center gap-1.5 text-slate-600 text-[11px] font-semibold">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-                      <span>Thinking...</span>
-                    </div>
-                  </div>
+                        {msg.role === 'bot' && (
+                          <div className="flex flex-wrap items-center gap-1.5 px-0.5">
+                            {msg.source && (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider text-slate-400 mr-1">
+                                {msg.source === 'restricted' && <Lock className="w-2.5 h-2.5 text-amber-600" />}
+                                <span>
+                                  {msg.source === 'custom'
+                                    ? 'Trained Rule'
+                                    : msg.source === 'faq'
+                                    ? 'Club FAQ'
+                                    : msg.source === 'restricted'
+                                    ? 'Restricted'
+                                    : msg.source === 'fallback'
+                                    ? 'Suggestion'
+                                    : 'Live Data'}
+                                </span>
+                              </span>
+                            )}
+
+                            {navLabel && msg.actionTab && onNavigateAction && (
+                              <button
+                                type="button"
+                                onClick={() => onNavigateAction(msg.actionTab!)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold cursor-pointer shadow-2xs"
+                              >
+                                <span>{navLabel}</span>
+                                <ArrowRight className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+
+                            {msg.copyable && (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await navigator.clipboard.writeText(msg.content);
+                                  setCopiedBotId(msg.id);
+                                  setTimeout(() => setCopiedBotId((p) => (p === msg.id ? null : p)), 1800);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer"
+                              >
+                                {copiedBotId === msg.id ? (
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                                <span>{copiedBotId === msg.id ? 'Copied' : 'Copy Reply'}</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {isLatestBot && msg.followUpChips && msg.followUpChips.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {msg.followUpChips.map((chip) => (
+                              <button
+                                key={chip}
+                                type="button"
+                                onClick={() => handleSendBotQuery(chip)}
+                                className="px-2.5 py-1 rounded-full bg-white hover:bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold text-[10px] cursor-pointer transition"
+                              >
+                                {chip}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
 
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void sendAiQuestion(aiDraft);
+                  handleSendBotQuery(botDraft);
                 }}
                 className="p-2.5 border-t border-slate-200 bg-white flex items-center gap-2 shrink-0"
               >
                 <input
                   type="text"
-                  value={aiDraft}
-                  onChange={(e) => setAiDraft(e.target.value)}
-                  placeholder="Ask ClubSync Assistant..."
+                  value={botDraft}
+                  onChange={(e) => setBotDraft(e.target.value)}
+                  placeholder="Ask about events, claims, stock, or budget..."
                   className="flex-1 min-w-0 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:bg-white"
                 />
                 <button
                   type="submit"
-                  disabled={aiLoading || !aiDraft.trim()}
+                  disabled={!botDraft.trim()}
                   className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white cursor-pointer shrink-0"
-                  aria-label="Send question to AI"
+                  aria-label="Send question to Portal Bot"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -1644,6 +1845,7 @@ export default function FloatingChatDock({
           )}
         </>
       )}
+      {trainerModalEl}
     </div>
   );
 }

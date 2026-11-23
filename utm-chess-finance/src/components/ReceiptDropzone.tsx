@@ -242,8 +242,6 @@ export default function ReceiptDropzone({
   selectedFile,
   file,
   userId,
-  activeEvents = [],
-  categories = [],
   onFileSelect,
   onUploadedUrl,
   onScanComplete,
@@ -251,7 +249,7 @@ export default function ReceiptDropzone({
   const [internalFile, setInternalFile] = useState<File | null>(null);
   const [sourceFiles, setSourceFiles] = useState<File[]>([]);
   const [scanning, setScanning] = useState(false);
-  const [scanEngineBadge, setScanEngineBadge] = useState<'ai' | 'ocr' | null>(null);
+  const [scanEngineBadge, setScanEngineBadge] = useState<'ocr' | null>(null);
   const [scanStatusLabel, setScanStatusLabel] = useState<string>('');
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -377,95 +375,7 @@ export default function ReceiptDropzone({
     }
   };
 
-  const runAiVisionScan = async (
-    imageFile: File,
-    allFiles: File[]
-  ): Promise<boolean> => {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      return false;
-    }
-    try {
-      setScanStatusLabel('AI Smart Scan...');
-      setProgress(25);
-      const dataUrl = await fileToDataUrl(imageFile);
-      const res = await fetch('/api/ai/scan-receipt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: dataUrl,
-          mimeType: imageFile.type || 'image/jpeg',
-          activeEvents,
-          categories,
-        }),
-      });
-      if (!res.ok) return false;
-      const json = (await res.json()) as {
-        fallback?: boolean;
-        data?: {
-          merchant?: string;
-          date?: string | null;
-          total_amount?: number | null;
-          tax_amount?: number | null;
-          line_items?: { name: string; amount: number }[];
-          suggested_category?: string;
-          suggested_event?: string | null;
-          anomaly_flags?: string[];
-          confidence?: number;
-        };
-      };
-      if (json.fallback || !json.data) {
-        return false;
-      }
-
-      const d = json.data;
-      const merchantStr = (d.merchant || '').trim();
-      const totalAmt =
-        typeof d.total_amount === 'number' && Number.isFinite(d.total_amount)
-          ? d.total_amount
-          : null;
-      const aiItems = Array.isArray(d.line_items) ? d.line_items : [];
-      const mappedItems: ScannedReceiptItem[] =
-        aiItems.length > 0
-          ? aiItems.map((it, idx) => ({
-              fileName: idx === 0 ? imageFile.name : `item-${idx + 1}`,
-              amount: typeof it.amount === 'number' ? it.amount : null,
-              merchant: it.name || merchantStr || 'Item',
-              date: d.date || null,
-              confidence: d.confidence ?? 90,
-            }))
-          : [
-              {
-                fileName: imageFile.name,
-                amount: totalAmt,
-                merchant: merchantStr,
-                date: d.date || null,
-                confidence: d.confidence ?? 90,
-              },
-            ];
-
-      setProgress(100);
-      setScanEngineBadge('ai');
-      onScanComplete?.({
-        amount: totalAmt,
-        merchant: merchantStr,
-        date: d.date || null,
-        suggestedCategory: (d.suggested_category || '').trim(),
-        suggestedEvent: d.suggested_event ?? null,
-        taxAmount: typeof d.tax_amount === 'number' ? d.tax_amount : null,
-        lineItems: aiItems,
-        anomalyFlags: Array.isArray(d.anomaly_flags) ? d.anomaly_flags : [],
-        scanEngine: 'ai',
-        confidence: typeof d.confidence === 'number' ? d.confidence : 90,
-        items: mappedItems,
-        fileNames: allFiles.map((f) => f.name),
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  const runOcrOnFiles = async (filesToScan: File[], primaryImageForAi?: File | null) => {
+  const runOcrOnFiles = async (filesToScan: File[]) => {
     if (!onScanComplete || filesToScan.length === 0) return;
     setErrorMsg(null);
 
@@ -480,22 +390,6 @@ export default function ReceiptDropzone({
     setScanning(true);
     setProgress(10);
     setScanEngineBadge(null);
-
-    // Try AI Smart Scan first (falls back cleanly to local Tesseract OCR if offline/no key)
-    const aiTarget =
-      primaryImageForAi &&
-      !(primaryImageForAi.type === 'application/pdf' || primaryImageForAi.name.toLowerCase().endsWith('.pdf'))
-        ? primaryImageForAi
-        : imageTargets[0];
-
-    const aiOk = await runAiVisionScan(aiTarget, filesToScan);
-    if (aiOk) {
-      setScanning(false);
-      setProgress(0);
-      setScanStatusLabel('');
-      return;
-    }
-
     setScanStatusLabel('Local OCR...');
     interface OcrWorker {
       recognize: (img: Blob) => Promise<{ data: { text: string; confidence: number } }>;
@@ -677,7 +571,7 @@ export default function ReceiptDropzone({
     onFileSelect(finalFile);
 
     const uploadPromise = uploadFileImmediately(finalFile);
-    const ocrPromise = autoScan && onScanComplete ? runOcrOnFiles(effectiveSources, finalFile) : Promise.resolve();
+    const ocrPromise = autoScan && onScanComplete ? runOcrOnFiles(effectiveSources) : Promise.resolve();
     await Promise.all([uploadPromise, ocrPromise]);
   };
 
@@ -744,7 +638,7 @@ export default function ReceiptDropzone({
     if (!uploadedReceiptUrl && !uploadingReceipt) {
       void uploadFileImmediately(activeFile);
     }
-    await runOcrOnFiles(targets, activeFile);
+    await runOcrOnFiles(targets);
   };
 
   return (
@@ -939,14 +833,8 @@ export default function ReceiptDropzone({
                 {sourceFiles.length > 1 ? ` (${sourceFiles.length} receipts stacked)` : ''}
               </span>
               {scanEngineBadge && (
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold shrink-0 ${
-                    scanEngineBadge === 'ai'
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                      : 'bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {scanEngineBadge === 'ai' ? 'AI Vision' : 'Local OCR'}
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold shrink-0 bg-slate-200 text-slate-700">
+                  Local OCR
                 </span>
               )}
             </div>
@@ -957,13 +845,13 @@ export default function ReceiptDropzone({
                   disabled={scanning}
                   onClick={() => void handleScan()}
                   className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-70 text-white font-bold text-[11px] cursor-pointer"
-                  title="Reads amount, date, merchant & flags from the receipt image(s)"
+                  title="Reads amount, date & merchant from the receipt image(s)"
                 >
                   {scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
                   <span>
                     {scanning
                       ? `${scanStatusLabel || 'Reading receipt…'} ${progress}%`
-                      : 'AI Smart Scan'}
+                      : 'Auto-Fill OCR'}
                   </span>
                 </button>
               )}

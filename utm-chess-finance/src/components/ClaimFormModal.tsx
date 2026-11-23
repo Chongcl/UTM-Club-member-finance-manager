@@ -550,7 +550,7 @@ export default function ClaimFormModal({
           ? ` | Flags: ${scannedData.anomalyFlags.join('; ')}`
           : '';
       const scannedSummary = scannedData
-        ? `${scannedData.scanEngine === 'ai' ? 'AI Vision' : 'Local OCR'} (${scannedData.confidence}%): RM ${scannedData.amount?.toFixed(2) ?? '-'} | ${scannedData.merchant || '-'} | ${scannedData.date || '-'}${aiFlagsPart}`
+        ? `Local OCR (${scannedData.confidence}%): RM ${scannedData.amount?.toFixed(2) ?? '-'} | ${scannedData.merchant || '-'} | ${scannedData.date || '-'}${aiFlagsPart}`
         : `Receipt attached (${file.name})`;
 
       const corePayload = {
@@ -1183,7 +1183,7 @@ export default function ClaimFormModal({
                         </span>
                       </span>
                       <span className="px-2 py-0.5 rounded-full bg-white border border-emerald-200 text-[10px] font-extrabold shrink-0">
-                        {scannedData.scanEngine === 'ai' ? 'AI Vision' : 'Local OCR'} · {scannedData.confidence}%
+                        Local OCR · {scannedData.confidence}%
                       </span>
                     </div>
                     {scannedData.anomalyFlags && scannedData.anomalyFlags.length > 0 && (
