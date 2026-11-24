@@ -210,7 +210,10 @@ export default function AuditReviewModal({
   const renderBudgetImpactBanner = () => {
     if (!budget || Number(budget.allocated_amount || 0) <= 0) return null;
     const allocCap = Number(budget.allocated_amount || 0);
-    const currentSpent = Number(budget.spent_amount || 0);
+    const approvedOnEvent = allClaims
+      .filter((c) => !c.deleted_at && c.status === 'Approved' && c.budget_id === budget.id)
+      .reduce((s, c) => s + (Number(c.amount) || 0), 0);
+    const currentSpent = Math.max(Number(budget.spent_amount || 0), approvedOnEvent);
     const claimAmt = Number(claim.amount || 0);
     const isAlreadyApproved = claim.status === 'Approved';
     const remainingBefore = isAlreadyApproved

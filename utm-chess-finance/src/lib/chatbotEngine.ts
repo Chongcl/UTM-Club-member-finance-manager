@@ -15,6 +15,7 @@ import type { PublicFaqItem } from './publicLanding';
 export interface LedgerSnapshotRow {
   entry_type: 'IN' | 'OUT';
   amount: number;
+  event_name?: string;
   account_type?: 'Bank' | 'Cash' | string | null;
   deleted_at?: string | null;
 }
@@ -358,7 +359,28 @@ export function buildChatbotSnapshot(input: BuildChatbotSnapshotInput): ChatbotS
 
   const eventSummaries: ChatbotEventBudgetSummary[] = activeBudgets.map((b) => {
     const allocated = Number(b.allocated_amount || 0);
-    const spent = Number(b.spent_amount || 0);
+    const claimsOutOnEv = activeClaims
+      .filter((c) => c.status === 'Approved' && c.budget_id === b.id)
+      .reduce((s, c) => {
+        const linkedPc =
+          (c.pre_claim_id ? activePreClaims.find((pc) => pc.id === c.pre_claim_id) : undefined) ||
+          activePreClaims.find((pc) => pc.linked_claim_id === c.id);
+        const advGiven = linkedPc ? Number(linkedPc.advance_disbursed_amount || 0) : 0;
+        const rawAmt = Number(c.amount) || 0;
+        const netAmt = advGiven > 0 ? Math.max(0, rawAmt - advGiven) : rawAmt;
+        return s + netAmt;
+      }, 0);
+    const evNameLower = (b.event_name || '').trim().toLowerCase();
+    const manualOutOnEv = evNameLower
+      ? activeLedger
+          .filter(
+            (e) =>
+              e.entry_type === 'OUT' &&
+              (e.event_name || '').trim().toLowerCase() === evNameLower
+          )
+          .reduce((s, e) => s + (Number(e.amount) || 0), 0)
+      : 0;
+    const spent = Math.max(Number(b.spent_amount || 0), claimsOutOnEv + manualOutOnEv);
     const pending = pendingClaimsRaw
       .filter((c) => c.budget_id === b.id)
       .reduce((s, c) => s + (Number(c.amount) || 0), 0);

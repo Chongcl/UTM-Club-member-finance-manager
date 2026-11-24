@@ -519,8 +519,9 @@ export default function LedgerSection({
   const [editFeeAccount, setEditFeeAccount] = useState<AccountType>('Bank');
   const [savingFeeEdit, setSavingFeeEdit] = useState(false);
 
-  // By Activity expansion
+  // By Activity expansion & visual analytics
   const [expandedActivityKey, setExpandedActivityKey] = useState<string | null>(null);
+  const [spendAnalyticsOpen, setSpendAnalyticsOpen] = useState(false);
 
   // Unpaid fees state
   const [unpaidEventFilter, setUnpaidEventFilter] = useState('ALL');
@@ -925,6 +926,49 @@ export default function LedgerSection({
       healthyCount,
     };
   }, [activityPnlCards]);
+
+  const spendAnalytics = useMemo(() => {
+    const outRows = unifiedRows.filter((r) => r.entryType === 'OUT');
+    const byCat = new Map<string, number>();
+    let totalCatOut = 0;
+
+    for (const r of outRows) {
+      const cat = (r.category || 'Other Expense').trim() || 'Other Expense';
+      byCat.set(cat, (byCat.get(cat) || 0) + r.amount);
+      totalCatOut += r.amount;
+    }
+
+    const sorted = Array.from(byCat.entries())
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const topCats = sorted.slice(0, 6);
+    const extraSum = sorted.slice(6).reduce((s, item) => s + item.amount, 0);
+    if (extraSum > 0) {
+      topCats.push({ category: 'Other Categories', amount: extraSum });
+    }
+
+    const categories = topCats.map((item) => ({
+      ...item,
+      pct: totalCatOut > 0 ? Math.round((item.amount / totalCatOut) * 100) : 0,
+    }));
+
+    const totalIn = mathSummary.totalIn;
+    const totalOut = mathSummary.totalOut;
+    const flowTotal = totalIn + totalOut;
+    const inPct = flowTotal > 0 ? Math.round((totalIn / flowTotal) * 100) : 50;
+    const outPct = flowTotal > 0 ? 100 - inPct : 50;
+
+    return {
+      categories,
+      totalCatOut,
+      totalIn,
+      totalOut,
+      netSurplus: totalIn - totalOut,
+      inPct,
+      outPct,
+    };
+  }, [unifiedRows, mathSummary]);
 
   // --- Budget Plan ---
   const scopedPlannerRows = useMemo(
@@ -1727,6 +1771,139 @@ export default function LedgerSection({
             </div>
           )}
         </div>
+      </div>
+
+      {/* ===================== COLLAPSIBLE VISUAL SPEND BREAKDOWN ===================== */}
+      <div className="border-b border-slate-200 bg-slate-50/40">
+        <button
+          type="button"
+          onClick={() => setSpendAnalyticsOpen((v) => !v)}
+          className="w-full px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2 text-left hover:bg-slate-50/90 transition cursor-pointer"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {spendAnalyticsOpen ? (
+              <ChevronDown className="w-4 h-4 text-emerald-700 shrink-0" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+            )}
+            <span className="text-xs font-extrabold text-slate-800">
+              Visual Spend Breakdown
+            </span>
+            <span className="text-[11px] text-slate-500 hidden sm:inline">
+              • Top expense categories &amp; IN/OUT cashflow ratio
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
+            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+              IN {spendAnalytics.inPct}%
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">
+              OUT {spendAnalytics.outPct}%
+            </span>
+            <span className="text-slate-500 font-semibold">
+              {spendAnalyticsOpen ? 'Hide' : 'Show'}
+            </span>
+          </div>
+        </button>
+
+        {spendAnalyticsOpen && (
+          <div className="px-4 sm:px-5 pb-4 pt-1 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Spending by Category */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                  Spending by Category
+                </h4>
+                <span className="text-[11px] font-mono font-bold text-rose-600">
+                  RM {formatRM(spendAnalytics.totalCatOut)}
+                </span>
+              </div>
+              {spendAnalytics.categories.length === 0 ? (
+                <p className="text-xs text-slate-400 py-3">
+                  No outgoing expenses recorded yet.
+                </p>
+              ) : (
+                <div className="space-y-2.5">
+                  {spendAnalytics.categories.map((item) => (
+                    <div key={item.category} className="space-y-1">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-semibold text-slate-800 truncate min-w-0">
+                          {item.category}
+                        </span>
+                        <span className="font-mono font-bold text-slate-700 shrink-0">
+                          RM {formatRM(item.amount)}{' '}
+                          <span className="text-[10px] text-slate-400 font-semibold">
+                            ({item.pct}%)
+                          </span>
+                        </span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-teal-500 transition-all"
+                          style={{ width: `${Math.min(100, Math.max(2, item.pct))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Cashflow Ratio Bar */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col justify-between gap-3">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                    Cashflow Ratio (IN vs OUT)
+                  </h4>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      spendAnalytics.netSurplus >= 0
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-rose-100 text-rose-700'
+                    }`}
+                  >
+                    {spendAnalytics.netSurplus >= 0 ? 'Net Surplus' : 'Net Deficit'}:{' '}
+                    {spendAnalytics.netSurplus < 0 ? '-' : '+'}RM{' '}
+                    {formatRM(spendAnalytics.netSurplus)}
+                  </span>
+                </div>
+
+                <div className="h-4 w-full rounded-full bg-slate-100 overflow-hidden flex border border-slate-200">
+                  <div
+                    className="h-full bg-emerald-500 transition-all"
+                    style={{ width: `${spendAnalytics.inPct}%` }}
+                    title={`Income: ${spendAnalytics.inPct}%`}
+                  />
+                  <div
+                    className="h-full bg-rose-500 transition-all"
+                    style={{ width: `${spendAnalytics.outPct}%` }}
+                    title={`Expense: ${spendAnalytics.outPct}%`}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 text-xs pt-1">
+                <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200">
+                  <div className="text-[10px] font-bold uppercase text-emerald-700">
+                    Total Income ({spendAnalytics.inPct}%)
+                  </div>
+                  <div className="font-mono font-extrabold text-sm text-emerald-900 mt-0.5">
+                    +RM {formatRM(spendAnalytics.totalIn)}
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-rose-50/70 border border-rose-200">
+                  <div className="text-[10px] font-bold uppercase text-rose-700">
+                    Total Expense ({spendAnalytics.outPct}%)
+                  </div>
+                  <div className="font-mono font-extrabold text-sm text-rose-700 mt-0.5">
+                    -RM {formatRM(spendAnalytics.totalOut)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ===================== UNDERLINED TAB BAR INSIDE WHITE CARD ===================== */}

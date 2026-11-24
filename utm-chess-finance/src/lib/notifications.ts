@@ -45,7 +45,7 @@ export interface LiveReminderItem {
   title: string;
   subtitle: string;
   targetAction:
-    | { kind: 'tab'; tab: 'activities' | 'equipment' | 'claims' }
+    | { kind: 'tab'; tab: 'activities' | 'equipment' | 'claims' | 'ledger' }
     | { kind: 'event'; budget: Budget; eventTab: 'pass' | 'transport' | 'fee' }
     | { kind: 'chat' };
 }
@@ -239,6 +239,46 @@ export function buildLiveReminders(input: {
         subtitle: 'Follow up with borrowers in Equipment',
         targetAction: { kind: 'tab', tab: 'equipment' },
       });
+    }
+  }
+
+  // 5. Dynamic Event Budget-Limit Reminders (80% near-limit / >=100% over budget)
+  if (
+    isAdminOrOwner &&
+    (permissions.can_manage_finance || permissions.can_manage_claims_fees)
+  ) {
+    for (const ev of budgets) {
+      if (ev.deleted_at || ev.status !== 'Active') continue;
+      const alloc = Number(ev.allocated_amount || 0);
+      if (alloc <= 0) continue;
+
+      const approvedClaimsSum = claims
+        .filter((c) => !c.deleted_at && c.status === 'Approved' && c.budget_id === ev.id)
+        .reduce((s, c) => s + (Number(c.amount) || 0), 0);
+      const pendingClaimsSum = claims
+        .filter((c) => !c.deleted_at && c.status === 'Pending' && c.budget_id === ev.id)
+        .reduce((s, c) => s + (Number(c.amount) || 0), 0);
+      const approvedSpent = Math.max(Number(ev.spent_amount || 0), approvedClaimsSum);
+      const committed = approvedSpent + pendingClaimsSum;
+      const pct = Math.round((committed / alloc) * 100);
+
+      if (pct >= 100) {
+        reminders.push({
+          id: `rem-budget-over-${ev.id}`,
+          urgency: 'urgent',
+          title: `Over Budget: ${ev.event_name}`,
+          subtitle: `${pct}% committed (RM ${committed.toFixed(2)} / RM ${alloc.toFixed(2)}) — open Ledger`,
+          targetAction: { kind: 'tab', tab: 'ledger' },
+        });
+      } else if (pct >= 80) {
+        reminders.push({
+          id: `rem-budget-near-${ev.id}`,
+          urgency: 'warning',
+          title: `Near Budget Limit: ${ev.event_name}`,
+          subtitle: `${pct}% committed (RM ${committed.toFixed(2)} / RM ${alloc.toFixed(2)}) — review in Ledger`,
+          targetAction: { kind: 'tab', tab: 'ledger' },
+        });
+      }
     }
   }
 

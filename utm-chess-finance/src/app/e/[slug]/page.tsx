@@ -16,6 +16,7 @@ import {
   formatActivitySchedule,
   getFormatBadgeMeta,
 } from '@/lib/activityConfig';
+import NetworkStatusBanner from '@/components/NetworkStatusBanner';
 import {
   ArrowLeft,
   Calendar,
@@ -381,33 +382,40 @@ export default function PublicEventPage() {
 
   if (loadError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-slate-100 p-4">
-        <div className="max-w-md w-full bg-white rounded-3xl border border-rose-200 shadow-xl p-8 text-center space-y-4">
-          <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
-            <AlertCircle className="w-7 h-7" />
-          </div>
-          <h1 className="text-xl font-extrabold text-slate-900">Connection Issue</h1>
-          <p className="text-xs text-slate-600 leading-relaxed">{loadError}</p>
-          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => void loadEvent()}
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold cursor-pointer"
-            >
-              <span>Retry</span>
-            </button>
-            <Link
-              href="/"
-              onClick={() => setNavigatingHome(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
-            >
-              {navigatingHome ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <ArrowLeft className="w-3.5 h-3.5" />
-              )}
-              <span>{navigatingHome ? 'Returning...' : 'Back to Club Portal'}</span>
-            </Link>
+      <div className="min-h-screen flex flex-col bg-gradient-to-br from-emerald-50 via-white to-slate-100">
+        <NetworkStatusBanner
+          networkError={loadError}
+          onRetry={() => void loadEvent()}
+          onReconnected={() => void loadEvent()}
+        />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-3xl border border-rose-200 shadow-xl p-8 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <AlertCircle className="w-7 h-7" />
+            </div>
+            <h1 className="text-xl font-extrabold text-slate-900">Connection Issue</h1>
+            <p className="text-xs text-slate-600 leading-relaxed">{loadError}</p>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => void loadEvent()}
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold cursor-pointer"
+              >
+                <span>Retry</span>
+              </button>
+              <Link
+                href="/"
+                onClick={() => setNavigatingHome(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
+              >
+                {navigatingHome ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                )}
+                <span>{navigatingHome ? 'Returning...' : 'Back to Club Portal'}</span>
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -416,27 +424,34 @@ export default function PublicEventPage() {
 
   if (!eventData?.found) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-slate-100 p-4">
-        <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-xl p-8 text-center space-y-4">
-          <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
-            <Ticket className="w-7 h-7" />
+      <div className="min-h-screen flex flex-col bg-gradient-to-br from-emerald-50 via-white to-slate-100">
+        <NetworkStatusBanner
+          networkError={loadError}
+          onRetry={() => void loadEvent()}
+          onReconnected={() => void loadEvent()}
+        />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200 shadow-xl p-8 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
+              <Ticket className="w-7 h-7" />
+            </div>
+            <h1 className="text-xl font-extrabold text-slate-900">Event Not Available</h1>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              This public event link may have closed, moved, or is no longer accepting guest registrations.
+            </p>
+            <Link
+              href="/"
+              onClick={() => setNavigatingHome(true)}
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold transition"
+            >
+              {navigatingHome ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ArrowLeft className="w-4 h-4" />
+              )}
+              <span>{navigatingHome ? 'Returning to portal...' : 'Back to Club Portal'}</span>
+            </Link>
           </div>
-          <h1 className="text-xl font-extrabold text-slate-900">Event Not Available</h1>
-          <p className="text-xs text-slate-500 leading-relaxed">
-            This public event link may have closed, moved, or is no longer accepting guest registrations.
-          </p>
-          <Link
-            href="/"
-            onClick={() => setNavigatingHome(true)}
-            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold transition"
-          >
-            {navigatingHome ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <ArrowLeft className="w-4 h-4" />
-            )}
-            <span>{navigatingHome ? 'Returning to portal...' : 'Back to Club Portal'}</span>
-          </Link>
         </div>
       </div>
     );
@@ -575,6 +590,11 @@ export default function PublicEventPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50/80 via-white to-slate-50 text-slate-900">
+      <NetworkStatusBanner
+        networkError={loadError}
+        onRetry={() => void loadEvent()}
+        onReconnected={() => void loadEvent()}
+      />
       {navigatingHome && (
         <div className="fixed top-0 inset-x-0 z-50 h-1 bg-emerald-100 overflow-hidden">
           <div className="h-full w-1/2 bg-emerald-600 animate-pulse rounded-r-full" />
