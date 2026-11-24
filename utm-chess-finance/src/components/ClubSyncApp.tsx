@@ -955,6 +955,157 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
     return () => sub.subscription.unsubscribe();
   }, [fetchOrCreateProfile, fetchAllData]);
 
+  const realtimeRefreshRef = useRef({
+    claims: refreshClaims,
+    finance: refreshFinance,
+    events: refreshEvents,
+  });
+  realtimeRefreshRef.current = {
+    claims: refreshClaims,
+    finance: refreshFinance,
+    events: refreshEvents,
+  };
+
+  const realtimeContextRef = useRef<{
+    userId: string | null;
+    isAdminOrOwner: boolean;
+    budgets: Budget[];
+    showToast: (msg: string) => void;
+  }>({
+    userId: sessionUserId,
+    isAdminOrOwner: false,
+    budgets: [],
+    showToast,
+  });
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !sessionUserId) return;
+
+    const pendingScopes = new Set<'claims' | 'finance' | 'events'>();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleRefresh = (scope: 'claims' | 'finance' | 'events') => {
+      pendingScopes.add(scope);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const scopes = Array.from(pendingScopes);
+        pendingScopes.clear();
+        if (scopes.includes('claims')) void realtimeRefreshRef.current.claims();
+        if (scopes.includes('finance')) void realtimeRefreshRef.current.finance();
+        if (scopes.includes('events')) void realtimeRefreshRef.current.events();
+      }, 400);
+    };
+
+    const channel = supabase
+      .channel('clubsync-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'claims' },
+        (payload) => {
+          scheduleRefresh('claims');
+          const ctx = realtimeContextRef.current;
+          const newRow = (payload.new || {}) as Record<string, unknown>;
+          const oldRow = (payload.old || {}) as Record<string, unknown>;
+
+          if (payload.eventType === 'INSERT') {
+            if (ctx.isAdminOrOwner && newRow.user_id && String(newRow.user_id) !== ctx.userId) {
+              ctx.showToast(
+                `New claim from ${String(newRow.claimant_name || 'Member')}: "${String(
+                  newRow.title || 'Claim'
+                )}" (RM ${Number(newRow.amount || 0).toFixed(2)})`
+              );
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const nextStatus = String(newRow.status || '');
+            const prevStatus = String(oldRow.status || '');
+            if (
+              newRow.user_id &&
+              String(newRow.user_id) === ctx.userId &&
+              nextStatus !== prevStatus &&
+              (nextStatus === 'Approved' || nextStatus === 'Rejected')
+            ) {
+              ctx.showToast(
+                `Your claim "${String(newRow.title || 'Claim')}" was ${nextStatus.toLowerCase()}!`
+              );
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pre_claims' },
+        () => {
+          scheduleRefresh('claims');
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'budgets' },
+        (payload) => {
+          scheduleRefresh('events');
+          if (payload.eventType === 'UPDATE') {
+            const ctx = realtimeContextRef.current;
+            const newRow = (payload.new || {}) as Record<string, unknown>;
+            const oldRow = (payload.old || {}) as Record<string, unknown>;
+            const alloc = Number(newRow.allocated_amount || 0);
+            const nextSpent = Number(newRow.spent_amount || 0);
+            const prevSpent = Number(oldRow.spent_amount ?? 0);
+            if (alloc > 0 && nextSpent > prevSpent) {
+              const prevPct = (prevSpent / alloc) * 100;
+              const nextPct = (nextSpent / alloc) * 100;
+              const evName = String(newRow.event_name || 'Activity');
+              if (nextPct >= 100 && prevPct < 100) {
+                ctx.showToast(
+                  `⚠ Over Budget: "${evName}" reached ${Math.round(nextPct)}% of its RM ${alloc.toFixed(2)} cap!`
+                );
+              } else if (nextPct >= 80 && prevPct < 80) {
+                ctx.showToast(
+                  `⚠ Near Budget Limit: "${evName}" reached ${Math.round(nextPct)}% of its RM ${alloc.toFixed(2)} cap.`
+                );
+              }
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ledger_entries' },
+        (payload) => {
+          scheduleRefresh('finance');
+          if (payload.eventType === 'INSERT') {
+            const ctx = realtimeContextRef.current;
+            const newRow = (payload.new || {}) as Record<string, unknown>;
+            if (ctx.isAdminOrOwner && newRow.entry_type === 'OUT' && newRow.event_name) {
+              const evClean = String(newRow.event_name).trim().toLowerCase();
+              const matched = ctx.budgets.find(
+                (b) => !b.deleted_at && b.event_name.trim().toLowerCase() === evClean
+              );
+              const alloc = Number(matched?.allocated_amount || 0);
+              if (matched && alloc > 0) {
+                const projPct =
+                  ((Number(matched.spent_amount || 0) + Number(newRow.amount || 0)) / alloc) * 100;
+                if (projPct >= 100) {
+                  ctx.showToast(
+                    `⚠ Over Budget Alert: "${matched.event_name}" expense pushes spending past 100% of its RM ${alloc.toFixed(2)} cap!`
+                  );
+                } else if (projPct >= 80) {
+                  ctx.showToast(
+                    `⚠ Near Budget Limit: "${matched.event_name}" expense reaches ${Math.round(projPct)}% of its RM ${alloc.toFixed(2)} cap.`
+                  );
+                }
+              }
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [sessionUserId]);
+
   useEffect(() => {
     if (!sessionUserId || isChatOpen) return;
     let active = true;
@@ -1314,6 +1465,13 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
     : isAdminOrOwner
     ? profile?.admin_permissions || DEFAULT_ADMIN_PERMISSIONS
     : NO_PERMISSIONS;
+
+  realtimeContextRef.current = {
+    userId: sessionUserId,
+    isAdminOrOwner,
+    budgets: activeBudgets,
+    showToast,
+  };
 
   // Derived synced EventOperationsModal target (always reflects latest budgets after edits/saves)
   const activeOpsEvent = opsModalEvent

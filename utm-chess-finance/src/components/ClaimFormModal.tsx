@@ -1339,7 +1339,7 @@ export default function ClaimFormModal({
                   <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-xs text-amber-950 space-y-1">
                     <div className="font-extrabold flex items-center gap-1.5 text-amber-800">
                       <AlertTriangle className="w-4 h-4 shrink-0" />
-                      <span>AI Receipt Notes (Please double-check before submitting)</span>
+                      <span>Receipt OCR Notes (Please double-check before submitting)</span>
                     </div>
                     <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
                       {scannedData.anomalyFlags.map((flag, i) => (
@@ -1460,6 +1460,98 @@ export default function ClaimFormModal({
                   </div>
                 </div>
 
+                {selectedEventOption !== 'OTHER' && (() => {
+                  const chosenBudget = budgets.find((b) => b.id === selectedEventOption);
+                  const allocCap = Number(chosenBudget?.allocated_amount || 0);
+                  if (!chosenBudget || allocCap <= 0) return null;
+
+                  const currSpent = Number(chosenBudget.spent_amount || 0);
+                  const currRemaining = allocCap - currSpent;
+                  const claimNum = Math.max(0, parseFloat(amount) || 0);
+                  const projSpent = currSpent + claimNum;
+                  const projRemaining = allocCap - projSpent;
+                  const projPct = Math.round((projSpent / allocCap) * 100);
+                  const isOver = projPct >= 100;
+                  const isNear = projPct >= 80 && projPct < 100;
+
+                  return (
+                    <div
+                      className={`rounded-2xl border p-3.5 space-y-2 text-xs ${
+                        isOver
+                          ? 'bg-rose-50/90 border-rose-300 text-rose-950'
+                          : isNear
+                          ? 'bg-amber-50/90 border-amber-300 text-amber-950'
+                          : 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-extrabold flex items-center gap-1.5">
+                          {(isOver || isNear) && (
+                            <AlertTriangle
+                              className={`w-4 h-4 shrink-0 ${
+                                isOver ? 'text-rose-600' : 'text-amber-600'
+                              }`}
+                            />
+                          )}
+                          <span>Live Budget Impact — {chosenBudget.event_name}</span>
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                            isOver
+                              ? 'bg-rose-600 text-white'
+                              : isNear
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-emerald-600 text-white'
+                          }`}
+                        >
+                          {projPct}% Used After Claim
+                        </span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-white/80 overflow-hidden border border-black/5">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            isOver ? 'bg-rose-600' : isNear ? 'bg-amber-500' : 'bg-emerald-600'
+                          }`}
+                          style={{ width: `${Math.min(100, Math.max(0, projPct))}%` }}
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold">
+                        <span>
+                          Current Remaining:{' '}
+                          <strong className="font-mono">
+                            {currRemaining < 0 ? '-' : ''}RM {Math.abs(currRemaining).toFixed(2)}
+                          </strong>
+                        </span>
+                        <span>→</span>
+                        <span>
+                          Projected Remaining After This Claim:{' '}
+                          <strong
+                            className={`font-mono ${
+                              projRemaining < 0
+                                ? 'text-rose-700'
+                                : isNear
+                                ? 'text-amber-800'
+                                : 'text-emerald-800'
+                            }`}
+                          >
+                            {projRemaining < 0 ? '-' : ''}RM {Math.abs(projRemaining).toFixed(2)}
+                          </strong>
+                        </span>
+                      </div>
+                      {isOver && (
+                        <p className="text-[11px] font-bold text-rose-700">
+                          ⚠ Over Budget Warning: This claim pushes &ldquo;{chosenBudget.event_name}&rdquo; past 100% of its RM {allocCap.toFixed(2)} allocated budget.
+                        </p>
+                      )}
+                      {isNear && (
+                        <p className="text-[11px] font-bold text-amber-800">
+                          ⚠ Near Budget Limit: This claim brings &ldquo;{chosenBudget.event_name}&rdquo; past 80% of its RM {allocCap.toFixed(2)} allocated cap.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div className="flex items-center justify-between gap-2 pt-3 border-t border-emerald-100">
                   <button
                     type="button"
@@ -1552,7 +1644,7 @@ export default function ClaimFormModal({
           <form
             onSubmit={handlePreClaimSubmit}
             noValidate
-            className="p-6 space-y-4 max-h-[72vh] overflow-y-auto"
+            className="p-4 sm:p-6 space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden"
           >
             {errorMsg && (
               <div className="flex items-center gap-2 text-xs bg-red-50 text-red-700 px-3.5 py-2.5 rounded-xl border border-red-200 font-semibold">

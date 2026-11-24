@@ -60,6 +60,7 @@ export interface EditableActivity {
   event_time?: string;
   location?: string;
   registration_fee?: number;
+  allocated_amount?: number;
   driver_allowance_per_trip?: number;
   driver_recruitment_open?: boolean;
   qr_code_token?: string;
@@ -131,6 +132,7 @@ export default function BudgetModal({
   const [eventTime, setEventTime] = useState('08:00 PM - 10:00 PM');
   const [location, setLocation] = useState('Student Activity Hall');
   const [registrationFee, setRegistrationFee] = useState('0');
+  const [allocatedAmount, setAllocatedAmount] = useState('0');
   const [showFeeTiers, setShowFeeTiers] = useState(false);
   const [feeTiers, setFeeTiers] = useState<FeeTier[]>([]);
   const [allowCustomAmount, setAllowCustomAmount] = useState(false);
@@ -182,6 +184,7 @@ export default function BudgetModal({
       setLocation(initialData.location || '');
       const feeVal = initialData.registration_fee ?? 0;
       setRegistrationFee(String(feeVal));
+      setAllocatedAmount(String(initialData.allocated_amount ?? 0));
       setFeeTiers(cfg.fee_tiers);
       setShowFeeTiers(cfg.fee_tiers.length > 0 || cfg.allow_custom_amount);
       setAllowCustomAmount(cfg.allow_custom_amount);
@@ -237,6 +240,7 @@ export default function BudgetModal({
       setEventTime('08:00 PM - 10:00 PM');
       setLocation('Student Activity Hall');
       setRegistrationFee('0');
+      setAllocatedAmount('0');
       setFeeTiers([]);
       setShowFeeTiers(false);
       setAllowCustomAmount(false);
@@ -354,6 +358,7 @@ export default function BudgetModal({
     e.preventDefault();
     setSaving(true);
     try {
+      const allocatedNum = Math.max(0, parseFloat(allocatedAmount) || 0);
       const normalizedSlug = slugifyTitle(
         publicSlug.trim() || (isPublicRegistration ? eventName : '')
       );
@@ -424,6 +429,7 @@ export default function BudgetModal({
         event_time: safeTime,
         location: safeLocation,
         registration_fee: effectiveBaseFee,
+        allocated_amount: allocatedNum,
         driver_allowance_per_trip: activityFormat === 'physical' ? allowanceNum : 0,
         driver_recruitment_open: activityFormat === 'physical' ? driverRecruitmentOpen : false,
         qr_code_token: qrToken,
@@ -478,6 +484,11 @@ export default function BudgetModal({
               before: Number(initialData.registration_fee ?? 0).toFixed(2),
               after: effectiveBaseFee.toFixed(2),
             },
+            {
+              field: 'Allocated Budget (RM)',
+              before: Number(initialData.allocated_amount ?? 0).toFixed(2),
+              after: allocatedNum.toFixed(2),
+            },
             { field: 'Status', before: initialData.status || 'Active', after: status },
             { field: 'Description', before: initialData.description, after: basePayload.description },
           ]);
@@ -494,17 +505,16 @@ export default function BudgetModal({
       } else {
         const { error: err1 } = await supabase
           .from('budgets')
-          .insert({ ...fullFlexiblePayload, allocated_amount: 0, spent_amount: 0 });
+          .insert({ ...fullFlexiblePayload, spent_amount: 0 });
         if (err1) {
           const { error: err2 } = await supabase
             .from('budgets')
-            .insert({ ...extendedPayload, allocated_amount: 0, spent_amount: 0 });
+            .insert({ ...extendedPayload, spent_amount: 0 });
           if (err2) {
             await supabase.from('budgets').insert({
               ...basePayload,
               ticket_qr_mode: modeValue,
               pass_approval_rule: passRule,
-              allocated_amount: 0,
               spent_amount: 0,
             });
           }
@@ -539,12 +549,12 @@ export default function BudgetModal({
     (activityFormat === 'physical' && enablePhysicalLink);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border border-slate-200 max-w-3xl w-full overflow-hidden my-8">
-        <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <Calendar className="w-5 h-5 text-emerald-400" />
-            <h2 className="text-base font-bold">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-2.5 sm:p-4 overflow-y-auto">
+      <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border border-slate-200 max-w-3xl w-full overflow-hidden my-4 sm:my-8">
+        <div className="bg-slate-900 text-white px-4 sm:px-6 py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Calendar className="w-5 h-5 text-emerald-400 shrink-0" />
+            <h2 className="text-base font-bold truncate">
               {isEditing ? `Edit Activity — ${eventName}` : 'New Activity / Fee Collection'}
             </h2>
           </div>
@@ -557,7 +567,7 @@ export default function BudgetModal({
           </button>
         </div>
 
-        <form onSubmit={handleSave} className="p-6 max-h-[82vh] overflow-y-auto space-y-4 text-xs">
+        <form onSubmit={handleSave} className="p-4 sm:p-6 max-h-[82vh] overflow-y-auto overflow-x-hidden space-y-4 text-xs">
           {/* Step 0: 4-Pill Format Selector */}
           <div>
             <label className="block font-extrabold text-[11px] uppercase tracking-wider text-slate-500 mb-2">
@@ -774,6 +784,33 @@ export default function BudgetModal({
                 value={registrationFee}
                 onChange={(e) => setRegistrationFee(e.target.value)}
                 className="w-full rounded-xl border bg-white px-3 py-2 font-bold"
+              />
+            </div>
+          </div>
+
+          {/* Optional Event Budget Cap (RM) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-200 items-center">
+            <div>
+              <label className="block font-extrabold text-emerald-950">
+                Allocated Budget (RM){' '}
+                <span className="text-slate-500 font-semibold">(Optional Cap)</span>
+              </label>
+              <p className="text-[11px] text-emerald-900/75 mt-0.5">
+                Set a spending cap to track remaining budget, 80% alerts &amp; live claim impact. Leave 0 if uncapped.
+              </p>
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-extrabold text-emerald-700">
+                RM
+              </span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={allocatedAmount}
+                onChange={(e) => setAllocatedAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full rounded-xl border border-emerald-300 bg-white pl-10 pr-3 py-2 font-mono font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
               />
             </div>
           </div>

@@ -411,6 +411,8 @@ export default function ReceiptDropzone({
 
       const scannedItems: ScannedReceiptItem[] = [];
       const rawTexts: string[] = [];
+      const detectedCats: string[] = [];
+      const collectedFlags: string[] = [];
 
       for (let i = 0; i < imageTargets.length; i++) {
         progressRef.idx = i;
@@ -425,6 +427,10 @@ export default function ReceiptDropzone({
           date: parsed.date,
           confidence: parsed.confidence,
           rawText: data.text,
+        });
+        if (parsed.suggestedCategory) detectedCats.push(parsed.suggestedCategory);
+        parsed.anomalyFlags.forEach((flag) => {
+          if (!collectedFlags.includes(flag)) collectedFlags.push(flag);
         });
         if (data.text) rawTexts.push(data.text);
       }
@@ -455,7 +461,8 @@ export default function ReceiptDropzone({
         amount: totalAmount,
         merchant: uniqueMerchants,
         date: firstDate,
-        suggestedCategory: '',
+        suggestedCategory: detectedCats[0] || '',
+        anomalyFlags: collectedFlags,
         scanEngine: 'ocr',
         confidence: avgConfidence,
         rawText: rawTexts.join('\n---\n'),

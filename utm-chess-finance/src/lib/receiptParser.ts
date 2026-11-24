@@ -4,41 +4,44 @@ export interface ParsedReceipt {
   merchantKnown: boolean;
   date: string | null;
   confidence: number;
+  suggestedCategory: string;
+  anomalyFlags: string[];
 }
 
 interface KnownMerchant {
   name: string;
+  category: string;
   patterns: RegExp[];
 }
 
 /** Common Malaysian merchants / payment apps seen on student receipts. */
 const KNOWN_MERCHANTS: KnownMerchant[] = [
-  { name: 'Shopee', patterns: [/shopee/i, /shopeepay/i, /spx\s*express/i] },
-  { name: '99 Speedmart', patterns: [/99\s*speed\s*mart/i, /99\s*sm\b/i, /speedmart/i] },
-  { name: 'Mr. DIY', patterns: [/mr\.?\s*d\.?i\.?y/i, /mrdiy/i] },
-  { name: 'Touch n Go eWallet', patterns: [/touch\s*['’`n]*\s*go/i, /\btng\b/i, /tng\s*digital/i] },
-  { name: 'Maybank MAE', patterns: [/\bmae\b/i, /maybank2u/i, /maybank/i, /malayan\s*banking/i] },
-  { name: 'Lazada', patterns: [/lazada/i] },
-  { name: 'Grab', patterns: [/\bgrab(pay|food|car|mart)?\b/i] },
-  { name: 'Lotus’s', patterns: [/lotus'?s?\b/i] },
-  { name: 'AEON', patterns: [/\baeon\b/i] },
-  { name: 'Giant', patterns: [/\bgiant\b/i] },
-  { name: 'Econsave', patterns: [/econsave/i] },
-  { name: 'KK Mart', patterns: [/kk\s*super\s*mart/i, /\bkk\s*mart/i] },
-  { name: '7-Eleven', patterns: [/7[\s-]*eleven/i] },
-  { name: 'FamilyMart', patterns: [/family\s*mart/i] },
-  { name: 'Watsons', patterns: [/watsons/i] },
-  { name: 'Guardian', patterns: [/\bguardian\b/i] },
-  { name: 'Popular Bookstore', patterns: [/popular\s*book/i] },
-  { name: 'Petronas', patterns: [/petronas/i] },
-  { name: 'Shell', patterns: [/\bshell\b/i] },
-  { name: 'McDonald’s', patterns: [/mcdonald/i] },
-  { name: 'KFC', patterns: [/\bkfc\b/i] },
-  { name: 'Starbucks', patterns: [/starbucks/i] },
-  { name: 'ZUS Coffee', patterns: [/zus\s*coffee/i] },
-  { name: 'Tealive', patterns: [/tealive/i] },
-  { name: 'Pos Malaysia', patterns: [/pos\s*malaysia/i, /poslaju/i] },
-  { name: 'J&T Express', patterns: [/j\s*&\s*t\s*express/i, /\bj&t\b/i] },
+  { name: 'Shopee', category: 'Equipment & Logistics', patterns: [/shopee/i, /shopeepay/i, /spx\s*express/i] },
+  { name: '99 Speedmart', category: 'Food & Refreshments', patterns: [/99\s*speed\s*mart/i, /99\s*sm\b/i, /speedmart/i] },
+  { name: 'Mr. DIY', category: 'Equipment & Logistics', patterns: [/mr\.?\s*d\.?i\.?y/i, /mrdiy/i] },
+  { name: 'Touch n Go eWallet', category: 'Transport / Carpool Allowance', patterns: [/touch\s*['’`n]*\s*go/i, /\btng\b/i, /tng\s*digital/i] },
+  { name: 'Maybank MAE', category: 'Event / Activity Expense', patterns: [/\bmae\b/i, /maybank2u/i, /maybank/i, /malayan\s*banking/i] },
+  { name: 'Lazada', category: 'Equipment & Logistics', patterns: [/lazada/i] },
+  { name: 'Grab', category: 'Transport / Carpool Allowance', patterns: [/\bgrab(pay|food|car|mart)?\b/i] },
+  { name: 'Lotus’s', category: 'Food & Refreshments', patterns: [/lotus'?s?\b/i] },
+  { name: 'AEON', category: 'Food & Refreshments', patterns: [/\baeon\b/i] },
+  { name: 'Giant', category: 'Food & Refreshments', patterns: [/\bgiant\b/i] },
+  { name: 'Econsave', category: 'Food & Refreshments', patterns: [/econsave/i] },
+  { name: 'KK Mart', category: 'Food & Refreshments', patterns: [/kk\s*super\s*mart/i, /\bkk\s*mart/i] },
+  { name: '7-Eleven', category: 'Food & Refreshments', patterns: [/7[\s-]*eleven/i] },
+  { name: 'FamilyMart', category: 'Food & Refreshments', patterns: [/family\s*mart/i] },
+  { name: 'Watsons', category: 'Event / Activity Expense', patterns: [/watsons/i] },
+  { name: 'Guardian', category: 'Event / Activity Expense', patterns: [/\bguardian\b/i] },
+  { name: 'Popular Bookstore', category: 'Equipment & Logistics', patterns: [/popular\s*book/i] },
+  { name: 'Petronas', category: 'Transport / Carpool Allowance', patterns: [/petronas/i] },
+  { name: 'Shell', category: 'Transport / Carpool Allowance', patterns: [/\bshell\b/i] },
+  { name: 'McDonald’s', category: 'Food & Refreshments', patterns: [/mcdonald/i] },
+  { name: 'KFC', category: 'Food & Refreshments', patterns: [/\bkfc\b/i] },
+  { name: 'Starbucks', category: 'Food & Refreshments', patterns: [/starbucks/i] },
+  { name: 'ZUS Coffee', category: 'Food & Refreshments', patterns: [/zus\s*coffee/i] },
+  { name: 'Tealive', category: 'Food & Refreshments', patterns: [/tealive/i] },
+  { name: 'Pos Malaysia', category: 'Equipment & Logistics', patterns: [/pos\s*malaysia/i, /poslaju/i] },
+  { name: 'J&T Express', category: 'Equipment & Logistics', patterns: [/j\s*&\s*t\s*express/i, /\bj&t\b/i] },
 ];
 
 const MONTHS: Record<string, number> = {
@@ -133,28 +136,41 @@ function findAmount(lines: string[]): { value: number | null; keywordHit: boolea
   return { value: Math.max(...all), keywordHit: false };
 }
 
-function validDate(y: number, m: number, d: number): string | null {
+function inspectDate(
+  y: number,
+  m: number,
+  d: number
+): { iso: string | null; isFuture: boolean } {
   if (y < 100) y += 2000;
-  if (y < 2015 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  if (y < 2015 || m < 1 || m > 12 || d < 1 || d > 31) {
+    return { iso: null, isFuture: false };
+  }
   const dt = new Date(y, m - 1, d);
-  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) {
+    return { iso: null, isFuture: false };
+  }
   // A receipt cannot be from the future (allow 1 day for timezone drift).
-  if (dt.getTime() > Date.now() + 86400000) return null;
-  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  if (dt.getTime() > Date.now() + 86400000) {
+    return { iso: null, isFuture: true };
+  }
+  return {
+    iso: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+    isFuture: false,
+  };
 }
 
-function findDate(text: string): string | null {
-  const patterns: { re: RegExp; build: (m: RegExpExecArray) => string | null }[] = [
+function findDate(text: string): { date: string | null; hasFutureDate: boolean } {
+  const patterns: { re: RegExp; build: (m: RegExpExecArray) => { iso: string | null; isFuture: boolean } }[] = [
     // 2026-11-15 / 2026/11/15
-    { re: /\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/g, build: (m) => validDate(+m[1], +m[2], +m[3]) },
+    { re: /\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/g, build: (m) => inspectDate(+m[1], +m[2], +m[3]) },
     // 15/11/2026, 15-11-26, 15.11.2026  (Malaysia = day first)
-    { re: /\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4}|\d{2})\b/g, build: (m) => validDate(+m[3], +m[2], +m[1]) },
+    { re: /\b(\d{1,2})[-/.](\d{1,2})[-/.](\d{4}|\d{2})\b/g, build: (m) => inspectDate(+m[3], +m[2], +m[1]) },
     // 15 Nov 2026 / 15-Nov-26 / 15 Disember 2026
     {
       re: /\b(\d{1,2})[\s\-/.]*([A-Za-z]{3,9})[\s\-/.,]*(\d{4}|\d{2})\b/g,
       build: (m) => {
         const mon = MONTHS[m[2].toLowerCase()];
-        return mon ? validDate(+m[3], mon, +m[1]) : null;
+        return mon ? inspectDate(+m[3], mon, +m[1]) : { iso: null, isFuture: false };
       },
     },
     // Nov 15, 2026
@@ -162,23 +178,28 @@ function findDate(text: string): string | null {
       re: /\b([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})\b/g,
       build: (m) => {
         const mon = MONTHS[m[1].toLowerCase()];
-        return mon ? validDate(+m[3], mon, +m[2]) : null;
+        return mon ? inspectDate(+m[3], mon, +m[2]) : { iso: null, isFuture: false };
       },
     },
   ];
+
+  let futureSeen = false;
   for (const { re, build } of patterns) {
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
-      const found = build(m);
-      if (found) return found;
+      const checked = build(m);
+      if (checked.isFuture) futureSeen = true;
+      if (checked.iso) return { date: checked.iso, hasFutureDate: futureSeen };
     }
   }
-  return null;
+  return { date: null, hasFutureDate: futureSeen };
 }
 
-function findMerchant(text: string, lines: string[]): { name: string; known: boolean } {
+function findMerchant(text: string, lines: string[]): { name: string; known: boolean; categoryHint: string } {
   for (const km of KNOWN_MERCHANTS) {
-    if (km.patterns.some((p) => p.test(text))) return { name: km.name, known: true };
+    if (km.patterns.some((p) => p.test(text))) {
+      return { name: km.name, known: true, categoryHint: km.category };
+    }
   }
   // Fallback: first "name-like" line near the top of the receipt.
   const candidate = lines.slice(0, 8).find((l) => {
@@ -189,7 +210,25 @@ function findMerchant(text: string, lines: string[]): { name: string; known: boo
       !/(receipt|invoice|tax|official|welcome|thank|tel|phone|www|http|gst|sst|reg|date|time|cashier|no\.)/i.test(l)
     );
   });
-  return { name: candidate ? candidate.replace(/[^A-Za-z0-9&'’.\- ]/g, '').trim().slice(0, 60) : '', known: false };
+  return {
+    name: candidate ? candidate.replace(/[^A-Za-z0-9&'’.\- ]/g, '').trim().slice(0, 60) : '',
+    known: false,
+    categoryHint: '',
+  };
+}
+
+function suggestExpenseCategory(merchantCategoryHint: string, rawText: string): string {
+  if (merchantCategoryHint) return merchantCategoryHint;
+  if (/(mineral|drink|makan|food|nasi|meal|bento|tea|coffee|snack|catering|cafe|restoran|restaurant)/i.test(rawText)) {
+    return 'Food & Refreshments';
+  }
+  if (/(petrol|fuel|diesel|toll|plus\b|parking|carpool|grab|fare|taxi)/i.test(rawText)) {
+    return 'Transport / Carpool Allowance';
+  }
+  if (/(print|photostat|banner|stationery|paper|medal|trophy|cert|certificate|hardware|chess|board|clock|equipment)/i.test(rawText)) {
+    return 'Equipment & Logistics';
+  }
+  return '';
 }
 
 export function parseMalaysianReceipt(rawText: string, ocrConfidence = 70): ParsedReceipt {
@@ -201,22 +240,38 @@ export function parseMalaysianReceipt(rawText: string, ocrConfidence = 70): Pars
 
   const amount = findAmount(lines);
   const merchant = findMerchant(text, lines);
-  const date = findDate(text);
+  const dateResult = findDate(text);
 
   let score = 0;
   if (amount.value !== null) score += amount.keywordHit ? 45 : 25;
   if (merchant.name) score += merchant.known ? 25 : 10;
-  if (date) score += 20;
+  if (dateResult.date) score += 20;
   const confidence = Math.max(
     25,
     Math.min(99, Math.round(score * 0.8 + Math.min(100, Math.max(0, ocrConfidence)) * 0.2))
   );
 
+  const suggestedCategory = suggestExpenseCategory(merchant.categoryHint, text);
+  const anomalyFlags: string[] = [];
+  if (amount.value === null) {
+    anomalyFlags.push('Could not extract total RM amount cleanly — verify payable amount.');
+  }
+  if (dateResult.hasFutureDate) {
+    anomalyFlags.push('Receipt text appears to contain a future date — please double-check the expense date.');
+  } else if (!dateResult.date) {
+    anomalyFlags.push('Receipt date not detected automatically — confirm expense date.');
+  }
+  if (confidence < 55) {
+    anomalyFlags.push(`Low OCR clarity (${confidence}%) — double-check merchant, date & total.`);
+  }
+
   return {
     amount: amount.value,
     merchant: merchant.name,
     merchantKnown: merchant.known,
-    date,
+    date: dateResult.date,
     confidence,
+    suggestedCategory,
+    anomalyFlags,
   };
 }

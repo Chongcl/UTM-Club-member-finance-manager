@@ -207,6 +207,104 @@ export default function AuditReviewModal({
   const proofUrl = claim.payout_proof_url || '';
   const proofName = claim.payout_proof_name || 'Reimbursement_Proof';
 
+  const renderBudgetImpactBanner = () => {
+    if (!budget || Number(budget.allocated_amount || 0) <= 0) return null;
+    const allocCap = Number(budget.allocated_amount || 0);
+    const currentSpent = Number(budget.spent_amount || 0);
+    const claimAmt = Number(claim.amount || 0);
+    const isAlreadyApproved = claim.status === 'Approved';
+    const remainingBefore = isAlreadyApproved
+      ? allocCap - Math.max(0, currentSpent - claimAmt)
+      : allocCap - currentSpent;
+    const spentAfter = isAlreadyApproved ? currentSpent : currentSpent + claimAmt;
+    const remainingAfter = allocCap - spentAfter;
+    const afterPct = allocCap > 0 ? Math.round((spentAfter / allocCap) * 100) : 0;
+    const isOver = afterPct >= 100;
+    const isNear = afterPct >= 80 && afterPct < 100;
+
+    return (
+      <div
+        className={`rounded-2xl border p-3.5 space-y-2 text-xs ${
+          isOver
+            ? 'bg-rose-50 border-rose-300 text-rose-950'
+            : isNear
+            ? 'bg-amber-50 border-amber-300 text-amber-950'
+            : 'bg-emerald-50/75 border-emerald-200 text-emerald-950'
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-extrabold flex items-center gap-1.5">
+            {(isOver || isNear) && (
+              <AlertTriangle
+                className={`w-4 h-4 shrink-0 ${
+                  isOver ? 'text-rose-600' : 'text-amber-600'
+                }`}
+              />
+            )}
+            <span>Event Budget Impact ({budget.event_name})</span>
+          </span>
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+              isOver
+                ? 'bg-rose-600 text-white'
+                : isNear
+                ? 'bg-amber-500 text-white'
+                : 'bg-emerald-600 text-white'
+            }`}
+          >
+            {afterPct}% Used {isAlreadyApproved ? '' : 'If Approved'}
+          </span>
+        </div>
+        <div className="h-2 w-full rounded-full bg-white/80 overflow-hidden border border-black/5">
+          <div
+            className={`h-full rounded-full transition-all ${
+              isOver ? 'bg-rose-600' : isNear ? 'bg-amber-500' : 'bg-emerald-600'
+            }`}
+            style={{ width: `${Math.min(100, Math.max(0, afterPct))}%` }}
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] font-semibold">
+          <div>
+            <span className="text-slate-500 block">Allocated Cap</span>
+            <strong className="font-mono text-slate-900">RM {allocCap.toFixed(2)}</strong>
+          </div>
+          <div>
+            <span className="text-slate-500 block">Remaining Before</span>
+            <strong className="font-mono text-slate-900">
+              {remainingBefore < 0 ? '-' : ''}RM {Math.abs(remainingBefore).toFixed(2)}
+            </strong>
+          </div>
+          <div>
+            <span className="text-slate-500 block">
+              {isAlreadyApproved ? 'Remaining Now' : 'After Approving'}
+            </span>
+            <strong
+              className={`font-mono ${
+                remainingAfter < 0
+                  ? 'text-rose-700'
+                  : isNear
+                  ? 'text-amber-800'
+                  : 'text-emerald-800'
+              }`}
+            >
+              {remainingAfter < 0 ? '-' : ''}RM {Math.abs(remainingAfter).toFixed(2)}
+            </strong>
+          </div>
+        </div>
+        {isOver && (
+          <p className="text-[11px] font-bold text-rose-700">
+            ⚠ Over Budget: Approving this claim pushes &ldquo;{budget.event_name}&rdquo; past 100% of its allocated budget.
+          </p>
+        )}
+        {isNear && (
+          <p className="text-[11px] font-bold text-amber-800">
+            ⚠ Near Budget Limit: Approving this claim exceeds 80% of the event&apos;s allocated cap.
+          </p>
+        )}
+      </div>
+    );
+  };
+
   const renderPreClaimSettlementBox = () => {
     if (!linkedPreClaim) return null;
     const capVal = Number(linkedPreClaim.approved_cap ?? linkedPreClaim.estimated_amount ?? 0);
@@ -1271,6 +1369,8 @@ export default function AuditReviewModal({
                   )}
                 </div>
 
+                {renderBudgetImpactBanner()}
+
                 {proofUrl && (
                   <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 flex items-center justify-between gap-2 text-xs">
                     <div className="min-w-0">
@@ -1411,6 +1511,8 @@ export default function AuditReviewModal({
                     className="hidden"
                   />
                 </label>
+
+                {renderBudgetImpactBanner()}
 
                 {claim.status === 'Pending' ? (
                   <>
