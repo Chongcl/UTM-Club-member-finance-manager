@@ -4,7 +4,7 @@
 
 ClubSync is a full-stack, **100% zero-API-cost** web application built to replace fragmented spreadsheets, paper receipts, and unstructured chat approvals with real-time club budget tracking, OCR-assisted receipt reimbursement claims, transparent two-stage audits, and unified club operations.
 
-> **Live Vercel Demo URL:** `https://<your-vercel-deployment-url>.vercel.app` *(update with your deployed Vercel link)*
+> **Live Vercel Demo URL:** utm-club-member-finance-manager-utm.vercel.app 
 
 ---
 
