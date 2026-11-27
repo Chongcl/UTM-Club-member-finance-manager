@@ -434,7 +434,7 @@ export default function Navbar({
                     setAccountMenuOpen(false);
                     setNewMenuOpen((v) => !v);
                   }}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold luxe-btn-emerald transition cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span className="hidden sm:inline">New</span>
@@ -499,7 +499,7 @@ export default function Navbar({
               <button
                 type="button"
                 onClick={onOpenNewClaim}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold luxe-btn-emerald transition cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span className="hidden sm:inline">Submit Claim</span>

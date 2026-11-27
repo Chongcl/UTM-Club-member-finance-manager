@@ -388,7 +388,7 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
     id: 'emerald',
     name: 'Emerald Campus',
     swatchClass: 'bg-emerald-600',
-    pageBg: 'bg-[#F6F8F7] bg-[radial-gradient(at_0%_0%,rgba(5,150,105,0.11)_0px,transparent_55%),radial-gradient(at_100%_0%,rgba(212,175,55,0.09)_0px,transparent_50%),linear-gradient(180deg,#F8FAF9_0%,#EFF4F2_100%)]',
+    pageBg: 'bg-[#FFFDFB] bg-[radial-gradient(ellipse_68%_46%_at_88%_0%,rgba(249,115,22,0.14)_0%,rgba(251,146,60,0.07)_45%,transparent_72%),radial-gradient(ellipse_60%_42%_at_12%_100%,rgba(251,146,60,0.13)_0%,transparent_65%),radial-gradient(circle_at_0%_0%,rgba(16,185,129,0.075)_0%,transparent_48%),linear-gradient(180deg,#FFFDFB_0%,#FAF6F0_100%)]',
     navBorder: 'border-emerald-100/90',
     announcementBg: 'bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-700 text-white',
     badgeBg: 'bg-emerald-100/90 border-emerald-200',
@@ -466,7 +466,7 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
     id: 'amber',
     name: 'Warm Amber',
     swatchClass: 'bg-amber-600',
-    pageBg: 'bg-[#FAF8F5] bg-[radial-gradient(at_8%_0%,rgba(197,155,39,0.12)_0px,transparent_55%),radial-gradient(at_95%_5%,rgba(180,83,9,0.07)_0px,transparent_50%),linear-gradient(160deg,#FCFBF9_0%,#F2EDE4_100%)]',
+    pageBg: 'bg-[#FCFCFD] bg-[radial-gradient(ellipse_65%_45%_at_85%_100%,rgba(245,158,11,0.13)_0%,transparent_65%),radial-gradient(circle_at_4%_0%,rgba(59,130,246,0.11)_0%,transparent_50%),radial-gradient(circle_at_96%_8%,rgba(251,146,60,0.08)_0%,transparent_45%),linear-gradient(180deg,#FFFFFF_0%,#F4F6FA_100%)]',
     navBorder: 'border-amber-100/90',
     announcementBg: 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 text-white',
     badgeBg: 'bg-amber-100/90 border-amber-200',
@@ -543,9 +543,9 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
 };
 
 export const CARD_SURFACE_STYLES: Record<CardSurfaceStyle, string> = {
-  glass: 'bg-white/80 backdrop-blur-xl border border-white/80 shadow-[0_12px_36px_-12px_rgba(15,23,42,0.07)]',
-  crisp: 'bg-white/95 backdrop-blur-sm border border-slate-200/80 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.05)]',
-  elevated: 'bg-white border border-slate-100/90 shadow-[0_20px_50px_-15px_rgba(15,23,42,0.09)]',
+  glass: 'bg-white/86 backdrop-blur-xl border border-white/80 shadow-[0_14px_38px_-12px_rgba(15,23,42,0.08)]',
+  crisp: 'bg-white/95 backdrop-blur-sm border border-slate-200/80 shadow-[0_6px_22px_-6px_rgba(15,23,42,0.055)]',
+  elevated: 'bg-white border border-slate-100/90 shadow-[0_22px_54px_-16px_rgba(15,23,42,0.10)]',
 };
 
 export interface PublicLandingTemplate {
