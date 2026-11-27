@@ -36,7 +36,7 @@ export default function RootLayout({
         <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" async></script>
       </head>
       <body
-        className={`${inter.className} m-0 p-0 bg-[var(--bg-canvas)] text-[var(--text-primary)] antialiased min-h-screen selection:bg-emerald-600 selection:text-white`}
+        className={`${inter.className} m-0 p-0 bg-[var(--bg-canvas)] text-[var(--text-primary)] antialiased min-h-screen selection:bg-emerald-500/20 selection:text-emerald-900 dark:selection:bg-emerald-400/25 dark:selection:text-emerald-100`}
       >
         {children}
       </body>

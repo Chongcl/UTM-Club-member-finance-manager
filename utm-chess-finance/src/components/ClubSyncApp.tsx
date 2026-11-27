@@ -134,66 +134,48 @@ const NO_PERMISSIONS: AdminPermissions = {
   can_manage_public_page: false,
 };
 
-const BG_PRESETS = [
+const LUXURY_BG_PRESETS = [
   {
-    id: 'emerald-aurora',
-    name: '1. Aurora Borealis (Moving Silk)',
-    desc: 'Flowing emerald, teal & sky atmospheric waves',
-    swatch: 'linear-gradient(135deg, #10b981 0%, #06b6d4 55%, #3b82f6 100%)',
+    id: 'emerald',
+    label: 'Imperial Emerald & Gold',
+    desc: 'Signature botanical jade aura with warm champagne gold corner lighting',
+    preview: 'linear-gradient(135deg, #ecfdf5 0%, #f6f8f7 55%, #fef9c3 100%)',
   },
   {
-    id: 'frosted-glass',
-    name: '2. Frosted Glass Prism (Moving Orbs)',
-    desc: 'Translucent floating glass spheres over soft mint & sky',
-    swatch: 'linear-gradient(135deg, #34d399 0%, #38bdf8 50%, #94a3b8 100%)',
+    id: 'warm',
+    label: 'Cashmere & Champagne',
+    desc: 'Old-money private bank travertine stone with warm bronze & gold luminescence',
+    preview: 'linear-gradient(135deg, #faf8f5 0%, #f5efe6 55%, #fde68a 100%)',
   },
   {
-    id: 'galaxy-nebula',
-    name: '3. Midnight Galaxy (Moving Nebula)',
-    desc: 'Deep space obsidian with drifting starlight & teal nebula',
-    swatch: 'linear-gradient(135deg, #090d16 0%, #1e293b 50%, #0d9488 100%)',
+    id: 'ocean',
+    label: 'Royal Sapphire & Platinum',
+    desc: 'Executive ice-platinum silk with deep royal sapphire & indigo ambient glow',
+    preview: 'linear-gradient(135deg, #eff6ff 0%, #f5f7fb 55%, #e0e7ff 100%)',
   },
   {
-    id: 'nordic-mist',
-    name: '4. Nordic Mist (Minimalist Glass)',
-    desc: 'Clean alabaster, soft sage & calm architectural glass',
-    swatch: 'linear-gradient(135deg, #f8fafc 0%, #d1fae5 55%, #e2e8f0 100%)',
+    id: 'grid',
+    label: 'Kyoto Pearl & Architectural Grid',
+    desc: 'Swiss-precision 24px micro-dot matrix over soft pearl-slate glass',
+    preview: 'radial-gradient(rgba(15,23,42,0.12) 1px, transparent 1px), linear-gradient(135deg, #f8fafc 0%, #eff3f8 100%)',
   },
   {
-    id: 'ocean-silk',
-    name: '5. Oceanic Horizon (Moving Wave)',
-    desc: 'Smooth coastal sapphire, aqua & deep sea motion',
-    swatch: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 55%, #0f172a 100%)',
+    id: 'amethyst',
+    label: 'Velvet Amethyst & Rose Quartz',
+    desc: 'Cinematic gallery atmosphere with muted royal plum and rose-gold light',
+    preview: 'linear-gradient(135deg, #faf5ff 0%, #faf7fa 55%, #ffe4e6 100%)',
   },
   {
-    id: 'royal-gold',
-    name: '6. Champagne & Jade (Moving Glow)',
-    desc: 'Warm sand, champagne gold & forest emerald drift',
-    swatch: 'linear-gradient(135deg, #f59e0b 0%, #10b981 55%, #0f766e 100%)',
-  },
-  {
-    id: 'obsidian-carbon',
-    name: '7. Obsidian Carbon (Dark Glass)',
-    desc: 'Sleek matte carbon dark mode with subtle emerald edge glow',
-    swatch: 'linear-gradient(135deg, #020617 0%, #0f172a 60%, #064e3b 100%)',
-  },
-  {
-    id: 'sunset-silk',
-    name: '8. Sunset Horizon (Moving Silk)',
-    desc: 'Warm coral, peach & twilight amber gradient',
-    swatch: 'linear-gradient(135deg, #fb923c 0%, #f43f5e 55%, #fbbf24 100%)',
-  },
-  {
-    id: 'cyber-grid',
-    name: '9. Architectural Dot Matrix',
-    desc: 'Crisp minimalist studio grid with top spotlight',
-    swatch: 'repeating-linear-gradient(45deg, #10b981 0, #10b981 3px, #0f172a 3px, #0f172a 10px)',
+    id: 'clean',
+    label: 'Alabaster Silk Minimal',
+    desc: 'Ultra-clean editorial ivory-slate canvas for maximum data contrast',
+    preview: 'linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%)',
   },
   {
     id: 'custom-image',
-    name: '10. Custom Wallpaper (Upload / URL)',
+    label: 'Custom Wallpaper (Upload / URL)',
     desc: 'Upload your own photo or paste any custom image URL',
-    swatch: 'linear-gradient(135deg, #475569 0%, #0f172a 100%)',
+    preview: 'linear-gradient(135deg, #475569 0%, #0f172a 100%)',
   },
 ];
 
@@ -1492,11 +1474,11 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
   const isDarkCanvas = darkMode || isNaturallyDarkStyle;
 
   const getBackdropStyle = (): React.CSSProperties => {
-    if (bgStyle === 'custom-image' && bgImageUrl) {
+    if (bgStyle === 'custom-image' && bgImageUrl && bgImageUrl.trim() !== '') {
       return {
-        backgroundImage: `linear-gradient(${
-          isDarkCanvas ? 'rgba(2,6,23,0.82), rgba(2,6,23,0.90)' : 'rgba(255,255,255,0.68), rgba(241,245,249,0.82)'
-        }), url(${bgImageUrl})`,
+        backgroundImage: isDarkCanvas
+          ? `linear-gradient(180deg, rgba(6, 9, 15, 0.86) 0%, rgba(6, 9, 15, 0.94) 100%), url(${bgImageUrl})`
+          : `linear-gradient(180deg, rgba(248, 250, 252, 0.86) 0%, rgba(241, 245, 249, 0.94) 100%), url(${bgImageUrl})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundAttachment: 'fixed',
@@ -1505,115 +1487,159 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
 
     if (isDarkCanvas) {
       switch (bgStyle) {
-        case 'galaxy-nebula':
-          return {
-            backgroundColor: '#050811',
-            backgroundImage:
-              'radial-gradient(at 15% 15%, rgba(45, 212, 191, 0.28) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(56, 189, 248, 0.25) 0px, transparent 55%), radial-gradient(at 50% 90%, rgba(16, 185, 129, 0.22) 0px, transparent 55%)',
-            backgroundSize: '180% 180%',
-            animation: 'clubsyncNebula 20s ease infinite',
-          };
-        case 'obsidian-carbon':
-          return {
-            backgroundColor: '#020617',
-            backgroundImage:
-              'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.22) 0px, transparent 60%), radial-gradient(at 90% 90%, rgba(15, 23, 42, 0.9) 0px, transparent 50%)',
-          };
-        case 'ocean-silk':
-          return {
-            backgroundColor: '#020b18',
-            backgroundImage:
-              'radial-gradient(at 10% 10%, rgba(14, 165, 233, 0.35) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(37, 99, 235, 0.30) 0px, transparent 55%), radial-gradient(at 50% 95%, rgba(20, 184, 166, 0.25) 0px, transparent 55%)',
-            backgroundSize: '180% 180%',
-            animation: 'clubsyncNebula 18s ease infinite',
-          };
+        case 'warm':
+        case 'champagne':
         case 'royal-gold':
-          return {
-            backgroundColor: '#090a0f',
-            backgroundImage:
-              'radial-gradient(at 10% 10%, rgba(245, 158, 11, 0.32) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(16, 185, 129, 0.28) 0px, transparent 55%)',
-            backgroundSize: '180% 180%',
-            animation: 'clubsyncNebula 20s ease infinite',
-          };
         case 'sunset-silk':
           return {
-            backgroundColor: '#13090c',
-            backgroundImage:
-              'radial-gradient(at 15% 15%, rgba(251, 146, 60, 0.30) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(244, 63, 94, 0.28) 0px, transparent 55%)',
-            backgroundSize: '180% 180%',
-            animation: 'clubsyncNebula 20s ease infinite',
+            backgroundColor: '#0A0908',
+            backgroundImage: [
+              'radial-gradient(at 0% 0%, rgba(212, 175, 55, 0.14) 0px, transparent 55%)',
+              'radial-gradient(at 100% 0%, rgba(180, 83, 9, 0.10) 0px, transparent 50%)',
+              'radial-gradient(at 90% 100%, rgba(16, 185, 129, 0.06) 0px, transparent 55%)',
+              'linear-gradient(180deg, #0A0908 0%, #12100E 100%)',
+            ].join(', '),
+            backgroundAttachment: 'fixed',
           };
+        case 'ocean':
+        case 'sapphire':
+        case 'ocean-silk':
+          return {
+            backgroundColor: '#050811',
+            backgroundImage: [
+              'radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 55%)',
+              'radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%)',
+              'radial-gradient(at 95% 95%, rgba(14, 165, 233, 0.08) 0px, transparent 55%)',
+              'linear-gradient(180deg, #050811 0%, #0A0F1E 100%)',
+            ].join(', '),
+            backgroundAttachment: 'fixed',
+          };
+        case 'grid':
+        case 'architect':
         case 'cyber-grid':
           return {
-            backgroundColor: '#020617',
-            backgroundImage:
-              'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.28) 0px, transparent 60%), radial-gradient(rgba(16, 185, 129, 0.18) 1px, transparent 1px)',
-            backgroundSize: '100% 100%, 24px 24px',
+            backgroundColor: '#070A0F',
+            backgroundImage: [
+              'radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px)',
+              'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.12) 0px, transparent 60%)',
+              'radial-gradient(at 100% 100%, rgba(212, 175, 55, 0.07) 0px, transparent 55%)',
+              'linear-gradient(180deg, #070A0F 0%, #0D131C 100%)',
+            ].join(', '),
+            backgroundSize: '24px 24px, 100% 100%, 100% 100%, 100% 100%',
+            backgroundAttachment: 'fixed',
           };
+        case 'amethyst':
+          return {
+            backgroundColor: '#09060E',
+            backgroundImage: [
+              'radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.15) 0px, transparent 55%)',
+              'radial-gradient(at 100% 0%, rgba(244, 63, 94, 0.10) 0px, transparent 50%)',
+              'radial-gradient(at 20% 100%, rgba(217, 119, 6, 0.07) 0px, transparent 55%)',
+              'linear-gradient(180deg, #09060E 0%, #120B1A 100%)',
+            ].join(', '),
+            backgroundAttachment: 'fixed',
+          };
+        case 'clean':
+        case 'nordic-mist':
+          return {
+            backgroundColor: '#06090F',
+            backgroundImage: [
+              'radial-gradient(at 50% 0%, rgba(148, 163, 184, 0.07) 0px, transparent 60%)',
+              'linear-gradient(180deg, #06090F 0%, #0B111D 100%)',
+            ].join(', '),
+            backgroundAttachment: 'fixed',
+          };
+        case 'emerald':
         default:
           return {
-            backgroundColor: '#03120e',
-            backgroundImage:
-              'radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.35) 0px, transparent 50%), radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.30) 0px, transparent 50%), radial-gradient(at 50% 100%, rgba(5, 150, 105, 0.25) 0px, transparent 50%)',
-            backgroundSize: '180% 180%',
-            animation: 'clubsyncNebula 18s ease infinite',
+            backgroundColor: '#050908',
+            backgroundImage: [
+              'radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.15) 0px, transparent 55%)',
+              'radial-gradient(at 100% 0%, rgba(212, 175, 55, 0.09) 0px, transparent 50%)',
+              'radial-gradient(at 0% 100%, rgba(13, 148, 136, 0.08) 0px, transparent 55%)',
+              'linear-gradient(180deg, #050908 0%, #091310 100%)',
+            ].join(', '),
+            backgroundAttachment: 'fixed',
           };
       }
     }
 
+    // Light Mode Luxury Palettes
     switch (bgStyle) {
-      case 'nordic-mist':
-        return {
-          backgroundColor: '#f1f5f9',
-          backgroundImage:
-            'radial-gradient(at 0% 0%, rgba(167, 243, 208, 0.55) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(226, 232, 240, 0.8) 0px, transparent 50%)',
-        };
-      case 'frosted-glass':
-        return {
-          backgroundColor: '#e0f2fe',
-          backgroundImage:
-            'radial-gradient(at 15% 15%, rgba(52, 211, 153, 0.50) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(56, 189, 248, 0.48) 0px, transparent 50%), radial-gradient(at 50% 90%, rgba(148, 163, 184, 0.35) 0px, transparent 55%)',
-          backgroundSize: '180% 180%',
-          animation: 'clubsyncNebula 20s ease infinite',
-        };
-      case 'ocean-silk':
-        return {
-          backgroundColor: '#dbeafe',
-          backgroundImage:
-            'radial-gradient(at 10% 10%, rgba(34, 211, 238, 0.50) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(59, 130, 246, 0.42) 0px, transparent 55%)',
-          backgroundSize: '180% 180%',
-          animation: 'clubsyncNebula 18s ease infinite',
-        };
+      case 'warm':
+      case 'champagne':
       case 'royal-gold':
-        return {
-          backgroundColor: '#fef3c7',
-          backgroundImage:
-            'radial-gradient(at 10% 10%, rgba(251, 191, 36, 0.50) 0px, transparent 50%), radial-gradient(at 90% 15%, rgba(52, 211, 153, 0.45) 0px, transparent 55%)',
-          backgroundSize: '180% 180%',
-          animation: 'clubsyncNebula 20s ease infinite',
-        };
       case 'sunset-silk':
         return {
-          backgroundColor: '#ffedd5',
-          backgroundImage:
-            'radial-gradient(at 12% 12%, rgba(251, 146, 60, 0.48) 0px, transparent 50%), radial-gradient(at 88% 18%, rgba(251, 113, 133, 0.42) 0px, transparent 55%)',
-          backgroundSize: '180% 180%',
-          animation: 'clubsyncNebula 20s ease infinite',
+          backgroundColor: '#FAF8F5',
+          backgroundImage: [
+            'radial-gradient(at 8% 0%, rgba(197, 155, 39, 0.11) 0px, transparent 55%)',
+            'radial-gradient(at 95% 5%, rgba(180, 83, 9, 0.06) 0px, transparent 50%)',
+            'radial-gradient(at 90% 95%, rgba(225, 29, 72, 0.035) 0px, transparent 55%)',
+            'linear-gradient(160deg, #FCFBF9 0%, #F2EDE4 100%)',
+          ].join(', '),
+          backgroundAttachment: 'fixed',
         };
+      case 'ocean':
+      case 'sapphire':
+      case 'ocean-silk':
+        return {
+          backgroundColor: '#F5F7FB',
+          backgroundImage: [
+            'radial-gradient(at 0% 0%, rgba(29, 78, 216, 0.09) 0px, transparent 55%)',
+            'radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.08) 0px, transparent 50%)',
+            'radial-gradient(at 95% 95%, rgba(2, 132, 199, 0.06) 0px, transparent 55%)',
+            'linear-gradient(180deg, #F8FAFE 0%, #ECF0F8 100%)',
+          ].join(', '),
+          backgroundAttachment: 'fixed',
+        };
+      case 'grid':
+      case 'architect':
       case 'cyber-grid':
         return {
-          backgroundColor: '#f0fdf4',
-          backgroundImage:
-            'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.32) 0px, transparent 60%), radial-gradient(rgba(4, 120, 87, 0.16) 1px, transparent 1px)',
-          backgroundSize: '100% 100%, 24px 24px',
+          backgroundColor: '#F8FAFC',
+          backgroundImage: [
+            'radial-gradient(rgba(15, 23, 42, 0.038) 1px, transparent 1px)',
+            'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.075) 0px, transparent 60%)',
+            'radial-gradient(at 100% 0%, rgba(212, 175, 55, 0.06) 0px, transparent 50%)',
+            'linear-gradient(180deg, #F8FAFC 0%, #EFF3F8 100%)',
+          ].join(', '),
+          backgroundSize: '24px 24px, 100% 100%, 100% 100%, 100% 100%',
+          backgroundAttachment: 'fixed',
         };
+      case 'amethyst':
+        return {
+          backgroundColor: '#FAF7FA',
+          backgroundImage: [
+            'radial-gradient(at 0% 0%, rgba(124, 58, 237, 0.085) 0px, transparent 55%)',
+            'radial-gradient(at 100% 0%, rgba(225, 29, 72, 0.06) 0px, transparent 50%)',
+            'radial-gradient(at 15% 100%, rgba(217, 119, 6, 0.05) 0px, transparent 55%)',
+            'linear-gradient(165deg, #FCF9FC 0%, #F3EEF6 100%)',
+          ].join(', '),
+          backgroundAttachment: 'fixed',
+        };
+      case 'clean':
+      case 'nordic-mist':
+        return {
+          backgroundColor: '#F8FAFC',
+          backgroundImage: [
+            'radial-gradient(at 0% 0%, rgba(15, 23, 42, 0.03) 0px, transparent 50%)',
+            'radial-gradient(at 100% 0%, rgba(5, 150, 105, 0.04) 0px, transparent 50%)',
+            'linear-gradient(180deg, #FAFCFF 0%, #F1F5F9 100%)',
+          ].join(', '),
+          backgroundAttachment: 'fixed',
+        };
+      case 'emerald':
       default:
         return {
-          backgroundColor: '#d1fae5',
-          backgroundImage:
-            'radial-gradient(at 0% 0%, rgba(52, 211, 153, 0.55) 0px, transparent 50%), radial-gradient(at 100% 10%, rgba(34, 211, 238, 0.48) 0px, transparent 50%), radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.35) 0px, transparent 55%)',
-          backgroundSize: '180% 180%',
-          animation: 'clubsyncNebula 18s ease infinite',
+          backgroundColor: '#F6F8F7',
+          backgroundImage: [
+            'radial-gradient(at 0% 0%, rgba(5, 150, 105, 0.10) 0px, transparent 55%)',
+            'radial-gradient(at 100% 0%, rgba(212, 175, 55, 0.09) 0px, transparent 50%)',
+            'radial-gradient(at 0% 100%, rgba(13, 148, 136, 0.06) 0px, transparent 55%)',
+            'linear-gradient(180deg, #F8FAF9 0%, #EFF4F2 100%)',
+          ].join(', '),
+          backgroundAttachment: 'fixed',
         };
     }
   };
@@ -3859,8 +3885,8 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
               </div>
 
               <div className="space-y-2">
-                <label className="block font-bold text-slate-800">Background Style (10 Choices)</label>
-                {BG_PRESETS.map((preset) => (
+                <label className="block font-bold text-slate-800">Background Style</label>
+                {LUXURY_BG_PRESETS.map((preset) => (
                   <label
                     key={preset.id}
                     className={`flex items-center justify-between gap-3 p-3 rounded-2xl border cursor-pointer transition ${
@@ -3879,10 +3905,10 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                       />
                       <div
                         className="w-9 h-9 rounded-xl shadow-inner border border-black/10 shrink-0"
-                        style={{ background: preset.swatch }}
+                        style={{ background: preset.preview, backgroundSize: preset.id === 'grid' ? '8px 8px, 100% 100%' : undefined }}
                       />
                       <div>
-                        <div className="font-bold text-slate-900">{preset.name}</div>
+                        <div className="font-bold text-slate-900">{preset.label}</div>
                         <div className="text-slate-500">{preset.desc}</div>
                       </div>
                     </div>

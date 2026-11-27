@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  --bg-canvas: #f8fafc;
+  --bg-canvas: #F6F8F7;
   --bg-surface: #ffffff;
   --bg-subtle: #f1f5f9;
   --bg-elevated: #ffffff;
@@ -17,7 +17,7 @@
 
 .dark {
   color-scheme: dark;
-  --bg-canvas: #0b0f17;
+  --bg-canvas: #050908;
   --bg-surface: #111827;
   --bg-subtle: #182032;
   --bg-elevated: #1e293b;
@@ -38,6 +38,8 @@ body {
   padding: 0;
   background-color: var(--bg-canvas);
   color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .tabular-nums {
