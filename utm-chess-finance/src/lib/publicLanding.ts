@@ -388,7 +388,7 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
     id: 'emerald',
     name: 'Emerald Campus',
     swatchClass: 'bg-emerald-600',
-    pageBg: 'bg-[#FFFDFB] bg-[radial-gradient(ellipse_68%_46%_at_88%_0%,rgba(249,115,22,0.14)_0%,rgba(251,146,60,0.07)_45%,transparent_72%),radial-gradient(ellipse_60%_42%_at_12%_100%,rgba(251,146,60,0.13)_0%,transparent_65%),radial-gradient(circle_at_0%_0%,rgba(16,185,129,0.075)_0%,transparent_48%),linear-gradient(180deg,#FFFDFB_0%,#FAF6F0_100%)]',
+    pageBg: 'bg-gradient-to-b from-emerald-50/70 via-white to-slate-50',
     navBorder: 'border-emerald-100/90',
     announcementBg: 'bg-gradient-to-r from-emerald-700 via-teal-700 to-emerald-700 text-white',
     badgeBg: 'bg-emerald-100/90 border-emerald-200',
@@ -414,7 +414,7 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
     id: 'indigo',
     name: 'Royal Indigo',
     swatchClass: 'bg-indigo-600',
-    pageBg: 'bg-[#F6F6FB] bg-[radial-gradient(at_0%_0%,rgba(79,70,229,0.10)_0px,transparent_55%),radial-gradient(at_100%_0%,rgba(147,51,234,0.08)_0px,transparent_50%),linear-gradient(180deg,#F9F9FD_0%,#EFF0F8_100%)]',
+    pageBg: 'bg-gradient-to-b from-indigo-50/70 via-white to-slate-50',
     navBorder: 'border-indigo-100/90',
     announcementBg: 'bg-gradient-to-r from-indigo-700 via-violet-700 to-indigo-700 text-white',
     badgeBg: 'bg-indigo-100/90 border-indigo-200',
@@ -440,7 +440,7 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
     id: 'ocean',
     name: 'Ocean Cyan',
     swatchClass: 'bg-sky-600',
-    pageBg: 'bg-[#F5F8FB] bg-[radial-gradient(at_0%_0%,rgba(2,132,199,0.10)_0px,transparent_55%),radial-gradient(at_100%_0%,rgba(37,99,235,0.08)_0px,transparent_50%),linear-gradient(180deg,#F8FAFE_0%,#ECF2F9_100%)]',
+    pageBg: 'bg-gradient-to-b from-sky-50/75 via-white to-slate-50',
     navBorder: 'border-sky-100/90',
     announcementBg: 'bg-gradient-to-r from-sky-700 via-cyan-700 to-sky-700 text-white',
     badgeBg: 'bg-sky-100/90 border-sky-200',
@@ -466,7 +466,7 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
     id: 'amber',
     name: 'Warm Amber',
     swatchClass: 'bg-amber-600',
-    pageBg: 'bg-[#FCFCFD] bg-[radial-gradient(ellipse_65%_45%_at_85%_100%,rgba(245,158,11,0.13)_0%,transparent_65%),radial-gradient(circle_at_4%_0%,rgba(59,130,246,0.11)_0%,transparent_50%),radial-gradient(circle_at_96%_8%,rgba(251,146,60,0.08)_0%,transparent_45%),linear-gradient(180deg,#FFFFFF_0%,#F4F6FA_100%)]',
+    pageBg: 'bg-gradient-to-b from-amber-50/70 via-white to-stone-50',
     navBorder: 'border-amber-100/90',
     announcementBg: 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 text-white',
     badgeBg: 'bg-amber-100/90 border-amber-200',
@@ -492,7 +492,7 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
     id: 'crimson',
     name: 'Crimson Pulse',
     swatchClass: 'bg-rose-600',
-    pageBg: 'bg-[#FAF7F8] bg-[radial-gradient(at_0%_0%,rgba(225,29,72,0.09)_0px,transparent_55%),radial-gradient(at_100%_0%,rgba(217,119,6,0.07)_0px,transparent_50%),linear-gradient(180deg,#FCF9FA_0%,#F4EEF0_100%)]',
+    pageBg: 'bg-gradient-to-b from-rose-50/70 via-white to-slate-50',
     navBorder: 'border-rose-100/90',
     announcementBg: 'bg-gradient-to-r from-rose-700 via-pink-700 to-rose-700 text-white',
     badgeBg: 'bg-rose-100/90 border-rose-200',
@@ -518,7 +518,7 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
     id: 'slate',
     name: 'Midnight Editorial',
     swatchClass: 'bg-slate-900',
-    pageBg: 'bg-[#F8FAFC] bg-[radial-gradient(rgba(15,23,42,0.035)_1px,transparent_1px),radial-gradient(at_50%_0%,rgba(15,23,42,0.05)_0px,transparent_60%),linear-gradient(180deg,#FAFCFF_0%,#EFF3F8_100%)] bg-[size:24px_24px,100%_100%,100%_100%]',
+    pageBg: 'bg-gradient-to-b from-slate-100/80 via-white to-slate-50',
     navBorder: 'border-slate-200/90',
     announcementBg: 'bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white',
     badgeBg: 'bg-slate-200/80 border-slate-300',
@@ -543,9 +543,9 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
 };
 
 export const CARD_SURFACE_STYLES: Record<CardSurfaceStyle, string> = {
-  glass: 'bg-white/86 backdrop-blur-xl border border-white/80 shadow-[0_14px_38px_-12px_rgba(15,23,42,0.08)]',
-  crisp: 'bg-white/95 backdrop-blur-sm border border-slate-200/80 shadow-[0_6px_22px_-6px_rgba(15,23,42,0.055)]',
-  elevated: 'bg-white border border-slate-100/90 shadow-[0_22px_54px_-16px_rgba(15,23,42,0.10)]',
+  glass: 'bg-white/80 backdrop-blur-md border border-white/70 shadow-sm',
+  crisp: 'bg-white border border-slate-200 shadow-2xs',
+  elevated: 'bg-white border border-slate-200/80 shadow-lg shadow-slate-900/5',
 };
 
 export interface PublicLandingTemplate {

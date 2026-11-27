@@ -134,82 +134,68 @@ const NO_PERMISSIONS: AdminPermissions = {
   can_manage_public_page: false,
 };
 
-type LuxeThemeKey = 'emerald-citrus' | 'aion-eclipse' | 'sapphire-champagne' | 'velvet-rose';
-
-const LUXURY_BG_PRESETS = [
+const BG_PRESETS = [
   {
-    id: 'emerald-citrus',
-    label: 'Sovereign Emerald & Citrus',
-    desc: 'Warm sunlit ivory-citrus glow in Light Mode · Botanical emerald eclipse in Dark Mode',
-    lightPreview: 'linear-gradient(135deg, #FFFDFB 0%, #FFF7ED 55%, #ECFDF5 100%)',
-    darkPreview: 'linear-gradient(135deg, #030B08 0%, #051F16 55%, #78350F 100%)',
-    preview: 'linear-gradient(135deg, #ECFDF5 0%, #FFF7ED 60%, #FEF3C7 100%)',
+    id: 'emerald-aurora',
+    name: '1. Aurora Borealis (Moving Silk)',
+    desc: 'Flowing emerald, teal & sky atmospheric waves',
+    swatch: 'linear-gradient(135deg, #10b981 0%, #06b6d4 55%, #3b82f6 100%)',
   },
   {
-    id: 'aion-eclipse',
-    label: 'AION Horizon Eclipse',
-    desc: 'Crushed pearl & warm horizon wash in Light Mode · Deep cosmic horizon & starlight in Dark Mode',
-    lightPreview: 'linear-gradient(135deg, #FFFFFF 0%, #EFF6FF 55%, #FEF3C7 100%)',
-    darkPreview: 'linear-gradient(135deg, #040711 0%, #172554 55%, #C2410C 100%)',
-    preview: 'linear-gradient(135deg, #040711 0%, #1E293B 55%, #EA580C 100%)',
+    id: 'frosted-glass',
+    name: '2. Frosted Glass Prism (Moving Orbs)',
+    desc: 'Translucent floating glass spheres over soft mint & sky',
+    swatch: 'linear-gradient(135deg, #34d399 0%, #38bdf8 50%, #94a3b8 100%)',
   },
   {
-    id: 'sapphire-champagne',
-    label: 'Royal Sapphire & Champagne',
-    desc: 'Architectural platinum-ice grid in Light Mode · Velvet indigo & gold halo in Dark Mode',
-    lightPreview: 'linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 55%, #FEF9C3 100%)',
-    darkPreview: 'linear-gradient(135deg, #050814 0%, #172554 60%, #92400E 100%)',
-    preview: 'linear-gradient(135deg, #EFF6FF 0%, #F8FAFC 55%, #FEF3C7 100%)',
+    id: 'galaxy-nebula',
+    name: '3. Midnight Galaxy (Moving Nebula)',
+    desc: 'Deep space obsidian with drifting starlight & teal nebula',
+    swatch: 'linear-gradient(135deg, #090d16 0%, #1e293b 50%, #0d9488 100%)',
   },
   {
-    id: 'velvet-rose',
-    label: 'Velvet Amethyst & Rose Dusk',
-    desc: 'Soft porcelain lavender in Light Mode · Midnight plum & champagne rose dusk in Dark Mode',
-    lightPreview: 'linear-gradient(135deg, #FDFBFC 0%, #FAF5FF 55%, #FFE4E6 100%)',
-    darkPreview: 'linear-gradient(135deg, #090610 0%, #2E1065 55%, #9F1239 100%)',
-    preview: 'linear-gradient(135deg, #FAF5FF 0%, #FFE4E6 60%, #FEF3C7 100%)',
+    id: 'nordic-mist',
+    name: '4. Nordic Mist (Minimalist Glass)',
+    desc: 'Clean alabaster, soft sage & calm architectural glass',
+    swatch: 'linear-gradient(135deg, #f8fafc 0%, #d1fae5 55%, #e2e8f0 100%)',
+  },
+  {
+    id: 'ocean-silk',
+    name: '5. Oceanic Horizon (Moving Wave)',
+    desc: 'Smooth coastal sapphire, aqua & deep sea motion',
+    swatch: 'linear-gradient(135deg, #0ea5e9 0%, #2563eb 55%, #0f172a 100%)',
+  },
+  {
+    id: 'royal-gold',
+    name: '6. Champagne & Jade (Moving Glow)',
+    desc: 'Warm sand, champagne gold & forest emerald drift',
+    swatch: 'linear-gradient(135deg, #f59e0b 0%, #10b981 55%, #0f766e 100%)',
+  },
+  {
+    id: 'obsidian-carbon',
+    name: '7. Obsidian Carbon (Dark Glass)',
+    desc: 'Sleek matte carbon dark mode with subtle emerald edge glow',
+    swatch: 'linear-gradient(135deg, #020617 0%, #0f172a 60%, #064e3b 100%)',
+  },
+  {
+    id: 'sunset-silk',
+    name: '8. Sunset Horizon (Moving Silk)',
+    desc: 'Warm coral, peach & twilight amber gradient',
+    swatch: 'linear-gradient(135deg, #fb923c 0%, #f43f5e 55%, #fbbf24 100%)',
+  },
+  {
+    id: 'cyber-grid',
+    name: '9. Architectural Dot Matrix',
+    desc: 'Crisp minimalist studio grid with top spotlight',
+    swatch: 'repeating-linear-gradient(45deg, #10b981 0, #10b981 3px, #0f172a 3px, #0f172a 10px)',
   },
   {
     id: 'custom-image',
-    label: 'Custom Wallpaper (Upload / URL)',
+    name: '10. Custom Wallpaper (Upload / URL)',
     desc: 'Upload your own photo or paste any custom image URL',
-    lightPreview: 'linear-gradient(135deg, #475569 0%, #0F172A 100%)',
-    darkPreview: 'linear-gradient(135deg, #0F172A 0%, #020617 100%)',
-    preview: 'linear-gradient(135deg, #475569 0%, #0F172A 100%)',
+    swatch: 'linear-gradient(135deg, #475569 0%, #0f172a 100%)',
   },
 ];
-
-function resolveLuxeThemeKey(styleId: string): LuxeThemeKey {
-  switch (styleId) {
-    case 'aion-eclipse':
-    case 'warm':
-    case 'champagne':
-    case 'royal-gold':
-    case 'sunset-silk':
-    case 'galaxy-nebula':
-    case 'obsidian-carbon':
-      return 'aion-eclipse';
-    case 'sapphire-champagne':
-    case 'ocean':
-    case 'sapphire':
-    case 'ocean-silk':
-    case 'grid':
-    case 'architect':
-    case 'cyber-grid':
-      return 'sapphire-champagne';
-    case 'velvet-rose':
-    case 'amethyst':
-      return 'velvet-rose';
-    case 'emerald-citrus':
-    case 'emerald':
-    case 'emerald-aurora':
-    case 'frosted-glass':
-    case 'clean':
-    case 'nordic-mist':
-    default:
-      return 'emerald-citrus';
-  }
-}
 
 interface ClubSyncAppProps {
   initialPublicSnapshot?: PublicLandingSnapshot | null;
@@ -234,7 +220,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
     new Date().toISOString().split('T')[0]
   );
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
-  const [bgStyle, setBgStyle] = useState('emerald-citrus');
+  const [bgStyle, setBgStyle] = useState('emerald-aurora');
   const [bgImageUrl, setBgImageUrl] = useState('');
 
   const [paymentQrUrl, setPaymentQrUrl] = useState('');
@@ -351,16 +337,9 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
     if (typeof document === 'undefined') return;
     const isNaturallyDark = bgStyle === 'galaxy-nebula' || bgStyle === 'obsidian-carbon';
     const shouldUseDark = Boolean(profile) && (darkMode || isNaturallyDark);
-    const themeKey = resolveLuxeThemeKey(bgStyle);
     document.documentElement.classList.toggle('dark', shouldUseDark);
-    if (profile) {
-      document.documentElement.setAttribute('data-luxe-theme', themeKey);
-    } else {
-      document.documentElement.removeAttribute('data-luxe-theme');
-    }
     return () => {
       document.documentElement.classList.remove('dark');
-      document.documentElement.removeAttribute('data-luxe-theme');
     };
   }, [profile, darkMode, bgStyle]);
 
@@ -1513,117 +1492,128 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
   const isDarkCanvas = darkMode || isNaturallyDarkStyle;
 
   const getBackdropStyle = (): React.CSSProperties => {
-    if (bgStyle === 'custom-image' && bgImageUrl && bgImageUrl.trim() !== '') {
+    if (bgStyle === 'custom-image' && bgImageUrl) {
       return {
-        backgroundImage: isDarkCanvas
-          ? `linear-gradient(180deg, rgba(6, 9, 15, 0.86) 0%, rgba(6, 9, 15, 0.94) 100%), url(${bgImageUrl})`
-          : `linear-gradient(180deg, rgba(248, 250, 252, 0.86) 0%, rgba(241, 245, 249, 0.94) 100%), url(${bgImageUrl})`,
+        backgroundImage: `linear-gradient(${
+          isDarkCanvas ? 'rgba(2,6,23,0.82), rgba(2,6,23,0.90)' : 'rgba(255,255,255,0.68), rgba(241,245,249,0.82)'
+        }), url(${bgImageUrl})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundAttachment: 'fixed',
       };
     }
 
-    const themeKey = resolveLuxeThemeKey(bgStyle);
-
     if (isDarkCanvas) {
-      switch (themeKey) {
-        case 'aion-eclipse':
+      switch (bgStyle) {
+        case 'galaxy-nebula':
           return {
-            backgroundColor: '#040711',
-            backgroundImage: [
-              'radial-gradient(120% 55% at 50% 108%, rgba(234, 88, 12, 0.24) 0%, rgba(251, 146, 60, 0.10) 38%, transparent 70%)',
-              'radial-gradient(at 15% 5%, rgba(59, 130, 246, 0.16) 0px, transparent 52%)',
-              'radial-gradient(at 88% 12%, rgba(99, 102, 241, 0.14) 0px, transparent 48%)',
-              'linear-gradient(180deg, #040711 0%, #0A1024 62%, #13111C 100%)',
-            ].join(', '),
-            backgroundAttachment: 'fixed',
+            backgroundColor: '#050811',
+            backgroundImage:
+              'radial-gradient(at 15% 15%, rgba(45, 212, 191, 0.28) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(56, 189, 248, 0.25) 0px, transparent 55%), radial-gradient(at 50% 90%, rgba(16, 185, 129, 0.22) 0px, transparent 55%)',
+            backgroundSize: '180% 180%',
+            animation: 'clubsyncNebula 20s ease infinite',
           };
-        case 'sapphire-champagne':
+        case 'obsidian-carbon':
           return {
-            backgroundColor: '#050814',
-            backgroundImage: [
-              'radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px)',
-              'radial-gradient(at 8% 0%, rgba(59, 130, 246, 0.18) 0px, transparent 55%)',
-              'radial-gradient(at 95% 92%, rgba(212, 175, 55, 0.14) 0px, transparent 52%)',
-              'linear-gradient(180deg, #050814 0%, #0A1128 100%)',
-            ].join(', '),
-            backgroundSize: '24px 24px, 100% 100%, 100% 100%, 100% 100%',
-            backgroundAttachment: 'fixed',
+            backgroundColor: '#020617',
+            backgroundImage:
+              'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.22) 0px, transparent 60%), radial-gradient(at 90% 90%, rgba(15, 23, 42, 0.9) 0px, transparent 50%)',
           };
-        case 'velvet-rose':
+        case 'ocean-silk':
           return {
-            backgroundColor: '#090610',
-            backgroundImage: [
-              'radial-gradient(115% 50% at 50% 105%, rgba(244, 63, 94, 0.18) 0%, rgba(168, 85, 247, 0.10) 45%, transparent 72%)',
-              'radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.17) 0px, transparent 55%)',
-              'radial-gradient(at 92% 10%, rgba(251, 113, 133, 0.11) 0px, transparent 50%)',
-              'linear-gradient(180deg, #090610 0%, #140B1E 100%)',
-            ].join(', '),
-            backgroundAttachment: 'fixed',
+            backgroundColor: '#020b18',
+            backgroundImage:
+              'radial-gradient(at 10% 10%, rgba(14, 165, 233, 0.35) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(37, 99, 235, 0.30) 0px, transparent 55%), radial-gradient(at 50% 95%, rgba(20, 184, 166, 0.25) 0px, transparent 55%)',
+            backgroundSize: '180% 180%',
+            animation: 'clubsyncNebula 18s ease infinite',
           };
-        case 'emerald-citrus':
+        case 'royal-gold':
+          return {
+            backgroundColor: '#090a0f',
+            backgroundImage:
+              'radial-gradient(at 10% 10%, rgba(245, 158, 11, 0.32) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(16, 185, 129, 0.28) 0px, transparent 55%)',
+            backgroundSize: '180% 180%',
+            animation: 'clubsyncNebula 20s ease infinite',
+          };
+        case 'sunset-silk':
+          return {
+            backgroundColor: '#13090c',
+            backgroundImage:
+              'radial-gradient(at 15% 15%, rgba(251, 146, 60, 0.30) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(244, 63, 94, 0.28) 0px, transparent 55%)',
+            backgroundSize: '180% 180%',
+            animation: 'clubsyncNebula 20s ease infinite',
+          };
+        case 'cyber-grid':
+          return {
+            backgroundColor: '#020617',
+            backgroundImage:
+              'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.28) 0px, transparent 60%), radial-gradient(rgba(16, 185, 129, 0.18) 1px, transparent 1px)',
+            backgroundSize: '100% 100%, 24px 24px',
+          };
         default:
           return {
-            backgroundColor: '#030B08',
-            backgroundImage: [
-              'radial-gradient(115% 52% at 50% 106%, rgba(16, 185, 129, 0.22) 0%, rgba(245, 158, 11, 0.10) 42%, transparent 72%)',
-              'radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.17) 0px, transparent 55%)',
-              'radial-gradient(at 96% 4%, rgba(245, 158, 11, 0.12) 0px, transparent 50%)',
-              'linear-gradient(180deg, #030B08 0%, #061510 65%, #091912 100%)',
-            ].join(', '),
-            backgroundAttachment: 'fixed',
+            backgroundColor: '#03120e',
+            backgroundImage:
+              'radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.35) 0px, transparent 50%), radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.30) 0px, transparent 50%), radial-gradient(at 50% 100%, rgba(5, 150, 105, 0.25) 0px, transparent 50%)',
+            backgroundSize: '180% 180%',
+            animation: 'clubsyncNebula 18s ease infinite',
           };
       }
     }
 
-    // Light Mode Luxury Palettes
-    switch (themeKey) {
-      case 'aion-eclipse':
+    switch (bgStyle) {
+      case 'nordic-mist':
         return {
-          backgroundColor: '#FCFCFD',
-          backgroundImage: [
-            'radial-gradient(at 6% 0%, rgba(59, 130, 246, 0.09) 0px, transparent 52%)',
-            'radial-gradient(at 94% 4%, rgba(245, 158, 11, 0.10) 0px, transparent 48%)',
-            'radial-gradient(110% 45% at 50% 104%, rgba(251, 146, 60, 0.08) 0%, transparent 70%)',
-            'linear-gradient(180deg, #FFFFFF 0%, #F4F7FB 100%)',
-          ].join(', '),
-          backgroundAttachment: 'fixed',
+          backgroundColor: '#f1f5f9',
+          backgroundImage:
+            'radial-gradient(at 0% 0%, rgba(167, 243, 208, 0.55) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(226, 232, 240, 0.8) 0px, transparent 50%)',
         };
-      case 'sapphire-champagne':
+      case 'frosted-glass':
         return {
-          backgroundColor: '#F8FAFC',
-          backgroundImage: [
-            'radial-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px)',
-            'radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.085) 0px, transparent 55%)',
-            'radial-gradient(at 100% 0%, rgba(212, 175, 55, 0.085) 0px, transparent 50%)',
-            'linear-gradient(180deg, #F8FAFC 0%, #EEF2F7 100%)',
-          ].join(', '),
-          backgroundSize: '24px 24px, 100% 100%, 100% 100%, 100% 100%',
-          backgroundAttachment: 'fixed',
+          backgroundColor: '#e0f2fe',
+          backgroundImage:
+            'radial-gradient(at 15% 15%, rgba(52, 211, 153, 0.50) 0px, transparent 50%), radial-gradient(at 85% 20%, rgba(56, 189, 248, 0.48) 0px, transparent 50%), radial-gradient(at 50% 90%, rgba(148, 163, 184, 0.35) 0px, transparent 55%)',
+          backgroundSize: '180% 180%',
+          animation: 'clubsyncNebula 20s ease infinite',
         };
-      case 'velvet-rose':
+      case 'ocean-silk':
         return {
-          backgroundColor: '#FDFBFC',
-          backgroundImage: [
-            'radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.08) 0px, transparent 55%)',
-            'radial-gradient(at 96% 4%, rgba(244, 63, 94, 0.065) 0px, transparent 50%)',
-            'radial-gradient(at 50% 100%, rgba(251, 146, 60, 0.05) 0px, transparent 60%)',
-            'linear-gradient(165deg, #FDFBFC 0%, #F5F0F7 100%)',
-          ].join(', '),
-          backgroundAttachment: 'fixed',
+          backgroundColor: '#dbeafe',
+          backgroundImage:
+            'radial-gradient(at 10% 10%, rgba(34, 211, 238, 0.50) 0px, transparent 50%), radial-gradient(at 90% 20%, rgba(59, 130, 246, 0.42) 0px, transparent 55%)',
+          backgroundSize: '180% 180%',
+          animation: 'clubsyncNebula 18s ease infinite',
         };
-      case 'emerald-citrus':
+      case 'royal-gold':
+        return {
+          backgroundColor: '#fef3c7',
+          backgroundImage:
+            'radial-gradient(at 10% 10%, rgba(251, 191, 36, 0.50) 0px, transparent 50%), radial-gradient(at 90% 15%, rgba(52, 211, 153, 0.45) 0px, transparent 55%)',
+          backgroundSize: '180% 180%',
+          animation: 'clubsyncNebula 20s ease infinite',
+        };
+      case 'sunset-silk':
+        return {
+          backgroundColor: '#ffedd5',
+          backgroundImage:
+            'radial-gradient(at 12% 12%, rgba(251, 146, 60, 0.48) 0px, transparent 50%), radial-gradient(at 88% 18%, rgba(251, 113, 133, 0.42) 0px, transparent 55%)',
+          backgroundSize: '180% 180%',
+          animation: 'clubsyncNebula 20s ease infinite',
+        };
+      case 'cyber-grid':
+        return {
+          backgroundColor: '#f0fdf4',
+          backgroundImage:
+            'radial-gradient(at 50% 0%, rgba(16, 185, 129, 0.32) 0px, transparent 60%), radial-gradient(rgba(4, 120, 87, 0.16) 1px, transparent 1px)',
+          backgroundSize: '100% 100%, 24px 24px',
+        };
       default:
         return {
-          backgroundColor: '#FFFDFB',
-          backgroundImage: [
-            'radial-gradient(at 0% 0%, rgba(5, 150, 105, 0.10) 0px, transparent 54%)',
-            'radial-gradient(at 96% 2%, rgba(249, 115, 22, 0.09) 0px, transparent 50%)',
-            'radial-gradient(at 50% 100%, rgba(251, 191, 36, 0.06) 0px, transparent 60%)',
-            'linear-gradient(180deg, #FFFDFB 0%, #F4F8F6 100%)',
-          ].join(', '),
-          backgroundAttachment: 'fixed',
+          backgroundColor: '#d1fae5',
+          backgroundImage:
+            'radial-gradient(at 0% 0%, rgba(52, 211, 153, 0.55) 0px, transparent 50%), radial-gradient(at 100% 10%, rgba(34, 211, 238, 0.48) 0px, transparent 50%), radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.35) 0px, transparent 55%)',
+          backgroundSize: '180% 180%',
+          animation: 'clubsyncNebula 18s ease infinite',
         };
     }
   };
@@ -1947,11 +1937,20 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
         }
       `}</style>
 
-      {isDarkCanvas && (
-        <div className="pointer-events-none fixed inset-0 luxe-starfield opacity-70 z-0" aria-hidden="true" />
+      {(bgStyle === 'galaxy-nebula' || bgStyle === 'frosted-glass' || bgStyle === 'emerald-aurora') && (
+        <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+          <div
+            className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-emerald-500/15 blur-3xl"
+            style={{ animation: 'clubsyncFloat 12s ease-in-out infinite' }}
+          />
+          <div
+            className="absolute top-1/3 -right-24 w-96 h-96 rounded-full bg-cyan-500/15 blur-3xl"
+            style={{ animation: 'clubsyncFloat 15s ease-in-out infinite reverse' }}
+          />
+        </div>
       )}
 
-      <div className="relative z-10 flex flex-col min-h-screen">
+      <div className="relative flex flex-col min-h-screen">
         <Navbar
           profile={profile}
           clubName={clubName}
@@ -2039,7 +2038,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           </div>
         )}
 
-        <main className="max-w-7xl w-full mx-auto px-4 pt-6 pb-24 md:pb-6 space-y-6 flex-1">
+        <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-20 sm:pb-10 space-y-6 flex-1">
           {activeTab === 'activities' &&
             (isInitialLoading ? (
               <DashboardSkeleton darkMode={isDarkCanvas} />
@@ -2067,8 +2066,8 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
 
               <section className="space-y-4">
                 <div
-                  className={`luxe-card flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 rounded-3xl ${
-                    isDarkCanvas ? 'text-slate-100' : 'text-slate-900'
+                  className={`flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5 rounded-3xl border backdrop-blur-xl shadow-xs ${
+                    isDarkCanvas ? 'bg-slate-900/75 border-white/10' : 'bg-white/85 border-white/90'
                   }`}
                 >
                   <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
@@ -2639,7 +2638,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
 
             return (
               <ErrorBoundary sectionName="Claims & Pre-Claims">
-                <section className="luxe-card text-slate-900 dark:text-slate-100 rounded-3xl overflow-hidden">
+                <section className="bg-white/90 backdrop-blur-xl text-slate-900 rounded-3xl border border-emerald-100 overflow-hidden shadow-xs">
                 <div className="p-5 border-b flex flex-wrap justify-between items-center gap-3">
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-2">
@@ -2708,7 +2707,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                         setClaimModalPreClaimId(null);
                         setIsClaimModalOpen(true);
                       }}
-                      className="px-3.5 py-2 rounded-xl text-xs font-bold luxe-btn-emerald cursor-pointer"
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
                     >
                       <PlusCircle className="w-4 h-4 inline mr-1" />
                       Submit Claim
@@ -2751,9 +2750,9 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
 
                 {claimsSubTab === 'receipts' ? (
                   <div className="overflow-x-auto">
-                    <table className="luxe-table text-left text-xs">
+                    <table className="w-full text-left border-collapse text-xs">
                       <thead>
-                        <tr className="text-slate-600 dark:text-slate-300">
+                        <tr className="bg-slate-50 border-b">
                           <th className="py-3 px-4">Item</th>
                           <th className="py-3 px-4">Claimant &amp; Bank</th>
                           <th className="py-3 px-4">Amount</th>
@@ -2946,9 +2945,9 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="luxe-table text-left text-xs">
+                    <table className="w-full text-left border-collapse text-xs">
                       <thead>
-                        <tr className="text-slate-600 dark:text-slate-300">
+                        <tr className="bg-slate-50 border-b">
                           <th className="py-3 px-4">Request &amp; Activity</th>
                           <th className="py-3 px-4">Requester &amp; Needed By</th>
                           <th className="py-3 px-4">Est. / Approved Cap</th>
@@ -3209,7 +3208,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           {activeTab === 'members' && isAdminOrOwner && (
             <ErrorBoundary sectionName="Members & Club Settings">
               <div className="space-y-6 text-slate-900">
-              <div className="luxe-card rounded-3xl p-6 space-y-4 text-slate-900 dark:text-slate-100">
+              <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-emerald-100 p-6 space-y-4 shadow-xs">
                 <div className="flex flex-wrap justify-between items-center gap-2">
                   <h3 className="text-sm font-extrabold flex items-center gap-2">
                     <Crown className="w-4 h-4 text-amber-500" />
@@ -3860,55 +3859,35 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
               </div>
 
               <div className="space-y-2">
-                <label className="block font-bold text-slate-800 dark:text-slate-100">
-                  Theme Package (Light &amp; Dark Mode Canvas)
-                </label>
-                {LUXURY_BG_PRESETS.map((preset) => {
-                  const isSelected =
-                    preset.id === 'custom-image'
-                      ? bgStyle === 'custom-image'
-                      : bgStyle !== 'custom-image' && resolveLuxeThemeKey(bgStyle) === preset.id;
-                  return (
-                    <label
-                      key={preset.id}
-                      className={`flex items-center justify-between gap-3 p-3 rounded-2xl border cursor-pointer transition ${
-                        isSelected
-                          ? 'border-emerald-600 bg-emerald-50/70 dark:bg-emerald-500/15 ring-2 ring-emerald-500/20'
-                          : 'border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/5'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="radio"
-                          name="bgStyle"
-                          checked={isSelected}
-                          onChange={() => {
-                            setBgStyle(preset.id);
-                            if (typeof window !== 'undefined') localStorage.setItem('clubsync_bg_style', preset.id);
-                          }}
-                        />
-                        {preset.id === 'custom-image' ? (
-                          <div
-                            className="w-12 h-9 rounded-xl shadow-inner border border-black/15 dark:border-white/15 shrink-0"
-                            style={{ background: preset.preview }}
-                          />
-                        ) : (
-                          <div
-                            className="w-12 h-9 rounded-xl overflow-hidden flex shadow-inner border border-black/15 dark:border-white/15 shrink-0"
-                            title="Light Mode / Dark Mode preview"
-                          >
-                            <div className="w-1/2 h-full" style={{ background: preset.lightPreview }} />
-                            <div className="w-1/2 h-full border-l border-black/10 dark:border-white/10" style={{ background: preset.darkPreview }} />
-                          </div>
-                        )}
-                        <div>
-                          <div className="font-bold text-slate-900 dark:text-slate-100">{preset.label}</div>
-                          <div className="text-slate-500 dark:text-slate-400">{preset.desc}</div>
-                        </div>
+                <label className="block font-bold text-slate-800">Background Style (10 Choices)</label>
+                {BG_PRESETS.map((preset) => (
+                  <label
+                    key={preset.id}
+                    className={`flex items-center justify-between gap-3 p-3 rounded-2xl border cursor-pointer transition ${
+                      bgStyle === preset.id ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-500/20' : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="radio"
+                        name="bgStyle"
+                        checked={bgStyle === preset.id}
+                        onChange={() => {
+                          setBgStyle(preset.id);
+                          if (typeof window !== 'undefined') localStorage.setItem('clubsync_bg_style', preset.id);
+                        }}
+                      />
+                      <div
+                        className="w-9 h-9 rounded-xl shadow-inner border border-black/10 shrink-0"
+                        style={{ background: preset.swatch }}
+                      />
+                      <div>
+                        <div className="font-bold text-slate-900">{preset.name}</div>
+                        <div className="text-slate-500">{preset.desc}</div>
                       </div>
-                    </label>
-                  );
-                })}
+                    </div>
+                  </label>
+                ))}
               </div>
 
               {bgStyle === 'custom-image' && (

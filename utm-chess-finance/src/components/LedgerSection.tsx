@@ -166,18 +166,6 @@ function formatRM(value: number): string {
   });
 }
 
-function renderLuxeRM(value: number) {
-  const formatted = formatRM(value);
-  const dotIdx = formatted.lastIndexOf('.');
-  if (dotIdx === -1) return formatted;
-  return (
-    <>
-      {formatted.slice(0, dotIdx)}
-      <span className="opacity-45 font-light">{formatted.slice(dotIdx)}</span>
-    </>
-  );
-}
-
 function accountOf(val?: string | null): AccountType {
   return val === 'Cash' ? 'Cash' : 'Bank';
 }
@@ -1712,16 +1700,16 @@ export default function LedgerSection({
   }
 
   return (
-    <div className="luxe-card rounded-2xl overflow-hidden text-slate-900 dark:text-slate-100">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden text-slate-900 dark:text-slate-100">
       {/* ===================== TOP SUMMARY STRIP (4 CALM BLOCKS) ===================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200/80 dark:divide-white/10 border-b border-slate-200/80 dark:border-white/10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-white/10 border-b border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900">
         {/* 1. Current Club Savings */}
         <div className="p-5 space-y-1">
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Current Club Savings
           </div>
           <div className="text-2xl font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
-            {mathSummary.totalSavings < 0 ? '-' : ''}RM {renderLuxeRM(mathSummary.totalSavings)}
+            {mathSummary.totalSavings < 0 ? '-' : ''}RM {formatRM(mathSummary.totalSavings)}
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400 font-medium tabular-nums">
             Bank RM {formatRM(mathSummary.currentBank)} · Cash RM {formatRM(mathSummary.currentCash)}
@@ -1742,7 +1730,7 @@ export default function LedgerSection({
               Starting Savings
             </div>
             <div className="text-xl font-extrabold font-mono tabular-nums text-slate-800 dark:text-slate-100">
-              RM {renderLuxeRM(openingTotal)}
+              RM {formatRM(openingTotal)}
             </div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
               {openingTotal > 0 ? `Since ${openingDate}` : 'Not set yet'}
@@ -1754,7 +1742,7 @@ export default function LedgerSection({
               onClick={openOpeningSavingsModal}
               className={
                 openingTotal === 0
-                  ? 'px-3 py-1.5 rounded-lg luxe-btn-emerald text-xs font-bold shrink-0 cursor-pointer'
+                  ? 'px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0 cursor-pointer'
                   : 'px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/15 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200 text-xs font-semibold shrink-0 cursor-pointer'
               }
             >
@@ -1769,7 +1757,7 @@ export default function LedgerSection({
             Total Money In
           </div>
           <div className="text-xl font-extrabold font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
-            +RM {renderLuxeRM(mathSummary.totalIn)}
+            +RM {formatRM(mathSummary.totalIn)}
           </div>
           {pendingFeesTotal > 0 && (
             <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 tabular-nums">
@@ -1784,7 +1772,7 @@ export default function LedgerSection({
             Total Money Out
           </div>
           <div className="text-xl font-extrabold font-mono tabular-nums text-rose-600 dark:text-rose-400">
-            -RM {renderLuxeRM(mathSummary.totalOut)}
+            -RM {formatRM(mathSummary.totalOut)}
           </div>
           {budgetedHealthStats.cappedCount > 0 && (
             <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 pt-0.5 flex flex-wrap items-center gap-1.5 tabular-nums">
@@ -2036,7 +2024,7 @@ export default function LedgerSection({
                   <button
                     type="button"
                     onClick={() => openAddModal('IN')}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg luxe-btn-emerald font-bold cursor-pointer"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Income</span>
@@ -2288,15 +2276,15 @@ export default function LedgerSection({
 
           {/* 7-Column Crisp Spreadsheet Table (Desktop) */}
           <div className="hidden md:block overflow-x-auto max-h-[68vh] overflow-y-auto">
-            <table className="luxe-table text-left text-xs">
+            <table className="w-full text-left border-collapse text-xs">
               <thead className="sticky top-0 z-10">
-                <tr className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                  <th className="py-2.5 px-3 border-r border-slate-200/70 dark:border-white/10 w-32">Date</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200/70 dark:border-white/10">Description</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200/70 dark:border-white/10 w-44">Activity</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200/70 dark:border-white/10 text-right w-32">Money In (+)</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200/70 dark:border-white/10 text-right w-32">Money Out (-)</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200/70 dark:border-white/10 text-right w-36">Balance</th>
+                <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-white/10 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 w-32">Date</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10">Description</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 w-44">Activity</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 text-right w-32">Money In (+)</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 text-right w-32">Money Out (-)</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 text-right w-36">Balance</th>
                   <th className="py-2.5 px-3 text-right w-28">Actions</th>
                 </tr>
               </thead>

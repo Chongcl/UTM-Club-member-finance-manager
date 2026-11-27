@@ -152,7 +152,7 @@ export default function ActivityLogSection({ logs, deletedRecords = [], profile,
 
   return (
     <div className="space-y-5 text-slate-900 dark:text-slate-100">
-      <div className="luxe-card rounded-2xl p-5 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white/95 dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200/80 dark:border-white/10 p-5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
             <ShieldCheck className="w-5 h-5" />
@@ -250,7 +250,7 @@ export default function ActivityLogSection({ logs, deletedRecords = [], profile,
       </div>
 
       {viewMode === 'all' && (
-        <div className="luxe-card rounded-3xl overflow-hidden">
+        <div className="bg-white/95 backdrop-blur-xl rounded-3xl border border-emerald-200/80 overflow-hidden shadow-2xs">
           {filtered.length === 0 ? (
             <div className="p-10 text-center space-y-2 text-xs text-slate-400">
               <Clock className="w-8 h-8 text-slate-300 mx-auto" />
@@ -327,7 +327,7 @@ export default function ActivityLogSection({ logs, deletedRecords = [], profile,
       )}
 
       {viewMode === 'edits' && (
-        <div className="luxe-card rounded-3xl overflow-hidden">
+        <div className="bg-white/95 backdrop-blur-xl rounded-3xl border border-amber-200/80 overflow-hidden shadow-2xs">
           {filteredEdits.length === 0 ? (
             <div className="p-10 text-center space-y-2 text-xs text-slate-400">
               <History className="w-8 h-8 text-amber-300 mx-auto" />
@@ -391,7 +391,7 @@ export default function ActivityLogSection({ logs, deletedRecords = [], profile,
               <strong>Web-Only Soft Delete Archive:</strong> Records deleted in ClubSync are hidden from dashboard tabs, calculations, and lists while their database rows remain stored safely in Supabase (until you manually delete them in Supabase Table Editor). You can restore any item back to the web anytime.
             </p>
           </div>
-          <div className="luxe-card rounded-3xl overflow-hidden">
+          <div className="bg-white/95 backdrop-blur-xl rounded-3xl border border-rose-200/80 overflow-hidden shadow-2xs">
             {filteredDeleted.length === 0 ? (
               <div className="p-10 text-center space-y-2 text-xs text-slate-400">
                 <Trash2 className="w-8 h-8 text-slate-300 mx-auto" />
@@ -442,7 +442,7 @@ export default function ActivityLogSection({ logs, deletedRecords = [], profile,
                               setRestoringKey(null);
                             }
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl luxe-btn-emerald font-bold cursor-pointer disabled:opacity-60 shrink-0"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-60 shrink-0"
                         >
                           {isRestoring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
                           <span>Restore to Web</span>
