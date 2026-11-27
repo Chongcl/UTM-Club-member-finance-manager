@@ -1,10 +1,8 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, Plus_Jakarta_Sans, JetBrains_Mono } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-inter' });
-const plusJakarta = Plus_Jakarta_Sans({ subsets: ['latin'], weight: ['400', '500', '600', '700', '800'], variable: '--font-jakarta' });
-const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-mono' });
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'ClubSync | Campus Club Operations, Attendance & Finance Portal',
@@ -27,11 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${plusJakarta.variable} ${jetbrainsMono.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -42,7 +36,7 @@ export default function RootLayout({
         <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" async></script>
       </head>
       <body
-        className={`${inter.className} font-sans m-0 p-0 bg-[var(--bg-canvas)] text-[var(--text-primary)] antialiased min-h-screen selection:bg-emerald-500/20 selection:text-emerald-900 dark:selection:bg-emerald-400/25 dark:selection:text-emerald-100`}
+        className={`${inter.className} m-0 p-0 bg-[var(--bg-canvas)] text-[var(--text-primary)] antialiased min-h-screen selection:bg-emerald-600 selection:text-white`}
       >
         {children}
       </body>

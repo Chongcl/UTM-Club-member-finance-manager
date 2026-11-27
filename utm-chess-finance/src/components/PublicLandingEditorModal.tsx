@@ -19,6 +19,7 @@ import {
   LandingThemePreset,
   HeroLayoutMode,
   CardSurfaceStyle,
+  PublicBackgroundEffect,
   AnimationLevel,
   FeatureIconName,
   PublicMetricItem,
@@ -35,6 +36,7 @@ import {
   resolvePublicLandingConfig,
   writeCachedPublicSnapshot,
 } from '@/lib/publicLanding';
+import { DYNAMIC_BG_OPTIONS } from '@/lib/themeConfig';
 import PublicLandingPage, {
   FeatureIcon,
   FooterPlatformIcon,
@@ -2809,10 +2811,11 @@ export default function PublicLandingEditorModal({
                       <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
                         Card Surface Style
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {(
                           [
                             { id: 'glass', label: 'Glass' },
+                            { id: 'liquid-glass', label: 'Liquid Glass' },
                             { id: 'crisp', label: 'Crisp' },
                             { id: 'elevated', label: 'Elevated' },
                           ] as { id: CardSurfaceStyle; label: string }[]
@@ -2821,7 +2824,7 @@ export default function PublicLandingEditorModal({
                             key={cs.id}
                             type="button"
                             onClick={() => updateField('card_style', cs.id, true)}
-                            className={`py-2 px-3 rounded-xl border font-extrabold text-[11px] cursor-pointer ${
+                            className={`py-2 px-2.5 rounded-xl border font-extrabold text-[11px] cursor-pointer ${
                               draft.card_style === cs.id
                                 ? 'border-slate-900 bg-slate-900 text-white'
                                 : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
@@ -2830,6 +2833,159 @@ export default function PublicLandingEditorModal({
                             {cs.label}
                           </button>
                         ))}
+                      </div>
+                    </div>
+
+                    {/* Dynamic Page Background (React Bits & Magic UI) */}
+                    <div className="space-y-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                      <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                        Dynamic Page Background (Optional)
+                      </div>
+                      <select
+                        value={draft.background_effect}
+                        onChange={(e) => {
+                          const nextEffect = e.target.value as PublicBackgroundEffect;
+                          updateField('background_effect', nextEffect, true);
+                          const matchedOpt = DYNAMIC_BG_OPTIONS.find((o) => o.id === nextEffect);
+                          if (matchedOpt) {
+                            updateField('background_colors', { ...matchedOpt.defaultColors }, false);
+                          }
+                        }}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-bold text-slate-800 cursor-pointer"
+                      >
+                        <option value="none">None (Use Classic Gradient Preset)</option>
+                        {DYNAMIC_BG_OPTIONS.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {draft.background_effect !== 'none' && (
+                        <div className="space-y-2.5 pt-1">
+                          <div className="grid grid-cols-3 gap-2">
+                            {(
+                              [
+                                { key: 'primary', label: 'Primary', fallback: '#10b981' },
+                                { key: 'secondary', label: 'Secondary', fallback: '#0ea5e9' },
+                                { key: 'accent', label: 'Glow', fallback: '#f59e0b' },
+                              ] as const
+                            ).map((c) => (
+                              <label
+                                key={c.key}
+                                className="flex items-center gap-1.5 p-1.5 rounded-lg bg-white border border-slate-200 cursor-pointer"
+                              >
+                                <input
+                                  type="color"
+                                  value={draft.background_colors[c.key] || c.fallback}
+                                  onChange={(e) =>
+                                    updateField(
+                                      'background_colors',
+                                      { ...draft.background_colors, [c.key]: e.target.value },
+                                      false
+                                    )
+                                  }
+                                  className="w-5 h-5 rounded cursor-pointer border-0 bg-transparent p-0 shrink-0"
+                                />
+                                <span className="text-[10px] font-bold text-slate-700 truncate">{c.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2.5">
+                            <div>
+                              <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-0.5">
+                                <span>Speed</span>
+                                <span className="font-mono">{draft.background_speed.toFixed(1)}x</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0}
+                                max={1.5}
+                                step={0.1}
+                                value={draft.background_speed}
+                                onChange={(e) =>
+                                  updateField('background_speed', parseFloat(e.target.value), false)
+                                }
+                                className="w-full accent-emerald-600 cursor-pointer"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-0.5">
+                                <span>Intensity</span>
+                                <span className="font-mono">{Math.round(draft.background_opacity * 100)}%</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={0.15}
+                                max={1}
+                                step={0.05}
+                                value={draft.background_opacity}
+                                onChange={(e) =>
+                                  updateField('background_opacity', parseFloat(e.target.value), false)
+                                }
+                                className="w-full accent-emerald-600 cursor-pointer"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Custom Component Color Overrides (Separate from Portal Theme Studio) */}
+                    <div className="space-y-2 p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                          Custom Colors (Buttons, Cards, Font)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateField('custom_button_bg', '', false);
+                            updateField('custom_card_bg', '', false);
+                            updateField('custom_font_color', '', false);
+                          }}
+                          className="text-[10px] font-bold text-slate-500 hover:text-slate-900 underline cursor-pointer"
+                        >
+                          Reset
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {(
+                          [
+                            { key: 'custom_button_bg', label: 'Primary Button Color', fallback: '#059669' },
+                            { key: 'custom_card_bg', label: 'Card Surface Color', fallback: '#ffffff' },
+                            { key: 'custom_font_color', label: 'Custom Font Color', fallback: '#0f172a' },
+                          ] as const
+                        ).map((item) => {
+                          const currentVal = draft[item.key];
+                          return (
+                            <div
+                              key={item.key}
+                              className="flex items-center justify-between gap-2 p-1.5 px-2.5 rounded-lg bg-white border border-slate-200"
+                            >
+                              <label className="flex items-center gap-2 cursor-pointer min-w-0">
+                                <input
+                                  type="color"
+                                  value={currentVal || item.fallback}
+                                  onChange={(e) => updateField(item.key, e.target.value, false)}
+                                  className="w-5 h-5 rounded cursor-pointer border-0 bg-transparent p-0 shrink-0"
+                                />
+                                <span className="text-[11px] font-bold text-slate-700 truncate">{item.label}</span>
+                              </label>
+                              {currentVal ? (
+                                <button
+                                  type="button"
+                                  onClick={() => updateField(item.key, '', false)}
+                                  className="text-[10px] font-bold text-rose-600 hover:underline shrink-0 cursor-pointer"
+                                >
+                                  Auto
+                                </button>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-slate-400 shrink-0">Auto</span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 

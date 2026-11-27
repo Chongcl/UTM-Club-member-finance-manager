@@ -272,7 +272,7 @@ export default function Navbar({
   return (
     <>
       <header
-        className={`sticky top-0 z-30 backdrop-blur-xl border-b transition-colors ${
+        className={`lg-surface sticky top-0 z-30 backdrop-blur-xl border-b transition-colors ${
           darkMode
             ? 'bg-slate-950/85 border-white/10 text-white'
             : 'bg-white/85 border-slate-200/80 text-slate-900'

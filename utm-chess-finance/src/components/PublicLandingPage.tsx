@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import NetworkStatusBanner from './NetworkStatusBanner';
+import ThemeBackgroundLayer from './ThemeBackgroundLayer';
 import ModalShell from './ui/ModalShell';
 import {
   supabase,
@@ -1759,8 +1760,41 @@ export default function PublicLandingPage({
     );
   }
 
+  const hasDynamicBg = resolvedConfig.background_effect !== 'none';
+  const effectiveBtnColor = resolvedConfig.custom_button_bg || resolvedConfig.custom_accent;
+  const landingStyle: React.CSSProperties = {
+    ...(effectiveBtnColor ? ({ '--pl-btn-bg': effectiveBtnColor } as React.CSSProperties) : {}),
+    ...(resolvedConfig.custom_card_bg
+      ? ({ '--pl-card-bg': `${resolvedConfig.custom_card_bg}d9` } as React.CSSProperties)
+      : {}),
+    ...(resolvedConfig.custom_font_color
+      ? ({ '--pl-font-color': resolvedConfig.custom_font_color } as React.CSSProperties)
+      : {}),
+  };
+
   return (
-    <div className={`min-h-screen flex flex-col ${theme.pageBg} text-slate-900 relative overflow-x-hidden break-words`}>
+    <div
+      className={`public-landing-root min-h-screen flex flex-col ${
+        hasDynamicBg ? 'bg-transparent' : theme.pageBg
+      } text-slate-900 relative isolate overflow-x-hidden break-words`}
+      style={landingStyle}
+      data-pl-has-btn={effectiveBtnColor ? 'true' : undefined}
+      data-pl-has-card={resolvedConfig.custom_card_bg ? 'true' : undefined}
+      data-pl-has-font={resolvedConfig.custom_font_color ? 'true' : undefined}
+    >
+      {hasDynamicBg && (
+        <ThemeBackgroundLayer
+          config={{
+            backgroundId: resolvedConfig.background_effect,
+            bgColors: resolvedConfig.background_colors,
+            bgSpeed: resolvedConfig.background_speed,
+            bgOpacity: resolvedConfig.background_opacity,
+            bgScrim: 0.08,
+          }}
+          darkMode={false}
+          contained={isPreview}
+        />
+      )}
       {!isPreview && (
         <NetworkStatusBanner
           networkError={publicFetchError}

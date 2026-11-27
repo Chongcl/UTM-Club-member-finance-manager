@@ -1977,7 +1977,7 @@ export default function LedgerSection({
                 />
               </div>
 
-              <div className="flex flex-wrap items-center p-0.5 rounded-lg bg-slate-100 border border-slate-200">
+              <div className="lg-tab-pill flex flex-wrap items-center p-0.5 rounded-lg bg-slate-100 border border-slate-200">
                 {(
                   [
                     { key: 'ALL', label: 'All' },
@@ -1992,7 +1992,7 @@ export default function LedgerSection({
                     onClick={() => setFilterPill(p.key)}
                     className={`px-2.5 py-1 rounded-md font-semibold cursor-pointer transition ${
                       filterPill === p.key
-                        ? 'bg-white text-slate-900 shadow-2xs'
+                        ? 'lg-tab-active bg-white text-slate-900 shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >

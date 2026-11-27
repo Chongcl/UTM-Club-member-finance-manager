@@ -20,7 +20,18 @@ export type LandingThemePreset =
 
 export type HeroLayoutMode = 'split' | 'centered' | 'banner';
 
-export type CardSurfaceStyle = 'glass' | 'crisp' | 'elevated';
+export type CardSurfaceStyle = 'glass' | 'crisp' | 'elevated' | 'liquid-glass';
+
+export type PublicBackgroundEffect =
+  | 'none'
+  | 'rb-aurora'
+  | 'rb-soft-aurora'
+  | 'rb-particles'
+  | 'rb-galaxy'
+  | 'rb-light-rays'
+  | 'rb-dot-grid'
+  | 'mu-grid-pattern'
+  | 'mu-dot-pattern';
 
 export type AnimationLevel = 'vivid' | 'smooth' | 'off';
 
@@ -114,6 +125,18 @@ export interface PublicLandingConfig {
   card_style?: CardSurfaceStyle;
   animation_level?: AnimationLevel;
   section_order?: LandingSectionId[];
+  background_effect?: PublicBackgroundEffect;
+  background_colors?: {
+    primary?: string;
+    secondary?: string;
+    accent?: string;
+  };
+  background_speed?: number;
+  background_opacity?: number;
+  custom_accent?: string;
+  custom_card_bg?: string;
+  custom_button_bg?: string;
+  custom_font_color?: string;
 
   // Top Announcement Ribbon
   show_announcement_bar?: boolean;
@@ -189,6 +212,18 @@ export interface ResolvedPublicLandingConfig {
   card_style: CardSurfaceStyle;
   animation_level: AnimationLevel;
   section_order: LandingSectionId[];
+  background_effect: PublicBackgroundEffect;
+  background_colors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+  };
+  background_speed: number;
+  background_opacity: number;
+  custom_accent: string;
+  custom_card_bg: string;
+  custom_button_bg: string;
+  custom_font_color: string;
 
   show_announcement_bar: boolean;
   announcement_text: string;
@@ -544,6 +579,8 @@ export const LANDING_THEME_STYLES: Record<LandingThemePreset, LandingThemeTokens
 
 export const CARD_SURFACE_STYLES: Record<CardSurfaceStyle, string> = {
   glass: 'bg-white/80 backdrop-blur-md border border-white/70 shadow-sm',
+  'liquid-glass':
+    'bg-white/74 backdrop-blur-xl border border-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_12px_36px_-10px_rgba(15,23,42,0.12)]',
   crisp: 'bg-white border border-slate-200 shadow-2xs',
   elevated: 'bg-white border border-slate-200/80 shadow-lg shadow-slate-900/5',
 };
@@ -790,7 +827,9 @@ export function resolvePublicLandingConfig(
       : 'split';
 
   const cardStyle: CardSurfaceStyle =
-    cfg.card_style === 'crisp' || cfg.card_style === 'elevated'
+    cfg.card_style === 'crisp' ||
+    cfg.card_style === 'elevated' ||
+    cfg.card_style === 'liquid-glass'
       ? cfg.card_style
       : 'glass';
 
@@ -806,12 +845,32 @@ export function resolvePublicLandingConfig(
       ? cfg.cta_primary_action
       : 'signup';
 
+  const bgEffect: PublicBackgroundEffect = cfg.background_effect || 'none';
+  const bgSpeedRaw = Number(cfg.background_speed);
+  const bgOpacityRaw = Number(cfg.background_opacity);
+
   return {
     theme_preset: themePreset,
     hero_layout: heroLayout,
     card_style: cardStyle,
     animation_level: animationLevel,
     section_order: normalizeSectionOrder(cfg.section_order),
+    background_effect: bgEffect,
+    background_colors: {
+      primary: cfg.background_colors?.primary || '#10b981',
+      secondary: cfg.background_colors?.secondary || '#0ea5e9',
+      accent: cfg.background_colors?.accent || '#f59e0b',
+    },
+    background_speed: Number.isFinite(bgSpeedRaw)
+      ? Math.min(1.5, Math.max(0, bgSpeedRaw))
+      : 0.65,
+    background_opacity: Number.isFinite(bgOpacityRaw)
+      ? Math.min(1, Math.max(0.15, bgOpacityRaw))
+      : 0.72,
+    custom_accent: cfg.custom_accent || '',
+    custom_card_bg: cfg.custom_card_bg || '',
+    custom_button_bg: cfg.custom_button_bg || '',
+    custom_font_color: cfg.custom_font_color || '',
 
     show_announcement_bar: cfg.show_announcement_bar === true,
     announcement_text:

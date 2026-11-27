@@ -791,7 +791,7 @@ export default function ProfileSection({
         {/* Segmented Tab Bar */}
         <div className="px-5 sm:px-6 pb-4 pt-1 border-t border-slate-100 bg-slate-50/50">
           <div
-            className="flex items-center gap-1.5 overflow-x-auto py-1"
+            className="lg-tab-pill inline-flex items-center gap-1.5 overflow-x-auto p-1 rounded-2xl border border-slate-200/70"
             role="tablist"
             aria-label="Profile sections"
           >
@@ -806,7 +806,7 @@ export default function ProfileSection({
                   onClick={() => setActiveTab(tab.id)}
                   className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
                     selected
-                      ? 'bg-slate-900 text-white shadow-sm'
+                      ? 'lg-tab-active bg-slate-900 text-white shadow-sm'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white'
                   }`}
                 >

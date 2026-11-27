@@ -63,6 +63,19 @@ import FloatingChatDock from '@/components/FloatingChatDock';
 import MemberProfileModal from '@/components/MemberProfileModal';
 import NetworkStatusBanner from '@/components/NetworkStatusBanner';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import ThemeBackgroundLayer from '@/components/ThemeBackgroundLayer';
+import {
+  ClubThemeConfig,
+  DEFAULT_THEME_CONFIG,
+  DYNAMIC_BG_OPTIONS,
+  COLOR_PALETTE_OPTIONS,
+  STARTER_THEME_PRESETS,
+  isDynamicBgId,
+  decodeThemeConfig,
+  encodeThemeConfig,
+  applyThemeConfigToDocument,
+  clearThemeConfigFromDocument,
+} from '@/lib/themeConfig';
 import {
   DashboardSkeleton,
   ClaimsSkeleton,
@@ -112,6 +125,9 @@ import {
   Search,
   CalendarClock,
   LifeBuoy,
+  Sun,
+  Moon,
+  RotateCcw,
 } from 'lucide-react';
 
 interface ConfirmDialogState {
@@ -222,6 +238,9 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
   const [bgStyle, setBgStyle] = useState('emerald-aurora');
   const [bgImageUrl, setBgImageUrl] = useState('');
+  const [themeConfig, setThemeConfig] = useState<ClubThemeConfig>(DEFAULT_THEME_CONFIG);
+  const [savedThemeSnapshot, setSavedThemeSnapshot] = useState<ClubThemeConfig>(DEFAULT_THEME_CONFIG);
+  const [bgFilterTab, setBgFilterTab] = useState<'all' | 'classic' | 'react-bits' | 'magic-ui'>('all');
 
   const [paymentQrUrl, setPaymentQrUrl] = useState('');
   const [paymentBankInfo, setPaymentBankInfo] = useState('');
@@ -322,6 +341,13 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setDarkMode(localStorage.getItem('clubsync_dark') === 'true');
+      const savedRaw = localStorage.getItem('clubsync_bg_style');
+      if (savedRaw) {
+        const decoded = decodeThemeConfig(savedRaw);
+        setThemeConfig(decoded);
+        setSavedThemeSnapshot(decoded);
+        setBgStyle(decoded.backgroundId);
+      }
     }
   }, []);
 
@@ -335,13 +361,21 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const isNaturallyDark = bgStyle === 'galaxy-nebula' || bgStyle === 'obsidian-carbon';
+    const isNaturallyDark =
+      themeConfig.backgroundId === 'galaxy-nebula' ||
+      themeConfig.backgroundId === 'obsidian-carbon';
     const shouldUseDark = Boolean(profile) && (darkMode || isNaturallyDark);
     document.documentElement.classList.toggle('dark', shouldUseDark);
+    if (profile) {
+      applyThemeConfigToDocument(themeConfig, shouldUseDark);
+    } else {
+      clearThemeConfigFromDocument();
+    }
     return () => {
       document.documentElement.classList.remove('dark');
+      clearThemeConfigFromDocument();
     };
-  }, [profile, darkMode, bgStyle]);
+  }, [profile, darkMode, themeConfig]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -620,7 +654,15 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
       setOwnerUserId(sRes.data.owner_user_id ? String(sRes.data.owner_user_id) : null);
       setPaymentQrUrl(sRes.data.payment_qr_url ? String(sRes.data.payment_qr_url) : '');
       setPaymentBankInfo(sRes.data.payment_bank_info ? String(sRes.data.payment_bank_info) : '');
-      setBgStyle(sRes.data.bg_style ? String(sRes.data.bg_style) : 'emerald-aurora');
+      const rawSavedStyle = sRes.data.bg_style
+        ? String(sRes.data.bg_style)
+        : typeof window !== 'undefined'
+        ? localStorage.getItem('clubsync_bg_style') || 'emerald-aurora'
+        : 'emerald-aurora';
+      const decodedTheme = decodeThemeConfig(rawSavedStyle);
+      setThemeConfig(decodedTheme);
+      setSavedThemeSnapshot(decodedTheme);
+      setBgStyle(decodedTheme.backgroundId);
       setBgImageUrl(sRes.data.bg_image_url ? String(sRes.data.bg_image_url) : '');
       const dbLogo = sRes.data.logo_url ? String(sRes.data.logo_url) : '';
       setLogoUrl(dbLogo);
@@ -1443,16 +1485,26 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
         if (!error) finalLogoUrl = supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl;
       }
 
-      const chosenStyle = bgFile ? 'custom-image' : bgStyle;
+      const chosenStyle = bgFile ? 'custom-image' : themeConfig.backgroundId || bgStyle;
+      const nextCfg: ClubThemeConfig = {
+        ...themeConfig,
+        backgroundId: chosenStyle,
+      };
+      const encodedBgStyle = encodeThemeConfig(nextCfg);
+      setThemeConfig(nextCfg);
+      setSavedThemeSnapshot(nextCfg);
       setBgStyle(chosenStyle);
       setBgImageUrl(finalBgUrl);
       setLogoUrl(finalLogoUrl);
       setLogoUrlInput(finalLogoUrl);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('clubsync_bg_style', encodedBgStyle);
+      }
 
       await supabase
         .from('club_settings')
         .update({
-          bg_style: chosenStyle,
+          bg_style: encodedBgStyle,
           bg_image_url: finalBgUrl,
           logo_url: finalLogoUrl,
         })
@@ -1461,7 +1513,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
       setBgFile(null);
       setLogoFile(null);
       setShowThemeStudio(false);
-      showToast('Saved Logo & Background');
+      showToast('Saved Theme, Logo & Background');
     } finally {
       setSavingTheme(false);
     }
@@ -1488,10 +1540,15 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
     ? activeBudgets.find((b) => b.id === opsModalEvent.id) || opsModalEvent
     : null;
 
-  const isNaturallyDarkStyle = bgStyle === 'galaxy-nebula' || bgStyle === 'obsidian-carbon';
+  const isNaturallyDarkStyle =
+    themeConfig.backgroundId === 'galaxy-nebula' ||
+    themeConfig.backgroundId === 'obsidian-carbon';
   const isDarkCanvas = darkMode || isNaturallyDarkStyle;
 
   const getBackdropStyle = (): React.CSSProperties => {
+    if (isDynamicBgId(themeConfig.backgroundId)) {
+      return { backgroundColor: 'transparent' };
+    }
     if (bgStyle === 'custom-image' && bgImageUrl) {
       return {
         backgroundImage: `linear-gradient(${
@@ -1920,11 +1977,12 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
 
   return (
     <div
-      className={`min-h-screen flex flex-col transition-all duration-500 relative isolate overflow-x-hidden ${
+      className={`clubsync-theme-root min-h-screen flex flex-col transition-all duration-500 relative isolate overflow-x-hidden ${
         isDarkCanvas ? 'text-slate-100' : 'text-slate-900'
       }`}
       style={getBackdropStyle()}
     >
+      <ThemeBackgroundLayer config={themeConfig} darkMode={isDarkCanvas} />
       <style>{`
         @keyframes clubsyncNebula {
           0% { background-position: 0% 50%; }
@@ -1937,18 +1995,19 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
         }
       `}</style>
 
-      {(bgStyle === 'galaxy-nebula' || bgStyle === 'frosted-glass' || bgStyle === 'emerald-aurora') && (
-        <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-          <div
-            className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-emerald-500/15 blur-3xl"
-            style={{ animation: 'clubsyncFloat 12s ease-in-out infinite' }}
-          />
-          <div
-            className="absolute top-1/3 -right-24 w-96 h-96 rounded-full bg-cyan-500/15 blur-3xl"
-            style={{ animation: 'clubsyncFloat 15s ease-in-out infinite reverse' }}
-          />
-        </div>
-      )}
+      {!isDynamicBgId(themeConfig.backgroundId) &&
+        (bgStyle === 'galaxy-nebula' || bgStyle === 'frosted-glass' || bgStyle === 'emerald-aurora') && (
+          <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+            <div
+              className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-emerald-500/15 blur-3xl"
+              style={{ animation: 'clubsyncFloat 12s ease-in-out infinite' }}
+            />
+            <div
+              className="absolute top-1/3 -right-24 w-96 h-96 rounded-full bg-cyan-500/15 blur-3xl"
+              style={{ animation: 'clubsyncFloat 15s ease-in-out infinite reverse' }}
+            />
+          </div>
+        )}
 
       <div className="relative flex flex-col min-h-screen">
         <Navbar
@@ -1989,7 +2048,10 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           darkMode={isDarkCanvas}
           onToggleDarkMode={toggleDarkMode}
           canCustomizeTheme={isAdminOrOwner && effectivePermissions.can_manage_posters_polls}
-          onOpenThemeStudio={() => setShowThemeStudio(true)}
+          onOpenThemeStudio={() => {
+            setSavedThemeSnapshot(themeConfig);
+            setShowThemeStudio(true);
+          }}
           canManagePublicPage={isAdminOrOwner && effectivePermissions.can_manage_public_page}
           onOpenPublicPageEditor={() => setShowPublicPageEditor(true)}
           pendingClaimsCount={
@@ -2073,7 +2135,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                   <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
                     <h2 className="text-base sm:text-lg font-extrabold tracking-tight shrink-0">Activities &amp; Events</h2>
                     {hasMultipleActivityFormats && (
-                      <div className={`flex flex-wrap p-1 rounded-xl text-[11px] ${isDarkCanvas ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                      <div className={`lg-tab-pill flex flex-wrap p-1 rounded-xl text-[11px] ${isDarkCanvas ? 'bg-slate-800' : 'bg-slate-100'}`}>
                         {(
                           [
                             { id: 'ALL', label: 'All' },
@@ -2087,7 +2149,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                             type="button"
                             onClick={() => setActivityFormatFilter(f.id)}
                             className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
-                              activityFormatFilter === f.id ? 'bg-emerald-600 text-white' : 'opacity-70'
+                              activityFormatFilter === f.id ? 'lg-tab-active bg-emerald-600 text-white' : 'opacity-70'
                             }`}
                           >
                             {f.label}
@@ -2119,14 +2181,14 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                         + New Activity
                       </button>
                     )}
-                    <div className={`flex p-1 rounded-xl text-xs ${isDarkCanvas ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                    <div className={`lg-tab-pill flex p-1 rounded-xl text-xs ${isDarkCanvas ? 'bg-slate-800' : 'bg-slate-100'}`}>
                       {(['All', 'Active', 'Closed'] as const).map((t) => (
                         <button
                           type="button"
                           key={t}
                           onClick={() => setActivityTimeFilter(t)}
                           className={`px-3 py-1 rounded-lg font-bold cursor-pointer ${
-                            activityTimeFilter === t ? 'bg-emerald-600 text-white' : 'opacity-70'
+                            activityTimeFilter === t ? 'lg-tab-active bg-emerald-600 text-white' : 'opacity-70'
                           }`}
                         >
                           {t === 'Active' ? 'Upcoming' : t === 'Closed' ? 'Past' : 'All'}
@@ -2646,7 +2708,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                       <h2 className="text-base font-extrabold">Claims &amp; Pre-Claims</h2>
                     </div>
 
-                    <div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 gap-1 text-xs">
+                    <div className="lg-tab-pill inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 gap-1 text-xs">
                       <button
                         type="button"
                         onClick={() => {
@@ -2655,7 +2717,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                         }}
                         className={`px-3 py-1.5 rounded-lg font-extrabold cursor-pointer transition ${
                           claimsSubTab === 'receipts'
-                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            ? 'lg-tab-active bg-emerald-600 text-white shadow-2xs'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
@@ -2669,7 +2731,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                         }}
                         className={`px-3 py-1.5 rounded-lg font-extrabold inline-flex items-center gap-1 cursor-pointer transition ${
                           claimsSubTab === 'preclaims'
-                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            ? 'lg-tab-active bg-emerald-600 text-white shadow-2xs'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
@@ -3815,17 +3877,39 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
 
       {showThemeStudio && isAdminOrOwner && effectivePermissions.can_manage_posters_polls && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border max-w-lg w-full overflow-hidden my-8">
-            <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+          <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden my-6">
+            <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center gap-3">
               <span className="text-sm font-bold flex items-center gap-2">
                 <Palette className="w-4 h-4 text-amber-300" />
-                Logo &amp; Background Studio
+                <span>Theme, Glass &amp; Background Studio</span>
               </span>
-              <button type="button" onClick={() => setShowThemeStudio(false)} className="cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleDarkMode}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold cursor-pointer"
+                  title="Preview Light / Dark Mode live"
+                >
+                  {isDarkCanvas ? <Sun className="w-3.5 h-3.5 text-amber-300" /> : <Moon className="w-3.5 h-3.5 text-sky-300" />}
+                  <span>{isDarkCanvas ? 'Light Preview' : 'Dark Preview'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setThemeConfig(savedThemeSnapshot);
+                    setBgStyle(savedThemeSnapshot.backgroundId);
+                    setShowThemeStudio(false);
+                  }}
+                  className="p-1 rounded-lg hover:bg-white/10 cursor-pointer"
+                  aria-label="Close studio"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-            <form onSubmit={handleSaveThemeStudio} className="p-6 space-y-4 text-xs max-h-[80vh] overflow-y-auto">
+
+            <form onSubmit={handleSaveThemeStudio} className="p-6 space-y-5 text-xs max-h-[82vh] overflow-y-auto">
+              {/* 1. Club Logo Upload & URL (Unchanged Functionality) */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
                 <label className="block font-bold text-slate-800">Club Logo (JPG, PNG, WEBP or PDF)</label>
                 <div className="flex items-center gap-3">
@@ -3858,39 +3942,190 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="block font-bold text-slate-800">Background Style (10 Choices)</label>
-                {BG_PRESETS.map((preset) => (
-                  <label
-                    key={preset.id}
-                    className={`flex items-center justify-between gap-3 p-3 rounded-2xl border cursor-pointer transition ${
-                      bgStyle === preset.id ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-500/20' : 'border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="bgStyle"
-                        checked={bgStyle === preset.id}
-                        onChange={() => {
-                          setBgStyle(preset.id);
-                          if (typeof window !== 'undefined') localStorage.setItem('clubsync_bg_style', preset.id);
-                        }}
-                      />
-                      <div
-                        className="w-9 h-9 rounded-xl shadow-inner border border-black/10 shrink-0"
-                        style={{ background: preset.swatch }}
-                      />
-                      <div>
-                        <div className="font-bold text-slate-900">{preset.name}</div>
-                        <div className="text-slate-500">{preset.desc}</div>
-                      </div>
-                    </div>
+              {/* 2. Quick 1-Click Starter Theme Presets */}
+              <div className="space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="font-extrabold text-slate-900 text-xs">
+                    1-Click Starter Theme Packages
                   </label>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const resetCfg: ClubThemeConfig = {
+                        ...DEFAULT_THEME_CONFIG,
+                        backgroundId: 'emerald-aurora',
+                        surfaceMode: 'classic',
+                        mobileNavGlass: false,
+                      };
+                      setThemeConfig(resetCfg);
+                      setBgStyle('emerald-aurora');
+                      setBgFile(null);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-[11px] font-bold text-slate-600 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset to Classic Default</span>
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {STARTER_THEME_PRESETS.map((starter) => {
+                    const isActiveStarter =
+                      themeConfig.backgroundId === starter.patch.backgroundId &&
+                      themeConfig.colorPalette === starter.patch.colorPalette;
+                    return (
+                      <button
+                        key={starter.id}
+                        type="button"
+                        onClick={() => {
+                          const nextCfg: ClubThemeConfig = {
+                            ...themeConfig,
+                            ...starter.patch,
+                          };
+                          setThemeConfig(nextCfg);
+                          setBgStyle(nextCfg.backgroundId);
+                          setBgFile(null);
+                          const wantDark = starter.mode === 'dark';
+                          setDarkMode(wantDark);
+                          if (typeof window !== 'undefined') localStorage.setItem('clubsync_dark', String(wantDark));
+                        }}
+                        className={`p-2.5 rounded-2xl border text-left transition cursor-pointer flex items-center gap-2.5 ${
+                          isActiveStarter
+                            ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-500/20'
+                            : 'border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div
+                          className="w-8 h-8 rounded-xl border border-black/10 shrink-0 shadow-inner"
+                          style={{ background: starter.swatch }}
+                        />
+                        <div className="min-w-0">
+                          <div className="font-extrabold text-slate-900 truncate flex items-center gap-1">
+                            <span>{starter.name}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate">
+                            {starter.mode === 'dark' ? 'Dark' : 'Light'} · {starter.subtitle}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              {bgStyle === 'custom-image' && (
+              {/* 3. Selectable Background Gallery (Classic + React Bits + Magic UI) */}
+              <div className="space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="font-extrabold text-slate-900">
+                    Selectable Backgrounds
+                  </label>
+                  <div className="inline-flex p-0.5 rounded-xl bg-slate-100 border border-slate-200 text-[11px] font-bold">
+                    {(
+                      [
+                        { id: 'all', label: 'All' },
+                        { id: 'classic', label: 'Classic (Existing)' },
+                        { id: 'react-bits', label: 'React Bits' },
+                        { id: 'magic-ui', label: 'Magic UI' },
+                      ] as const
+                    ).map((ft) => (
+                      <button
+                        key={ft.id}
+                        type="button"
+                        onClick={() => setBgFilterTab(ft.id)}
+                        className={`px-2.5 py-1 rounded-lg cursor-pointer transition ${
+                          bgFilterTab === ft.id ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        {ft.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {(bgFilterTab === 'all' || bgFilterTab === 'react-bits' || bgFilterTab === 'magic-ui') &&
+                    DYNAMIC_BG_OPTIONS.filter(
+                      (opt) => bgFilterTab === 'all' || opt.source === bgFilterTab
+                    ).map((opt) => {
+                      const active = themeConfig.backgroundId === opt.id;
+                      return (
+                        <label
+                          key={opt.id}
+                          className={`flex items-center justify-between gap-3 p-2.5 rounded-2xl border cursor-pointer transition ${
+                            active
+                              ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-500/20'
+                              : 'border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <input
+                              type="radio"
+                              name="bgStyle"
+                              checked={active}
+                              onChange={() => {
+                                const nextCfg: ClubThemeConfig = {
+                                  ...themeConfig,
+                                  backgroundId: opt.id,
+                                  bgColors: { ...opt.defaultColors },
+                                };
+                                setThemeConfig(nextCfg);
+                                setBgStyle(opt.id);
+                              }}
+                            />
+                            <div
+                              className="w-9 h-9 rounded-xl shadow-inner border border-black/10 shrink-0"
+                              style={{ background: opt.preview }}
+                            />
+                            <div className="min-w-0">
+                              <div className="font-bold text-slate-900 truncate">{opt.name}</div>
+                              <div className="text-[11px] text-slate-500 truncate">{opt.desc}</div>
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold shrink-0">
+                            {opt.recommendedMode === 'both'
+                              ? 'Light & Dark'
+                              : opt.recommendedMode === 'dark'
+                              ? 'Best Dark'
+                              : 'Best Light'}
+                          </span>
+                        </label>
+                      );
+                    })}
+
+                  {(bgFilterTab === 'all' || bgFilterTab === 'classic') &&
+                    BG_PRESETS.map((preset) => (
+                      <label
+                        key={preset.id}
+                        className={`flex items-center justify-between gap-3 p-2.5 rounded-2xl border cursor-pointer transition ${
+                          themeConfig.backgroundId === preset.id
+                            ? 'border-emerald-600 bg-emerald-50/70 ring-2 ring-emerald-500/20'
+                            : 'border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <input
+                            type="radio"
+                            name="bgStyle"
+                            checked={themeConfig.backgroundId === preset.id}
+                            onChange={() => {
+                              setBgStyle(preset.id);
+                              setThemeConfig((prev) => ({ ...prev, backgroundId: preset.id }));
+                            }}
+                          />
+                          <div
+                            className="w-9 h-9 rounded-xl shadow-inner border border-black/10 shrink-0"
+                            style={{ background: preset.swatch }}
+                          />
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 truncate">{preset.name}</div>
+                            <div className="text-[11px] text-slate-500 truncate">{preset.desc}</div>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                </div>
+              </div>
+
+              {themeConfig.backgroundId === 'custom-image' && (
                 <div className="p-3.5 rounded-2xl bg-slate-50 border space-y-2.5">
                   <div>
                     <label className="block font-bold mb-1">Upload Wallpaper Image</label>
@@ -3914,16 +4149,300 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                 </div>
               )}
 
+              {/* 4. Dynamic Background Fine-Tuning Controls */}
+              {isDynamicBgId(themeConfig.backgroundId) && (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="font-extrabold text-slate-900">Background Color &amp; Motion Fine-Tuning</div>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {(
+                      [
+                        { key: 'primary', label: 'Primary Color' },
+                        { key: 'secondary', label: 'Secondary Color' },
+                        { key: 'accent', label: 'Glow / Accent' },
+                      ] as const
+                    ).map((c) => (
+                      <label key={c.key} className="flex items-center gap-2 p-2 rounded-xl bg-white border border-slate-200 cursor-pointer">
+                        <input
+                          type="color"
+                          value={themeConfig.bgColors[c.key]}
+                          onChange={(e) =>
+                            setThemeConfig((prev) => ({
+                              ...prev,
+                              bgColors: { ...prev.bgColors, [c.key]: e.target.value },
+                            }))
+                          }
+                          className="w-7 h-7 rounded cursor-pointer border-0 bg-transparent p-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-bold text-slate-700 truncate">{c.label}</div>
+                          <div className="text-[10px] font-mono text-slate-400">{themeConfig.bgColors[c.key]}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    <div>
+                      <div className="flex justify-between font-bold text-slate-700 mb-1">
+                        <span>Speed</span>
+                        <span className="font-mono">{themeConfig.bgSpeed.toFixed(1)}x</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1.5}
+                        step={0.1}
+                        value={themeConfig.bgSpeed}
+                        onChange={(e) =>
+                          setThemeConfig((prev) => ({ ...prev, bgSpeed: parseFloat(e.target.value) }))
+                        }
+                        className="w-full accent-emerald-600 cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between font-bold text-slate-700 mb-1">
+                        <span>Intensity</span>
+                        <span className="font-mono">{Math.round(themeConfig.bgOpacity * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0.15}
+                        max={1}
+                        step={0.05}
+                        value={themeConfig.bgOpacity}
+                        onChange={(e) =>
+                          setThemeConfig((prev) => ({ ...prev, bgOpacity: parseFloat(e.target.value) }))
+                        }
+                        className="w-full accent-emerald-600 cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between font-bold text-slate-700 mb-1">
+                        <span>Readability Veil</span>
+                        <span className="font-mono">{Math.round(themeConfig.bgScrim * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={0.65}
+                        step={0.05}
+                        value={themeConfig.bgScrim}
+                        onChange={(e) =>
+                          setThemeConfig((prev) => ({ ...prev, bgScrim: parseFloat(e.target.value) }))
+                        }
+                        className="w-full accent-emerald-600 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 5. Color Palette & Liquid Glass Controls */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="font-extrabold text-slate-900">Color Theme &amp; Surface Glass</div>
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                  {COLOR_PALETTE_OPTIONS.map((pal) => {
+                    const active = themeConfig.colorPalette === pal.id;
+                    return (
+                      <button
+                        key={pal.id}
+                        type="button"
+                        onClick={() => setThemeConfig((prev) => ({ ...prev, colorPalette: pal.id }))}
+                        className={`p-2 rounded-xl border text-center cursor-pointer transition space-y-1 ${
+                          active
+                            ? 'border-slate-900 bg-slate-900 text-white'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        <div
+                          className="w-5 h-5 rounded-full mx-auto border border-black/15"
+                          style={{
+                            backgroundColor:
+                              pal.id === 'custom' ? themeConfig.customAccent : pal.accent,
+                          }}
+                        />
+                        <div className="text-[10px] font-bold truncate">{pal.label}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {themeConfig.colorPalette === 'custom' && (
+                  <label className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 cursor-pointer">
+                    <span className="font-bold text-slate-700">Custom Theme Accent Color</span>
+                    <input
+                      type="color"
+                      value={themeConfig.customAccent}
+                      onChange={(e) =>
+                        setThemeConfig((prev) => ({ ...prev, customAccent: e.target.value }))
+                      }
+                      className="w-8 h-7 rounded cursor-pointer border-0 bg-transparent p-0"
+                    />
+                  </label>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1.5">
+                    <span className="font-bold text-slate-700 block">Navigation &amp; Card Surface</span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {(['liquid-glass', 'classic'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setThemeConfig((prev) => ({ ...prev, surfaceMode: mode }))}
+                          className={`py-1.5 px-2 rounded-lg text-[11px] font-bold cursor-pointer ${
+                            themeConfig.surfaceMode === mode
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          {mode === 'liquid-glass' ? 'Liquid Glass' : 'Classic'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-1.5">
+                    <span className="font-bold text-slate-700 block">Mobile Bottom Nav Glass</span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[true, false].map((val) => (
+                        <button
+                          key={String(val)}
+                          type="button"
+                          onClick={() => setThemeConfig((prev) => ({ ...prev, mobileNavGlass: val }))}
+                          className={`py-1.5 px-2 rounded-lg text-[11px] font-bold cursor-pointer ${
+                            themeConfig.mobileNavGlass === val
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          {val ? 'Liquid Glass' : 'Classic'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {themeConfig.surfaceMode === 'liquid-glass' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <div className="flex justify-between font-bold text-slate-700 mb-1">
+                        <span>Glass Blur</span>
+                        <span className="font-mono">{themeConfig.glassBlur}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={8}
+                        max={28}
+                        step={1}
+                        value={themeConfig.glassBlur}
+                        onChange={(e) =>
+                          setThemeConfig((prev) => ({ ...prev, glassBlur: parseInt(e.target.value, 10) }))
+                        }
+                        className="w-full accent-emerald-600 cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between font-bold text-slate-700 mb-1">
+                        <span>Glass Transparency</span>
+                        <span className="font-mono">{Math.round(themeConfig.glassOpacity * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0.45}
+                        max={0.9}
+                        step={0.05}
+                        value={themeConfig.glassOpacity}
+                        onChange={(e) =>
+                          setThemeConfig((prev) => ({ ...prev, glassOpacity: parseFloat(e.target.value) }))
+                        }
+                        className="w-full accent-emerald-600 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 6. Granular Custom Colors (Cards, Tables, Buttons, Font) */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-extrabold text-slate-900">
+                    Custom Component Colors (Cards, Tables, Buttons, Font)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setThemeConfig((prev) => ({
+                        ...prev,
+                        cardTint: '',
+                        tableHeaderTint: '',
+                        buttonColor: '',
+                        buttonTextColor: '',
+                        fontColor: '',
+                      }))
+                    }
+                    className="text-[10px] font-bold text-slate-500 hover:text-slate-900 underline cursor-pointer"
+                  >
+                    Reset Overrides
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {(
+                    [
+                      { key: 'cardTint', label: 'Card Surface Tint', fallback: '#ffffff' },
+                      { key: 'tableHeaderTint', label: 'Table Header Tint', fallback: '#f8fafc' },
+                      { key: 'buttonColor', label: 'Primary Button Color', fallback: '#059669' },
+                      { key: 'buttonTextColor', label: 'Button Text Color', fallback: '#ffffff' },
+                      { key: 'fontColor', label: 'Custom Font Color', fallback: '#0f172a' },
+                    ] as const
+                  ).map((item) => {
+                    const currentVal = themeConfig[item.key];
+                    return (
+                      <div key={item.key} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white border border-slate-200">
+                        <label className="flex items-center gap-2 cursor-pointer min-w-0">
+                          <input
+                            type="color"
+                            value={currentVal || item.fallback}
+                            onChange={(e) =>
+                              setThemeConfig((prev) => ({ ...prev, [item.key]: e.target.value }))
+                            }
+                            className="w-6 h-6 rounded cursor-pointer border-0 bg-transparent p-0 shrink-0"
+                          />
+                          <span className="text-[11px] font-bold text-slate-700 truncate">{item.label}</span>
+                        </label>
+                        {currentVal ? (
+                          <button
+                            type="button"
+                            onClick={() => setThemeConfig((prev) => ({ ...prev, [item.key]: '' }))}
+                            className="text-[10px] font-bold text-rose-600 hover:underline shrink-0 cursor-pointer"
+                          >
+                            Auto
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-slate-400 shrink-0">Auto</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2 border-t">
-                <button type="button" onClick={() => setShowThemeStudio(false)} className="px-4 py-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setThemeConfig(savedThemeSnapshot);
+                    setBgStyle(savedThemeSnapshot.backgroundId);
+                    setShowThemeStudio(false);
+                  }}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
+                >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={savingTheme}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer disabled:opacity-60"
                 >
-                  {savingTheme ? 'Saving...' : 'Save'}
+                  {savingTheme ? 'Saving...' : 'Save Theme'}
                 </button>
               </div>
             </form>
@@ -4218,6 +4737,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
             : 0
         }
         darkMode={isDarkCanvas}
+        liquidGlass={themeConfig.surfaceMode === 'liquid-glass' && themeConfig.mobileNavGlass}
       />
       {renderPasswordRecoveryModal()}
     </div>

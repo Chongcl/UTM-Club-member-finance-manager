@@ -909,12 +909,12 @@ export default function EventOperationsModal({
                 <span>Excel Report</span>
               </button>
             )}
-            <div className="flex flex-wrap bg-slate-800 p-1 rounded-xl text-xs">
+            <div className="lg-tab-pill flex flex-wrap bg-slate-800 p-1 rounded-xl text-xs">
               {hasAccessTab && (
                 <button
                   type="button"
                   onClick={() => selectTab('pass')}
-                  className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'pass' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}
+                  className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'pass' ? 'lg-tab-active bg-emerald-600 text-white' : 'text-slate-300'}`}
                 >
                   {hasEntryPass && !cfg.access_link_url
                     ? 'Entry Pass'
@@ -924,10 +924,10 @@ export default function EventOperationsModal({
                 </button>
               )}
               {showVenueQrTab && (
-                <button type="button" onClick={() => selectTab('qr')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'qr' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Venue QR ({qrCheckedInList.length + guestCheckedIn.length})</button>
+                <button type="button" onClick={() => selectTab('qr')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'qr' ? 'lg-tab-active bg-emerald-600 text-white' : 'text-slate-300'}`}>Venue QR ({qrCheckedInList.length + guestCheckedIn.length})</button>
               )}
               {(requiresFee || hasGuestFee || isAdmin || cfg.format === 'fee_collection' || cfg.format === 'self_paced') && (
-                <button type="button" onClick={() => selectTab('fee')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer inline-flex items-center gap-1.5 ${tab === 'fee' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>
+                <button type="button" onClick={() => selectTab('fee')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer inline-flex items-center gap-1.5 ${tab === 'fee' ? 'lg-tab-active bg-emerald-600 text-white' : 'text-slate-300'}`}>
                   <span>{requiresFee ? `Fee (${feeDisplayLabel})` : 'Fee & Register'}</span>
                   {isAdmin && permissions.can_manage_claims_fees && (pendingFeePayments.length + pendingGuestFees.length) > 0 && (
                     <span className="px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-amber-400 text-slate-950">
@@ -937,7 +937,7 @@ export default function EventOperationsModal({
                 </button>
               )}
               {showCarpoolTab && (
-                <button type="button" onClick={() => selectTab('transport')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'transport' ? 'bg-emerald-600 text-white' : 'text-slate-300'}`}>Carpool ({passengers.length}P / {eventDrivers.length}D)</button>
+                <button type="button" onClick={() => selectTab('transport')} className={`px-3 py-1.5 rounded-lg font-bold cursor-pointer ${tab === 'transport' ? 'lg-tab-active bg-emerald-600 text-white' : 'text-slate-300'}`}>Carpool ({passengers.length}P / {eventDrivers.length}D)</button>
               )}
             </div>
           </div>

@@ -1351,7 +1351,7 @@ export default function FloatingChatDock({
           </div>
 
           {/* 4 Tabs: Public | DMs | People | Help Desk */}
-          <div className="grid grid-cols-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-[11px] font-bold shrink-0">
+          <div className="lg-tab-pill grid grid-cols-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-[11px] font-bold shrink-0">
             <button
               type="button"
               onClick={() => {

@@ -777,12 +777,12 @@ export default function EquipmentSection({
       </div>
 
       {/* View switch */}
-      <div className="inline-flex bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl p-1 rounded-2xl border border-slate-200/80 dark:border-white/10 text-xs font-bold">
+      <div className="lg-tab-pill inline-flex bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl p-1 rounded-2xl border border-slate-200/80 dark:border-white/10 text-xs font-bold">
         <button
           type="button"
           onClick={() => setView('inventory')}
           className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl cursor-pointer transition ${
-            view === 'inventory' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+            view === 'inventory' ? 'lg-tab-active bg-emerald-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
           <Package className="w-3.5 h-3.5" />
@@ -792,7 +792,7 @@ export default function EquipmentSection({
           type="button"
           onClick={() => setView('calendar')}
           className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl cursor-pointer transition ${
-            view === 'calendar' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+            view === 'calendar' ? 'lg-tab-active bg-emerald-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
           <CalendarDays className="w-3.5 h-3.5" />
