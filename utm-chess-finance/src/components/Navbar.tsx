@@ -367,6 +367,17 @@ export default function Navbar({
 
             {notificationBell}
 
+            <button
+              type="button"
+              onClick={onOpenNewClaim}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
+              title="Submit Claim"
+              aria-label="Submit Claim"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Submit Claim</span>
+            </button>
+
             {/* Account / Profile & Sign Out Popover */}
             <div className="relative" ref={accountMenuRef}>
               <button
