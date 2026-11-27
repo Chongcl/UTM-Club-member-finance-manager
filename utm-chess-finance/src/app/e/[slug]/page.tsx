@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
@@ -17,6 +16,7 @@ import {
   getFormatBadgeMeta,
 } from '@/lib/activityConfig';
 import NetworkStatusBanner from '@/components/NetworkStatusBanner';
+import ModalShell from '@/components/ui/ModalShell';
 import {
   ArrowLeft,
   Calendar,
@@ -648,20 +648,20 @@ export default function PublicEventPage() {
       {/* Main 2-Column Calm Layout */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left/Top Column: Event Info */}
-        <section className="lg:col-span-5 bg-white rounded-3xl border border-emerald-100 shadow-sm p-6 space-y-5">
+        <section className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-extrabold">
+              <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
                 {eventData.category}
               </span>
               {cfg.format !== 'physical' && (
-                <span className={`px-2.5 py-1 rounded-full border text-[11px] font-extrabold ${formatBadge.badgeClass}`}>
+                <span className={`px-2.5 py-1 rounded-full border text-[11px] font-bold ${formatBadge.badgeClass}`}>
                   {formatBadge.label}
                 </span>
               )}
             </div>
             <span
-              className={`px-3 py-1 rounded-full text-xs font-extrabold ${
+              className={`px-3 py-1 rounded-full text-xs font-bold tabular-nums ${
                 isPaid
                   ? 'bg-amber-50 text-amber-900 border border-amber-200'
                   : 'bg-teal-50 text-teal-800 border border-teal-200'
@@ -714,7 +714,7 @@ export default function PublicEventPage() {
             <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-2 text-xs">
               <div className="flex items-center justify-between font-bold">
                 <span className="text-emerald-950">Guest Capacity</span>
-                <span className={isFull ? 'text-rose-700' : 'text-emerald-800'}>
+                <span className={`tabular-nums ${isFull ? 'text-rose-700' : 'text-emerald-800'}`}>
                   {isFull ? '0 spots left (Full)' : `${spotsLeft} of ${cap} spots remaining`}
                 </span>
               </div>
@@ -731,14 +731,14 @@ export default function PublicEventPage() {
         </section>
 
         {/* Right/Main Card: Register | Check My Pass */}
-        <section className="lg:col-span-7 bg-white rounded-3xl border border-emerald-100 shadow-lg overflow-hidden">
+        <section className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
           <div className="grid grid-cols-2 bg-slate-100 p-1.5 border-b border-slate-200 text-xs">
             <button
               type="button"
               onClick={() => setActiveTab('register')}
-              className={`py-2.5 rounded-2xl font-extrabold transition cursor-pointer ${
+              className={`py-2.5 rounded-xl font-bold transition cursor-pointer ${
                 activeTab === 'register'
-                  ? 'bg-emerald-600 text-white shadow-xs'
+                  ? 'bg-white text-slate-900 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -747,9 +747,9 @@ export default function PublicEventPage() {
             <button
               type="button"
               onClick={() => setActiveTab('check')}
-              className={`py-2.5 rounded-2xl font-extrabold transition cursor-pointer ${
+              className={`py-2.5 rounded-xl font-bold transition cursor-pointer ${
                 activeTab === 'check'
-                  ? 'bg-emerald-600 text-white shadow-xs'
+                  ? 'bg-white text-slate-900 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -1353,151 +1353,145 @@ export default function PublicEventPage() {
       </main>
 
       {/* Post-Registration Pop-Out Confirmation Notice Modal */}
-      {confirmationModalOpen &&
-        submissionResult?.ok &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            onClick={() => setConfirmationModalOpen(false)}
-            className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white text-slate-900 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-emerald-200"
-            >
-              <div className="bg-gradient-to-r from-emerald-800 to-teal-700 text-white px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-200" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-extrabold">
-                      {submissionResult.pass_approved || submissionResult.payment_status === 'Free'
-                        ? 'Registration Confirmed!'
-                        : 'Registration Submitted!'}
-                    </h3>
-                    <p className="text-[11px] text-emerald-100">{clubName}</p>
+      <ModalShell
+        open={Boolean(confirmationModalOpen && submissionResult?.ok)}
+        onClose={() => setConfirmationModalOpen(false)}
+        zIndexClass="z-[70]"
+        maxWidthClass="max-w-md"
+        ariaLabel="Registration confirmation"
+      >
+        {submissionResult?.ok && (
+          <div className="bg-white text-slate-900 rounded-2xl w-full overflow-hidden shadow-2xl border border-emerald-200">
+            <div className="bg-gradient-to-r from-emerald-800 to-teal-700 text-white px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-200" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold">
+                    {submissionResult.pass_approved || submissionResult.payment_status === 'Free'
+                      ? 'Registration Confirmed!'
+                      : 'Registration Submitted!'}
+                  </h3>
+                  <p className="text-[11px] text-emerald-100">{clubName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmationModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-white/15 cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="font-extrabold text-sm text-slate-900">{guestName}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {email}
+                    {institution ? ` · ${institution}` : ''}
                   </div>
                 </div>
+                <span
+                  className={`px-2.5 py-1 rounded-full font-extrabold text-[10px] ${
+                    submissionResult.pass_approved || submissionResult.payment_status === 'Free'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : 'bg-amber-100 text-amber-900 border border-amber-200'
+                  }`}
+                >
+                  {submissionResult.pass_approved || submissionResult.payment_status === 'Free'
+                    ? 'Confirmed ✓'
+                    : 'Pending Payment Verification'}
+                </span>
+              </div>
+
+              {submissionResult.lookup_code && (
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border-2 border-emerald-200 flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase text-emerald-700 block">
+                      Your Lookup Code
+                    </span>
+                    <span className="text-lg font-mono font-extrabold text-emerald-950 tracking-wider tabular-nums">
+                      {submissionResult.lookup_code}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleCopy(submissionResult.lookup_code || '', 'code')
+                    }
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedCode ? 'Copied!' : 'Copy'}</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  Event Details
+                </div>
+                <div className="text-sm font-extrabold text-slate-900">
+                  {eventData.event_name}
+                </div>
+                <div className="text-[11px] text-slate-600 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>{scheduleLabel}</span>
+                  </div>
+                  {eventData.event_time && (
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>{eventData.event_time}</span>
+                    </div>
+                  )}
+                  {eventData.location &&
+                    cfg.format !== 'self_paced' &&
+                    cfg.format !== 'fee_collection' && (
+                      <div className="flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>{eventData.location}</span>
+                      </div>
+                    )}
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-600 leading-relaxed bg-emerald-50/50 border border-emerald-100 rounded-xl p-3">
+                You can check your status anytime using your{' '}
+                <strong>Full Name, Email (Gmail), Matric / ID, or Lookup Code</strong> under{' '}
+                <strong>Check My Status / Pass</strong>.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmationModalOpen(false);
+                    setActiveTab('check');
+                    if (submissionResult.lookup_code) {
+                      void runPassLookup(submissionResult.lookup_code);
+                    }
+                  }}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold cursor-pointer text-center"
+                >
+                  Check My Status Now →
+                </button>
                 <button
                   type="button"
                   onClick={() => setConfirmationModalOpen(false)}
-                  className="p-1 rounded-lg hover:bg-white/15 cursor-pointer"
-                  aria-label="Close"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer"
                 >
-                  <X className="w-5 h-5" />
+                  Close
                 </button>
               </div>
-
-              <div className="p-6 space-y-4 text-xs">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="font-extrabold text-sm text-slate-900">{guestName}</div>
-                    <div className="text-[11px] text-slate-500">
-                      {email}
-                      {institution ? ` · ${institution}` : ''}
-                    </div>
-                  </div>
-                  <span
-                    className={`px-2.5 py-1 rounded-full font-extrabold text-[10px] ${
-                      submissionResult.pass_approved || submissionResult.payment_status === 'Free'
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        : 'bg-amber-100 text-amber-900 border border-amber-200'
-                    }`}
-                  >
-                    {submissionResult.pass_approved || submissionResult.payment_status === 'Free'
-                      ? 'Confirmed ✓'
-                      : 'Pending Payment Verification'}
-                  </span>
-                </div>
-
-                {submissionResult.lookup_code && (
-                  <div className="p-3.5 rounded-2xl bg-emerald-50 border-2 border-emerald-200 flex items-center justify-between gap-3">
-                    <div>
-                      <span className="text-[10px] font-extrabold uppercase text-emerald-700 block">
-                        Your Lookup Code
-                      </span>
-                      <span className="text-lg font-mono font-extrabold text-emerald-950 tracking-wider">
-                        {submissionResult.lookup_code}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        void handleCopy(submissionResult.lookup_code || '', 'code')
-                      }
-                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>{copiedCode ? 'Copied!' : 'Copy'}</span>
-                    </button>
-                  </div>
-                )}
-
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                    Event Details
-                  </div>
-                  <div className="text-sm font-extrabold text-slate-900">
-                    {eventData.event_name}
-                  </div>
-                  <div className="text-[11px] text-slate-600 space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>{scheduleLabel}</span>
-                    </div>
-                    {eventData.event_time && (
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>{eventData.event_time}</span>
-                      </div>
-                    )}
-                    {eventData.location &&
-                      cfg.format !== 'self_paced' &&
-                      cfg.format !== 'fee_collection' && (
-                        <div className="flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                          <span>{eventData.location}</span>
-                        </div>
-                      )}
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-slate-600 leading-relaxed bg-emerald-50/50 border border-emerald-100 rounded-xl p-3">
-                  You can check your status anytime using your{' '}
-                  <strong>Full Name, Email (Gmail), Matric / ID, or Lookup Code</strong> under{' '}
-                  <strong>Check My Status / Pass</strong>.
-                </p>
-
-                <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConfirmationModalOpen(false);
-                      setActiveTab('check');
-                      if (submissionResult.lookup_code) {
-                        void runPassLookup(submissionResult.lookup_code);
-                      }
-                    }}
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold cursor-pointer text-center"
-                  >
-                    Check My Status Now →
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmationModalOpen(false)}
-                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
             </div>
-          </div>,
-          document.body
+          </div>
         )}
+      </ModalShell>
     </div>
   );
 }

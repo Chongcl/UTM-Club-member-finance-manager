@@ -10,14 +10,14 @@ interface SkeletonProps {
 export function DashboardSkeleton({ darkMode = false }: SkeletonProps) {
   const cardCls = darkMode
     ? 'bg-slate-900/75 border-white/10'
-    : 'bg-white/90 border-slate-200/80';
-  const pulseCls = darkMode ? 'bg-slate-700/70' : 'bg-slate-200/80';
-  const pulseSoftCls = darkMode ? 'bg-slate-800/70' : 'bg-slate-100';
+    : 'bg-white/95 border-slate-200/80';
+  const pulseCls = darkMode ? 'bg-slate-800' : 'bg-slate-200/75';
+  const pulseSoftCls = darkMode ? 'bg-slate-800/60' : 'bg-slate-100';
 
   return (
     <div className="space-y-6" aria-label="Loading dashboard">
       {/* Hero Hub Skeleton */}
-      <div className={`rounded-3xl border p-6 shadow-xs space-y-4 ${cardCls}`}>
+      <div className={`rounded-2xl border p-6 shadow-xs space-y-4 ${cardCls}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className={`h-5 w-44 rounded-lg animate-pulse ${pulseCls}`} />
           <div className={`h-8 w-28 rounded-xl animate-pulse ${pulseSoftCls}`} />
@@ -96,12 +96,12 @@ export function LedgerSkeleton({ darkMode = false }: SkeletonProps) {
 export function ClaimsSkeleton({ darkMode = false }: SkeletonProps) {
   const cardCls = darkMode
     ? 'bg-slate-900/80 border-white/10'
-    : 'bg-white/95 border-emerald-100';
-  const pulseCls = darkMode ? 'bg-slate-700/70' : 'bg-slate-200';
-  const pulseSoftCls = darkMode ? 'bg-slate-800/70' : 'bg-slate-100';
+    : 'bg-white/95 border-slate-200/80';
+  const pulseCls = darkMode ? 'bg-slate-800' : 'bg-slate-200/80';
+  const pulseSoftCls = darkMode ? 'bg-slate-800/60' : 'bg-slate-100';
 
   return (
-    <div className={`rounded-3xl border shadow-xs overflow-hidden p-5 space-y-4 ${cardCls}`} aria-label="Loading claims">
+    <div className={`rounded-2xl border shadow-xs overflow-hidden p-5 space-y-4 ${cardCls}`} aria-label="Loading claims">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className={`h-6 w-44 rounded-lg animate-pulse ${pulseCls}`} />
         <div className="flex gap-2">

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
+import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -24,12 +25,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{if(localStorage.getItem('clubsync_dark')==='true'){document.documentElement.classList.add('dark');}}catch(e){}})();`,
+          }}
+        />
+        <style type="text/tailwindcss">{`@custom-variant dark (&:where(.dark, .dark *));`}</style>
         <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" async></script>
       </head>
       <body
-        className={`${inter.className} m-0 p-0 bg-[#f4fbf7] text-slate-800 antialiased min-h-screen selection:bg-emerald-600 selection:text-white`}
+        className={`${inter.className} m-0 p-0 bg-[var(--bg-canvas)] text-[var(--text-primary)] antialiased min-h-screen selection:bg-emerald-600 selection:text-white`}
       >
         {children}
       </body>

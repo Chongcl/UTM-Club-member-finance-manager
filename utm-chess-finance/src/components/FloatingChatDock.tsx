@@ -26,9 +26,9 @@ import {
   Trash2,
   Hash,
   User,
-  Sparkles,
+  HelpCircle,
   RotateCcw,
-  Bot,
+  LifeBuoy,
   Sliders,
   Copy,
   Check,
@@ -963,7 +963,7 @@ export default function FloatingChatDock({
         <button
           type="button"
           onClick={() => onToggleOpen(true)}
-          className="fixed bottom-20 right-4 md:bottom-5 md:right-5 z-40 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-xl border border-emerald-400/50 cursor-pointer transition hover:scale-105"
+          className="fixed bottom-[84px] right-4 md:bottom-5 md:right-5 z-40 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg border border-emerald-400/40 cursor-pointer transition hover:scale-[1.03]"
           aria-label="Open Club Chat"
           title="Club Chat"
         >
@@ -1228,7 +1228,7 @@ export default function FloatingChatDock({
   );
 
   return (
-    <div className="fixed bottom-20 right-3 md:bottom-5 md:right-5 z-40 w-[370px] max-w-[calc(100vw-1.5rem)] h-[520px] sm:h-[540px] max-h-[75vh] sm:max-h-[82vh] rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden bg-white text-slate-900">
+    <div className="fixed bottom-[84px] right-3 md:bottom-5 md:right-5 z-40 w-[370px] max-w-[calc(100vw-1.5rem)] h-[520px] sm:h-[540px] max-h-[calc(100dvh-110px)] sm:max-h-[82vh] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 flex flex-col overflow-hidden bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
       {inDmConversation && activeTarget ? (
         <>
           {/* DM Conversation Header (NO raw phone numbers or PII) */}
@@ -1336,7 +1336,7 @@ export default function FloatingChatDock({
                   ? 'Direct Messages'
                   : viewTab === 'people'
                   ? 'Member Directory'
-                  : 'Portal Bot'}
+                  : 'Help Desk'}
               </span>
             </div>
             <button
@@ -1350,8 +1350,8 @@ export default function FloatingChatDock({
             </button>
           </div>
 
-          {/* 4 Tabs: Public | DMs | People | Portal Bot */}
-          <div className="grid grid-cols-4 border-b border-slate-200 bg-slate-50 text-[11px] font-bold shrink-0">
+          {/* 4 Tabs: Public | DMs | People | Help Desk */}
+          <div className="grid grid-cols-4 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950 text-[11px] font-bold shrink-0">
             <button
               type="button"
               onClick={() => {
@@ -1361,8 +1361,8 @@ export default function FloatingChatDock({
               }}
               className={`py-2.5 border-b-2 cursor-pointer transition inline-flex items-center justify-center gap-1 ${
                 viewTab === 'public'
-                  ? 'border-emerald-600 text-emerald-800 bg-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'border-emerald-600 text-emerald-800 dark:text-emerald-300 bg-white dark:bg-slate-900'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               <Hash className="w-3.5 h-3.5 shrink-0" />
@@ -1379,13 +1379,13 @@ export default function FloatingChatDock({
               }}
               className={`py-2.5 border-b-2 cursor-pointer transition inline-flex items-center justify-center gap-1 ${
                 viewTab === 'dms'
-                  ? 'border-emerald-600 text-emerald-800 bg-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'border-emerald-600 text-emerald-800 dark:text-emerald-300 bg-white dark:bg-slate-900'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
-              <span>DMs ({rooms.length})</span>
+              <span className="tabular-nums">DMs ({rooms.length})</span>
               {unreadCount > 0 && (
-                <span className="min-w-[16px] h-4 px-1 rounded-full bg-rose-600 text-white text-[9px] font-extrabold flex items-center justify-center">
+                <span className="min-w-[16px] h-4 px-1 rounded-full bg-rose-600 text-white text-[9px] font-extrabold flex items-center justify-center tabular-nums">
                   {unreadCount}
                 </span>
               )}
@@ -1398,12 +1398,12 @@ export default function FloatingChatDock({
               }}
               className={`py-2.5 border-b-2 cursor-pointer transition inline-flex items-center justify-center gap-1 ${
                 viewTab === 'people'
-                  ? 'border-emerald-600 text-emerald-800 bg-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'border-emerald-600 text-emerald-800 dark:text-emerald-300 bg-white dark:bg-slate-900'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               <Users className="w-3.5 h-3.5 shrink-0" />
-              <span>People ({Math.max(0, directory.length - 1)})</span>
+              <span className="tabular-nums">People ({Math.max(0, directory.length - 1)})</span>
             </button>
             <button
               type="button"
@@ -1413,31 +1413,31 @@ export default function FloatingChatDock({
               }}
               className={`py-2.5 border-b-2 cursor-pointer transition inline-flex items-center justify-center gap-1 ${
                 viewTab === 'bot'
-                  ? 'border-emerald-600 text-emerald-800 bg-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'border-emerald-600 text-emerald-800 dark:text-emerald-300 bg-white dark:bg-slate-900'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
-              <Bot className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>Portal Bot</span>
+              <LifeBuoy className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>Help Desk</span>
             </button>
           </div>
 
           {viewTab === 'public' ? (
             renderMessageFeed(true)
           ) : viewTab === 'bot' ? (
-            <div className="flex-1 flex flex-col min-h-0 bg-slate-50">
-              {/* Portal Bot Greeting & Admin Controls */}
-              <div className="px-3 py-2 border-b border-slate-200 bg-white flex items-center justify-between gap-2 text-[11px] shrink-0">
+            <div className="flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-950/70">
+              {/* Help Desk Greeting & Admin Controls */}
+              <div className="px-3 py-2 border-b border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 flex items-center justify-between gap-2 text-[11px] shrink-0">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                    <Bot className="w-3.5 h-3.5" />
+                  <span className="w-6 h-6 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                    <LifeBuoy className="w-3.5 h-3.5" />
                   </span>
                   <div className="min-w-0">
-                    <div className="font-extrabold text-slate-900 truncate">
-                      ClubSync Portal Assistant
+                    <div className="font-bold text-slate-900 dark:text-white truncate">
+                      ClubSync Help Desk
                     </div>
-                    <div className="text-[10px] text-emerald-700 font-semibold truncate">
-                      Live Data &amp; Instant Help
+                    <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold truncate">
+                      Live Portal Answers &amp; Guides
                     </div>
                   </div>
                 </div>
@@ -1446,18 +1446,18 @@ export default function FloatingChatDock({
                     <button
                       type="button"
                       onClick={() => setTrainerOpen(true)}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold cursor-pointer"
-                      title="Manage custom Q&A rules & unanswered queries"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-500 text-white text-[10px] font-bold cursor-pointer"
+                      title="Manage custom FAQ & Q&A rules"
                     >
-                      <Sliders className="w-3 h-3 text-emerald-300" />
-                      <span>Train Bot</span>
+                      <Sliders className="w-3 h-3 text-emerald-300 dark:text-white" />
+                      <span>Manage FAQ</span>
                     </button>
                   )}
                   {botMessages.length > 0 && (
                     <button
                       type="button"
                       onClick={() => setBotMessages([])}
-                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 dark:border-white/15 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                     >
                       <RotateCcw className="w-3 h-3" />
                       <span>Clear</span>
@@ -1469,19 +1469,19 @@ export default function FloatingChatDock({
               <div ref={botScrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 text-xs">
                 {botMessages.length === 0 ? (
                   <div className="space-y-3 py-1">
-                    <div className="p-3.5 rounded-2xl bg-white border border-emerald-200 shadow-2xs space-y-1.5">
-                      <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-500/30 shadow-2xs space-y-1.5">
+                      <p className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-1.5">
+                        <HelpCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                         <span>Hi {profile.full_name.split(' ')[0]}! Instant ClubSync Help</span>
                       </p>
-                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
                         {chatbotPermissions.canViewFinance
                           ? 'Tap a topic below or ask for live Bank/Cash balances, event budgets, pending claims, or monthly finance summaries.'
                           : 'Tap a quick topic or ask about upcoming events, your own claims & loans, equipment stock, or claim steps.'}
                       </p>
                     </div>
                     <div className="space-y-1.5">
-                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-1">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1">
                         Quick Topics
                       </p>
                       <div className="flex flex-wrap gap-1.5">
@@ -1490,7 +1490,7 @@ export default function FloatingChatDock({
                             key={chip}
                             type="button"
                             onClick={() => handleSendBotQuery(chip)}
-                            className="text-left px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 text-slate-800 font-bold text-[11px] transition cursor-pointer shadow-2xs"
+                            className="text-left px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-500/15 border border-slate-200 dark:border-white/10 hover:border-emerald-300 text-slate-800 dark:text-slate-100 font-semibold text-[11px] transition cursor-pointer shadow-2xs"
                           >
                             {chip}
                           </button>
@@ -1610,7 +1610,7 @@ export default function FloatingChatDock({
                   type="submit"
                   disabled={!botDraft.trim()}
                   className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white cursor-pointer shrink-0"
-                  aria-label="Send question to Portal Bot"
+                  aria-label="Send question to Help Desk"
                 >
                   <Send className="w-4 h-4" />
                 </button>

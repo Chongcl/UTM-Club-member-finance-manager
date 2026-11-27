@@ -111,7 +111,7 @@ import {
   History,
   Search,
   CalendarClock,
-  Bot,
+  LifeBuoy,
 } from 'lucide-react';
 
 interface ConfirmDialogState {
@@ -332,6 +332,16 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
       return next;
     });
   };
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const isNaturallyDark = bgStyle === 'galaxy-nebula' || bgStyle === 'obsidian-carbon';
+    const shouldUseDark = Boolean(profile) && (darkMode || isNaturallyDark);
+    document.documentElement.classList.toggle('dark', shouldUseDark);
+    return () => {
+      document.documentElement.classList.remove('dark');
+    };
+  }, [profile, darkMode, bgStyle]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -3210,8 +3220,8 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                       onClick={() => setChatbotTrainerSignal((n) => n + 1)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer"
                     >
-                      <Bot className="w-3.5 h-3.5 text-emerald-300" />
-                      <span>Train Portal Bot</span>
+                      <LifeBuoy className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>Help Desk &amp; FAQ</span>
                     </button>
                     <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-900 border">
                       {isOwner ? 'Owner' : 'Admin'}
@@ -4161,7 +4171,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           setIsChatOpen(true);
         }}
       />
-      <ErrorBoundary sectionName="Club Chat & Portal Bot">
+      <ErrorBoundary sectionName="Club Chat & Help Desk">
         <FloatingChatDock
           profile={profile}
           departments={departments}

@@ -24,6 +24,8 @@ import { waLink } from '@/lib/whatsapp';
 import type { MemberLookupHint } from '@/lib/memberLookup';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
 import { LedgerSkeleton } from './LoadingSkeletons';
+import ConfirmDialog from './ui/ConfirmDialog';
+import ModalShell from './ui/ModalShell';
 import {
   Search,
   Plus,
@@ -526,6 +528,15 @@ export default function LedgerSection({
   // Unpaid fees state
   const [unpaidEventFilter, setUnpaidEventFilter] = useState('ALL');
   const [markingPaidKey, setMarkingPaidKey] = useState<string | null>(null);
+
+  // Confirm delete dialog
+  const [confirmState, setConfirmState] = useState<{
+    title: string;
+    description: string;
+    confirmLabel: string;
+    onConfirm: () => Promise<void>;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   // Budget Plan state
   const [plannerBudgetId, setPlannerBudgetId] = useState<string>(budgets[0]?.id || 'ALL');
@@ -1317,31 +1328,38 @@ export default function LedgerSection({
   };
 
   // --- Soft Delete Row ---
-  const handleDeleteRow = async (row: UnifiedFinanceRow) => {
+  const handleDeleteRow = (row: UnifiedFinanceRow) => {
     if (!canEdit) return;
-    if (!window.confirm(`Remove "${row.title}" from the sheet? (Preserved in Supabase)`)) return;
-    const table =
-      row.source === 'CLAIM'
-        ? 'claims'
-        : row.source === 'FEE'
-        ? 'activity_fee_payments'
-        : row.source === 'GUEST_FEE'
-        ? 'public_guest_registrations'
-        : 'ledger_entries';
-    await softDeleteRecord({
-      actor: profile,
-      category:
-        row.source === 'CLAIM'
-          ? 'Claims'
-          : row.source === 'FEE' || row.source === 'GUEST_FEE'
-          ? 'Fees'
-          : 'Finance',
-      table,
-      recordId: row.recordId,
-      recordTitle: row.title,
-      extraSummary: `${row.entryType} RM ${row.amount.toFixed(2)}`,
+    setConfirmState({
+      title: `Remove "${row.title}" from sheet?`,
+      description:
+        'This hides the transaction from the active ledger view while preserving its record in Supabase audit history.',
+      confirmLabel: 'Remove Row',
+      onConfirm: async () => {
+        const table =
+          row.source === 'CLAIM'
+            ? 'claims'
+            : row.source === 'FEE'
+            ? 'activity_fee_payments'
+            : row.source === 'GUEST_FEE'
+            ? 'public_guest_registrations'
+            : 'ledger_entries';
+        await softDeleteRecord({
+          actor: profile,
+          category:
+            row.source === 'CLAIM'
+              ? 'Claims'
+              : row.source === 'FEE' || row.source === 'GUEST_FEE'
+              ? 'Fees'
+              : 'Finance',
+          table,
+          recordId: row.recordId,
+          recordTitle: row.title,
+          extraSummary: `${row.entryType} RM ${row.amount.toFixed(2)}`,
+        });
+        onRefresh(`Removed "${row.title}" from web view`);
+      },
     });
-    onRefresh(`Removed "${row.title}" from web view`);
   };
 
   // --- Import .xlsx / .csv File ---
@@ -1658,17 +1676,23 @@ export default function LedgerSection({
     onRefresh('Updated Budget Plan line');
   };
 
-  const handleDeletePlanItem = async (row: BudgetPlanItem) => {
+  const handleDeletePlanItem = (row: BudgetPlanItem) => {
     if (!canEdit) return;
-    if (!window.confirm(`Remove "${row.item}" from Budget Plan?`)) return;
-    await supabase
-      .from('budget_plan_items')
-      .update({
-        deleted_at: new Date().toISOString(),
-        deleted_by: `${profile.full_name} (${profile.matric_no})`,
-      })
-      .eq('id', row.id);
-    onRefresh('Removed Budget Plan line');
+    setConfirmState({
+      title: `Remove "${row.item}" from Budget Plan?`,
+      description: 'This line item will be removed from the planner summary.',
+      confirmLabel: 'Remove Item',
+      onConfirm: async () => {
+        await supabase
+          .from('budget_plan_items')
+          .update({
+            deleted_at: new Date().toISOString(),
+            deleted_by: `${profile.full_name} (${profile.matric_no})`,
+          })
+          .eq('id', row.id);
+        onRefresh('Removed Budget Plan line');
+      },
+    });
   };
 
   if (loading) {
@@ -1676,22 +1700,22 @@ export default function LedgerSection({
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden text-slate-900">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden text-slate-900 dark:text-slate-100">
       {/* ===================== TOP SUMMARY STRIP (4 CALM BLOCKS) ===================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 border-b border-slate-200 bg-white">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-white/10 border-b border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900">
         {/* 1. Current Club Savings */}
         <div className="p-5 space-y-1">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Current Club Savings
           </div>
-          <div className="text-2xl font-extrabold font-mono text-slate-900">
+          <div className="text-2xl font-extrabold font-mono tabular-nums text-slate-900 dark:text-white">
             {mathSummary.totalSavings < 0 ? '-' : ''}RM {formatRM(mathSummary.totalSavings)}
           </div>
-          <div className="text-xs text-slate-500 font-medium">
+          <div className="text-xs text-slate-500 dark:text-slate-400 font-medium tabular-nums">
             Bank RM {formatRM(mathSummary.currentBank)} · Cash RM {formatRM(mathSummary.currentCash)}
           </div>
           {reservedPreClaimsTotal > 0 && (
-            <div className="text-[11px] text-amber-700 font-semibold pt-0.5">
+            <div className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold pt-0.5 tabular-nums">
               Reserved (Pre-Claims): RM {formatRM(reservedPreClaimsTotal)} · Safe-to-Spend:{' '}
               {mathSummary.totalSavings - reservedPreClaimsTotal < 0 ? '-' : ''}RM{' '}
               {formatRM(mathSummary.totalSavings - reservedPreClaimsTotal)}
@@ -1702,13 +1726,13 @@ export default function LedgerSection({
         {/* 2. Starting Savings (Initial Balance) */}
         <div className="p-5 flex items-start justify-between gap-3">
           <div className="space-y-1">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               Starting Savings
             </div>
-            <div className="text-xl font-extrabold font-mono text-slate-800">
+            <div className="text-xl font-extrabold font-mono tabular-nums text-slate-800 dark:text-slate-100">
               RM {formatRM(openingTotal)}
             </div>
-            <div className="text-[11px] text-slate-500">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
               {openingTotal > 0 ? `Since ${openingDate}` : 'Not set yet'}
             </div>
           </div>
@@ -1719,7 +1743,7 @@ export default function LedgerSection({
               className={
                 openingTotal === 0
                   ? 'px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0 cursor-pointer'
-                  : 'px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold shrink-0 cursor-pointer'
+                  : 'px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/15 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200 text-xs font-semibold shrink-0 cursor-pointer'
               }
             >
               {openingTotal === 0 ? '+ Set Initial Savings' : 'Edit'}
@@ -1729,14 +1753,14 @@ export default function LedgerSection({
 
         {/* 3. Total Money In */}
         <div className="p-5 space-y-1">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Total Money In
           </div>
-          <div className="text-xl font-extrabold font-mono text-emerald-700">
+          <div className="text-xl font-extrabold font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
             +RM {formatRM(mathSummary.totalIn)}
           </div>
           {pendingFeesTotal > 0 && (
-            <div className="text-[11px] font-semibold text-amber-700">
+            <div className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 tabular-nums">
               Pending check: RM {formatRM(pendingFeesTotal)}
             </div>
           )}
@@ -1744,14 +1768,14 @@ export default function LedgerSection({
 
         {/* 4. Total Money Out */}
         <div className="p-5 space-y-1">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Total Money Out
           </div>
-          <div className="text-xl font-extrabold font-mono text-rose-600">
+          <div className="text-xl font-extrabold font-mono tabular-nums text-rose-600 dark:text-rose-400">
             -RM {formatRM(mathSummary.totalOut)}
           </div>
           {budgetedHealthStats.cappedCount > 0 && (
-            <div className="text-[11px] font-semibold text-slate-600 pt-0.5 flex flex-wrap items-center gap-1.5">
+            <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 pt-0.5 flex flex-wrap items-center gap-1.5 tabular-nums">
               <span>{budgetedHealthStats.cappedCount} capped event{budgetedHealthStats.cappedCount === 1 ? '' : 's'}:</span>
               {budgetedHealthStats.overCount > 0 && (
                 <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold text-[10px]">
@@ -2251,43 +2275,43 @@ export default function LedgerSection({
           </div>
 
           {/* 7-Column Crisp Spreadsheet Table (Desktop) */}
-          <div className="hidden md:block overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto max-h-[68vh] overflow-y-auto">
             <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                  <th className="py-2.5 px-3 border-r border-slate-200 w-32">Date</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200">Description</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200 w-44">Activity</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200 text-right w-32">Money In (+)</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200 text-right w-32">Money Out (-)</th>
-                  <th className="py-2.5 px-3 border-r border-slate-200 text-right w-36">Balance</th>
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-white/10 text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 w-32">Date</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10">Description</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 w-44">Activity</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 text-right w-32">Money In (+)</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 text-right w-32">Money Out (-)</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 text-right w-36">Balance</th>
                   <th className="py-2.5 px-3 text-right w-28">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
+              <tbody className="divide-y divide-slate-200 dark:divide-white/10">
                 {/* Pinned Row 0: Starting Club Savings */}
-                <tr className="bg-emerald-50/70">
-                  <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-slate-700 whitespace-nowrap">
+                <tr className="bg-emerald-50/70 dark:bg-emerald-500/10">
+                  <td className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 font-mono tabular-nums text-slate-700 dark:text-slate-300 whitespace-nowrap">
                     {openingDate}
                   </td>
-                  <td className="py-2.5 px-3 border-r border-slate-200">
-                    <div className="font-bold text-slate-900">Starting Club Savings</div>
-                    <div className="text-[11px] text-slate-600">
+                  <td className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10">
+                    <div className="font-bold text-slate-900 dark:text-white">Starting Club Savings</div>
+                    <div className="text-[11px] text-slate-600 dark:text-slate-400 tabular-nums">
                       Bank RM {formatRM(openingBank)} · Cash RM {formatRM(openingCash)}
                     </div>
                   </td>
-                  <td className="py-2.5 px-3 border-r border-slate-200">
-                    <span className="inline-block px-2 py-0.5 rounded-md border border-emerald-200 bg-white text-[11px] font-semibold text-emerald-800">
+                  <td className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10">
+                    <span className="inline-block px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-500/30 bg-white dark:bg-slate-900 text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">
                       Opening Balance
                     </span>
                   </td>
-                  <td className="py-2.5 px-3 border-r border-slate-200 text-right font-mono text-slate-400">
+                  <td className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 text-right font-mono tabular-nums text-slate-400">
                     —
                   </td>
-                  <td className="py-2.5 px-3 border-r border-slate-200 text-right font-mono text-slate-400">
+                  <td className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 text-right font-mono tabular-nums text-slate-400">
                     —
                   </td>
-                  <td className="py-2.5 px-3 border-r border-slate-200 text-right font-mono font-extrabold text-slate-900 whitespace-nowrap">
+                  <td className="py-2.5 px-3 border-r border-slate-200 dark:border-white/10 text-right font-mono tabular-nums font-extrabold text-slate-900 dark:text-white whitespace-nowrap">
                     RM {formatRM(openingTotal)}
                   </td>
                   <td className="py-2.5 px-3 text-right">
@@ -2295,7 +2319,7 @@ export default function LedgerSection({
                       <button
                         type="button"
                         onClick={openOpeningSavingsModal}
-                        className="px-2.5 py-1 rounded-md border border-emerald-300 bg-white hover:bg-emerald-100/70 text-emerald-800 font-semibold text-[11px] cursor-pointer"
+                        className="px-2.5 py-1 rounded-md border border-emerald-300 dark:border-emerald-500/40 bg-white dark:bg-slate-900 hover:bg-emerald-100/70 dark:hover:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 font-semibold text-[11px] cursor-pointer"
                       >
                         Edit
                       </button>
@@ -2313,7 +2337,7 @@ export default function LedgerSection({
                   return (
                     <tr
                       key={row.uid}
-                      className={`hover:bg-slate-50/80 transition ${isBusy ? 'opacity-60' : ''}`}
+                      className={`hover:bg-slate-50/80 dark:hover:bg-white/[0.04] transition ${isBusy ? 'opacity-60' : ''}`}
                     >
                       {/* Col 1: Date */}
                       <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-slate-700 whitespace-nowrap">
@@ -3426,101 +3450,110 @@ export default function LedgerSection({
       )}
 
       {/* ===================== STARTING SAVINGS MODAL ===================== */}
-      {showOpeningModal && canEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-slate-900">Starting Club Savings</h3>
+      <ModalShell
+        open={Boolean(showOpeningModal && canEdit)}
+        onClose={() => setShowOpeningModal(false)}
+        zIndexClass="z-[60]"
+        maxWidthClass="max-w-sm"
+        ariaLabel="Starting Club Savings"
+      >
+        <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+            <h3 className="text-sm font-extrabold">Starting Club Savings</h3>
+            <button
+              type="button"
+              onClick={() => setShowOpeningModal(false)}
+              className="text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <form onSubmit={handleOpeningBalanceSubmit} className="p-5 space-y-3.5 text-xs">
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Starting Bank (RM)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={openBankInput}
+                onChange={(e) => setOpenBankInput(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950 px-3 py-2 font-mono tabular-nums text-sm font-bold"
+                required
+              />
+            </div>
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Starting Cash (RM)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={openCashInput}
+                onChange={(e) => setOpenCashInput(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950 px-3 py-2 font-mono tabular-nums text-sm font-bold"
+                required
+              />
+            </div>
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Start Date</label>
+              <input
+                type="date"
+                value={openDateInput}
+                onChange={(e) => setOpenDateInput(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950 px-3 py-2 font-mono text-sm"
+                required
+              />
+            </div>
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-between">
+              <span className="font-semibold text-emerald-900 dark:text-emerald-200">Total Starting Savings =</span>
+              <span className="font-mono tabular-nums font-extrabold text-emerald-800 dark:text-emerald-300 text-sm">
+                RM {formatRM((parseFloat(openBankInput) || 0) + (parseFloat(openCashInput) || 0))}
+              </span>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => setShowOpeningModal(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                className="px-4 py-2 rounded-lg font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={savingOpening}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
+              >
+                {savingOpening && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Save Starting Savings</span>
               </button>
             </div>
-            <form onSubmit={handleOpeningBalanceSubmit} className="p-5 space-y-3.5 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Starting Bank (RM)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={openBankInput}
-                  onChange={(e) => setOpenBankInput(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm font-bold"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Starting Cash (RM)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={openCashInput}
-                  onChange={(e) => setOpenCashInput(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm font-bold"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Start Date</label>
-                <input
-                  type="date"
-                  value={openDateInput}
-                  onChange={(e) => setOpenDateInput(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm"
-                  required
-                />
-              </div>
-              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
-                <span className="font-semibold text-emerald-900">Total Starting Savings =</span>
-                <span className="font-mono font-extrabold text-emerald-800 text-sm">
-                  RM {formatRM((parseFloat(openBankInput) || 0) + (parseFloat(openCashInput) || 0))}
-                </span>
-              </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowOpeningModal(false)}
-                  className="px-4 py-2 rounded-lg font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingOpening}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer"
-                >
-                  {savingOpening && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Save Starting Savings</span>
-                </button>
-              </div>
-            </form>
-          </div>
+          </form>
         </div>
-      )}
+      </ModalShell>
 
       {/* ===================== ADD / EDIT INCOME OR EXPENSE MODAL ===================== */}
-      {showModal && canEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden my-8">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-slate-900">
-                {editingEntry
-                  ? 'Edit Finance Record'
-                  : entryType === 'IN'
-                  ? '+ Add Income'
-                  : '- Add Expense'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+      <ModalShell
+        open={Boolean(showModal && canEdit)}
+        onClose={() => setShowModal(false)}
+        zIndexClass="z-[60]"
+        maxWidthClass="max-w-md"
+        ariaLabel={editingEntry ? 'Edit Finance Record' : 'Add Finance Record'}
+      >
+        <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+            <h3 className="text-sm font-extrabold">
+              {editingEntry
+                ? 'Edit Finance Record'
+                : entryType === 'IN'
+                ? '+ Add Income'
+                : '- Add Expense'}
+            </h3>
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
             </div>
             <form onSubmit={handleSaveEntry} className="p-5 space-y-3.5 text-xs">
               <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl">
@@ -3648,23 +3681,27 @@ export default function LedgerSection({
                 </button>
               </div>
             </form>
-          </div>
         </div>
-      )}
+      </ModalShell>
 
       {/* ===================== SIMPLE IMPORT MODAL (.XLSX / .CSV OR PASTE) ===================== */}
-      {showImportModal && canEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden my-8">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-slate-900">Import Transactions</h3>
-              <button
-                type="button"
-                onClick={() => setShowImportModal(false)}
-                className="text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+      <ModalShell
+        open={Boolean(showImportModal && canEdit)}
+        onClose={() => setShowImportModal(false)}
+        zIndexClass="z-[60]"
+        maxWidthClass="max-w-2xl"
+        ariaLabel="Import Transactions"
+      >
+        <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+            <h3 className="text-sm font-extrabold">Import Transactions</h3>
+            <button
+              type="button"
+              onClick={() => setShowImportModal(false)}
+              className="text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
             </div>
             <div className="p-5 space-y-4 text-xs">
               <div className="inline-flex p-1 rounded-lg bg-slate-100 border border-slate-200 gap-1">
@@ -3782,17 +3819,22 @@ export default function LedgerSection({
                 </button>
               </div>
             </div>
-          </div>
         </div>
-      )}
+      </ModalShell>
 
       {/* ===================== FEE QUICK EDIT MODAL ===================== */}
-      {editingFeeItem && canEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-200">
-            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-slate-900">Edit Fee — {editingFeeItem.student_name}</h3>
-              <button type="button" onClick={() => setEditingFeeItem(null)} className="text-slate-400 cursor-pointer">
+      <ModalShell
+        open={Boolean(editingFeeItem && canEdit)}
+        onClose={() => setEditingFeeItem(null)}
+        zIndexClass="z-[60]"
+        maxWidthClass="max-w-sm"
+        ariaLabel={editingFeeItem ? `Edit Fee — ${editingFeeItem.student_name}` : 'Edit Fee'}
+      >
+        {editingFeeItem && (
+          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+              <h3 className="text-sm font-extrabold">Edit Fee — {editingFeeItem.student_name}</h3>
+              <button type="button" onClick={() => setEditingFeeItem(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -3851,8 +3893,8 @@ export default function LedgerSection({
               </div>
             </form>
           </div>
-        </div>
-      )}
+        )}
+      </ModalShell>
 
       <datalist id="ledger-activity-options">
         {activityOptions.map((opt) => (
@@ -3864,6 +3906,28 @@ export default function LedgerSection({
         target={historyTarget}
         logs={logs}
         onClose={() => setHistoryTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmState)}
+        title={confirmState?.title || ''}
+        description={confirmState?.description}
+        confirmLabel={confirmState?.confirmLabel || 'Remove'}
+        tone="danger"
+        loading={confirmBusy}
+        onCancel={() => {
+          if (!confirmBusy) setConfirmState(null);
+        }}
+        onConfirm={async () => {
+          if (!confirmState) return;
+          setConfirmBusy(true);
+          try {
+            await confirmState.onConfirm();
+            setConfirmState(null);
+          } finally {
+            setConfirmBusy(false);
+          }
+        }}
       />
     </div>
   );

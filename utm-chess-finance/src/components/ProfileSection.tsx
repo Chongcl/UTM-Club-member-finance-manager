@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import ModalShell from './ui/ModalShell';
 import {
   supabase,
   UserProfile,
@@ -35,7 +35,7 @@ import {
   EyeOff,
   LogOut,
   Upload,
-  Sparkles,
+  Info,
   QrCode,
   CreditCard,
   X,
@@ -661,8 +661,8 @@ export default function ProfileSection({
   return (
     <div className="space-y-5">
       {/* Top Identity Hero Card */}
-      <section className="bg-white/95 backdrop-blur-xl rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
-        <div className="h-2 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500" />
+      <section className="bg-white/95 dark:bg-slate-900 text-slate-900 dark:text-slate-100 backdrop-blur-xl rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-sm overflow-hidden">
+        <div className="h-1.5 bg-emerald-600" />
         <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           {/* Left Identity Summary */}
           <div className="flex items-start sm:items-center gap-4 min-w-0">
@@ -673,7 +673,7 @@ export default function ProfileSection({
             </div>
             <div className="min-w-0 space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg sm:text-xl font-extrabold tracking-tight text-slate-900 truncate">
+                <h2 className="text-lg sm:text-xl font-bold tracking-tight truncate">
                   {profile.full_name || 'Club Member'}
                 </h2>
                 <span
@@ -1071,8 +1071,8 @@ export default function ProfileSection({
                 </p>
               </div>
             </div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold self-start sm:self-center">
-              <Sparkles className="w-3 h-3 text-emerald-600" />
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 text-[11px] font-bold self-start sm:self-center">
+              <Info className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
               Optional Profile Payout
             </span>
           </div>
@@ -1590,59 +1590,49 @@ export default function ProfileSection({
       )}
 
       {/* QR IMAGE LIGHTBOX */}
-      {qrZoomSrc &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            onClick={() => setQrZoomSrc(null)}
-            className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-200"
-            >
-              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
-                  <QrCode className="w-4 h-4 text-emerald-600" />
-                  My Payment QR
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setQrZoomSrc(null)}
-                  className="p-1 rounded-lg hover:bg-slate-100 text-slate-500 cursor-pointer"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="p-6 flex items-center justify-center bg-slate-50">
-                <img
-                  src={qrZoomSrc}
-                  alt="Enlarged Payment QR"
-                  className="max-h-[60vh] w-auto object-contain rounded-xl bg-white border border-slate-200 p-2"
-                />
-              </div>
+      <ModalShell
+        open={Boolean(qrZoomSrc)}
+        onClose={() => setQrZoomSrc(null)}
+        zIndexClass="z-[75]"
+        maxWidthClass="max-w-sm"
+        ariaLabel="My Payment QR"
+      >
+        {qrZoomSrc && (
+          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+            <div className="px-5 py-3.5 border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
+              <span className="text-xs font-extrabold flex items-center gap-1.5">
+                <QrCode className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                My Payment QR
+              </span>
+              <button
+                type="button"
+                onClick={() => setQrZoomSrc(null)}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-300 cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-          </div>,
-          document.body
+            <div className="p-6 flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+              <img
+                src={qrZoomSrc}
+                alt="Enlarged Payment QR"
+                className="max-h-[60vh] w-auto object-contain rounded-xl bg-white border border-slate-200 p-2"
+              />
+            </div>
+          </div>
         )}
+      </ModalShell>
 
       {/* POP-OUT MODAL A: CHANGE EMAIL */}
-      {changeEmailOpen &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            onClick={() => setChangeEmailOpen(false)}
-            className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white text-slate-900 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200"
-            >
+      <ModalShell
+        open={changeEmailOpen}
+        onClose={() => setChangeEmailOpen(false)}
+        zIndexClass="z-[75]"
+        maxWidthClass="max-w-md"
+        ariaLabel="Change Login Email"
+      >
+        <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
               <div className="bg-gradient-to-r from-emerald-800 to-teal-700 text-white px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center">
@@ -1758,25 +1748,18 @@ export default function ProfileSection({
                   </div>
                 </form>
               )}
-            </div>
-          </div>,
-          document.body
-        )}
+        </div>
+      </ModalShell>
 
       {/* POP-OUT MODAL B: RESET / CHANGE PASSWORD */}
-      {resetPwOpen &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            onClick={() => setResetPwOpen(false)}
-            className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white text-slate-900 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-200"
-            >
+      <ModalShell
+        open={resetPwOpen}
+        onClose={() => setResetPwOpen(false)}
+        zIndexClass="z-[75]"
+        maxWidthClass="max-w-md"
+        ariaLabel="Reset or Change Password"
+      >
+        <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
               <div className="bg-gradient-to-r from-slate-900 to-emerald-900 text-white px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-white/15 flex items-center justify-center">
@@ -1945,10 +1928,8 @@ export default function ProfileSection({
                   </button>
                 </div>
               </form>
-            </div>
-          </div>,
-          document.body
-        )}
+        </div>
+      </ModalShell>
     </div>
   );
 }

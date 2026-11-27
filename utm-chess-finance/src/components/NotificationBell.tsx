@@ -230,13 +230,13 @@ export default function NotificationBell({
       </button>
 
       {open && (
-        <div className="fixed sm:absolute right-3 sm:right-0 top-16 sm:top-full sm:mt-2 w-96 max-w-[calc(100vw-1.5rem)] max-h-[75vh] overflow-y-auto rounded-2xl shadow-2xl border border-slate-200 bg-white text-slate-900 z-50">
+        <div className="fixed sm:absolute right-3 sm:right-0 top-16 sm:top-full sm:mt-2 w-96 max-w-[calc(100vw-1.5rem)] max-h-[75vh] overflow-y-auto rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 z-50">
           {/* Header */}
-          <div className="sticky top-0 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-3 space-y-2.5 z-10">
+          <div className="sticky top-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-white/10 px-4 py-3 space-y-2.5 z-10">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4 text-emerald-700" />
-                <span className="text-sm font-extrabold text-slate-900">
+                <Bell className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
+                <span className="text-sm font-bold">
                   Reminders &amp; Updates
                 </span>
               </div>
@@ -244,14 +244,14 @@ export default function NotificationBell({
                 type="button"
                 disabled={markingRead || unreadUpdatesCount === 0}
                 onClick={() => void handleMarkAllRead()}
-                className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-600 disabled:opacity-40 cursor-pointer"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-600 disabled:opacity-40 cursor-pointer"
               >
                 <CheckCheck className="w-3.5 h-3.5" />
                 <span>Mark all read</span>
               </button>
             </div>
 
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-[11px] font-bold tabular-nums">
               {(
                 [
                   { id: 'all', label: `All (${reminders.length + notifications.length})` },
@@ -265,8 +265,8 @@ export default function NotificationBell({
                   onClick={() => setFilterTab(t.id)}
                   className={`flex-1 py-1.5 px-2 rounded-lg cursor-pointer transition ${
                     filterTab === t.id
-                      ? 'bg-white text-slate-900 shadow-2xs'
-                      : 'text-slate-500 hover:text-slate-800'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                   }`}
                 >
                   {t.label}
@@ -275,7 +275,7 @@ export default function NotificationBell({
             </div>
           </div>
 
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-100 dark:divide-white/10">
             {/* Live Smart Reminders */}
             {(filterTab === 'all' || filterTab === 'reminders') && (
               <div className="p-3 space-y-2">

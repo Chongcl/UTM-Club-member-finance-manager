@@ -40,6 +40,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
+import ModalShell from './ui/ModalShell';
 
 interface MemberProfileModalProps {
   isOpen: boolean;
@@ -294,16 +295,16 @@ export default function MemberProfileModal({
         : 'bg-slate-100 text-slate-700 border-slate-200';
 
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-4"
-      onClick={onClose}
+    <ModalShell
+      open={Boolean(isOpen && member)}
+      onClose={onClose}
+      zIndexClass="z-[70]"
+      maxWidthClass="max-w-2xl"
+      ariaLabel={member.full_name}
     >
-      <div
-        className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white border border-slate-200 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="relative w-full max-h-[88vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-white/10 shadow-2xl">
         {/* Top Profile Banner */}
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 px-5 py-4 bg-white/95 backdrop-blur border-b border-slate-200">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 px-5 py-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-white/10">
           <div className="flex items-center gap-3.5 min-w-0">
             <div
               className={`w-12 h-12 rounded-2xl border flex items-center justify-center font-bold text-base shrink-0 ${avatarClass}`}
@@ -782,6 +783,6 @@ export default function MemberProfileModal({
           )}
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }

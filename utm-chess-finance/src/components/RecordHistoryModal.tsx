@@ -8,6 +8,7 @@ import {
   tableDisplayLabel,
 } from '@/lib/history';
 import { X, History, ArrowRight, Trash2, RotateCcw, Edit3, Clock } from 'lucide-react';
+import ModalShell from './ui/ModalShell';
 
 export interface HistoryModalTarget {
   table: TrackedTable;
@@ -31,15 +32,15 @@ export default function RecordHistoryModal({
   const events = getRecordHistory(target.table, target.recordId, logs);
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto"
-      onClick={onClose}
+    <ModalShell
+      open={Boolean(target)}
+      onClose={onClose}
+      zIndexClass="z-[70]"
+      maxWidthClass="max-w-xl"
+      ariaLabel={`Edit & Audit History — ${target.title}`}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-white text-slate-900 rounded-3xl shadow-2xl border border-emerald-200 max-w-xl w-full overflow-hidden my-8"
-      >
-        <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between gap-3">
+      <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full overflow-hidden">
+        <div className="bg-slate-900 dark:bg-slate-950 text-white px-6 py-4 flex items-center justify-between gap-3 border-b border-white/10">
           <div className="flex items-center gap-2.5 min-w-0">
             <History className="w-5 h-5 text-emerald-400 shrink-0" />
             <div className="min-w-0">
@@ -137,6 +138,6 @@ export default function RecordHistoryModal({
           )}
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }

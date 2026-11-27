@@ -75,7 +75,7 @@ export default function NetworkStatusBanner({
               setRetrying(true);
               Promise.resolve(onRetry()).finally(() => setRetrying(false));
             }}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-950/15 hover:bg-slate-950/25 text-slate-950 text-[11px] font-extrabold cursor-pointer shrink-0"
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-950/15 hover:bg-slate-950/25 text-slate-950 text-[11px] font-bold cursor-pointer shrink-0 transition"
           >
             <RefreshCw className={`w-3 h-3 ${retrying ? 'animate-spin' : ''}`} />
             <span>Retry</span>
@@ -116,7 +116,7 @@ export default function NetworkStatusBanner({
             setRetrying(true);
             Promise.resolve(onRetry()).finally(() => setRetrying(false));
           }}
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white text-rose-700 hover:bg-rose-50 text-[11px] font-extrabold cursor-pointer shrink-0 shadow-2xs"
+          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white text-rose-700 hover:bg-rose-50 text-[11px] font-bold cursor-pointer shrink-0 shadow-2xs transition"
         >
           <RefreshCw className={`w-3 h-3 ${retrying ? 'animate-spin' : ''}`} />
           <span>Retry</span>

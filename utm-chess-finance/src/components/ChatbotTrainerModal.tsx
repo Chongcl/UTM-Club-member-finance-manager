@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import ModalShell from './ui/ModalShell';
 import {
-  Bot,
+  LifeBuoy,
   X,
   Plus,
-  Sparkles,
+  HelpCircle,
   CheckCircle2,
   Trash2,
   Edit3,
@@ -19,7 +19,6 @@ import {
   Database,
   Lock,
   Loader2,
-  Wand2,
 } from 'lucide-react';
 import { supabase, UserProfile, logActivity } from '@/lib/supabase';
 import type { PublicFaqItem } from '@/lib/publicLanding';
@@ -426,22 +425,24 @@ export default function ChatbotTrainerModal({
 
   const openInboxCount = inboxItems.filter((i) => !i.resolved).length;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-2.5 sm:p-4 overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
+  return (
+    <ModalShell
+      open={isOpen}
+      onClose={onClose}
+      zIndexClass="z-[70]"
+      maxWidthClass="max-w-4xl"
+      ariaLabel="Help Desk & FAQ Manager"
     >
-      <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border border-emerald-200 max-w-4xl w-full overflow-hidden my-4 flex flex-col max-h-[92vh]">
+      <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full overflow-hidden flex flex-col max-h-[88vh]">
         {/* Header */}
-        <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between gap-3 shrink-0">
+        <div className="bg-slate-900 dark:bg-slate-950 text-white px-5 py-4 flex items-center justify-between gap-3 shrink-0 border-b border-white/10">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-2xl bg-emerald-600 flex items-center justify-center shrink-0">
-              <Bot className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center shrink-0">
+              <LifeBuoy className="w-5 h-5 text-white" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-sm sm:text-base font-extrabold truncate">
-                Train ClubSync Chatbot Studio
+              <h2 className="text-sm sm:text-base font-bold truncate">
+                Help Desk &amp; FAQ Manager
               </h2>
               <p className="text-[11px] text-emerald-200 truncate">
                 Zero external APIs • Dynamic live Supabase placeholders ({`{{...}}`})
@@ -452,26 +453,26 @@ export default function ChatbotTrainerModal({
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-xl hover:bg-white/10 text-slate-300 cursor-pointer"
-            aria-label="Close Trainer Studio"
+            aria-label="Close Help Desk Manager"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Sub-Tabs */}
-        <div className="px-5 pt-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2 shrink-0">
+        <div className="px-5 pt-3 border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setActiveTab('rules')}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold rounded-t-xl border-b-2 cursor-pointer transition ${
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-t-xl border-b-2 cursor-pointer transition ${
                 activeTab === 'rules'
-                  ? 'border-emerald-600 text-emerald-900 bg-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'border-emerald-600 text-emerald-900 dark:text-emerald-300 bg-white dark:bg-slate-900'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
-              <span>Knowledge &amp; Rules ({rules.length})</span>
+              <span className="tabular-nums">Knowledge &amp; Rules ({rules.length})</span>
             </button>
             <button
               type="button"
@@ -479,16 +480,16 @@ export default function ChatbotTrainerModal({
                 setActiveTab('inbox');
                 void fetchInbox();
               }}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold rounded-t-xl border-b-2 cursor-pointer transition ${
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-t-xl border-b-2 cursor-pointer transition ${
                 activeTab === 'inbox'
-                  ? 'border-emerald-600 text-emerald-900 bg-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  ? 'border-emerald-600 text-emerald-900 dark:text-emerald-300 bg-white dark:bg-slate-900'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
               }`}
             >
               <Inbox className="w-3.5 h-3.5" />
               <span>Unanswered Inbox</span>
               {openInboxCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-extrabold">
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold tabular-nums">
                   {openInboxCount}
                 </span>
               )}
@@ -508,7 +509,7 @@ export default function ChatbotTrainerModal({
         {/* Body */}
         <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4 text-xs">
           {statusBanner && (
-            <div className="px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold flex items-center gap-2">
+            <div className="px-3.5 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-emerald-900 dark:text-emerald-200 font-bold flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>{statusBanner}</span>
             </div>
@@ -516,12 +517,12 @@ export default function ChatbotTrainerModal({
 
           {activeTab === 'rules' ? (
             <>
-              {/* Live Test Chatbot Bar */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3.5 space-y-2.5">
+              {/* Live Test Preview Bar */}
+              <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50/80 dark:bg-slate-800/60 p-3.5 space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-extrabold text-slate-900 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Live Test Chatbot Preview</span>
+                  <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <HelpCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Live Answer Preview</span>
                   </span>
                   <span className="text-[11px] text-slate-500">
                     Testing with live Supabase state ({snapshot.clubName})
@@ -587,10 +588,10 @@ export default function ChatbotTrainerModal({
                     type="button"
                     disabled={seedingPack}
                     onClick={() => void handleSeedStarterPack()}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 font-bold cursor-pointer disabled:opacity-60"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/15 hover:bg-indigo-100 dark:hover:bg-indigo-500/25 text-indigo-900 dark:text-indigo-200 font-bold cursor-pointer disabled:opacity-60"
                   >
-                    {seedingPack ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                    <span>Seed Club Starter Pack</span>
+                    {seedingPack ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookOpen className="w-3.5 h-3.5" />}
+                    <span>Load Starter FAQ Pack</span>
                   </button>
                   <button
                     type="button"
@@ -970,7 +971,6 @@ export default function ChatbotTrainerModal({
           )}
         </div>
       </div>
-    </div>,
-    document.body
+    </ModalShell>
   );
 }

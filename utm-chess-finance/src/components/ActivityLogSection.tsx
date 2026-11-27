@@ -151,15 +151,15 @@ export default function ActivityLogSection({ logs, deletedRecords = [], profile,
   };
 
   return (
-    <div className="space-y-5 text-slate-900">
-      <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-emerald-200/80 p-5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-5 text-slate-900 dark:text-slate-100">
+      <div className="bg-white/95 dark:bg-slate-900 backdrop-blur-xl rounded-2xl border border-slate-200/80 dark:border-white/10 p-5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-extrabold text-slate-900">Security, Edit History &amp; Audit Log</h2>
-            <p className="text-xs text-slate-500">
+            <h2 className="text-base font-bold">Security, Edit History &amp; Audit Log</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Tamper-evident Before → After edit history and web-deleted archive (records stay intact in Supabase).
             </p>
           </div>
@@ -172,13 +172,13 @@ export default function ActivityLogSection({ logs, deletedRecords = [], profile,
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search name, matric, action..."
-              className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs w-52"
+              className="pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-slate-950 text-xs w-52"
             />
           </div>
           <button
             type="button"
             onClick={() => onRefresh('Refreshed audit log.')}
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 font-bold cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             <span>Refresh</span>

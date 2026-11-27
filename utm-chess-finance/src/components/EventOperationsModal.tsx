@@ -64,6 +64,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import type { MemberLookupHint } from '@/lib/memberLookup';
+import ModalShell from './ui/ModalShell';
 
 export type EventModalTab = 'fee' | 'transport' | 'qr' | 'pass' | 'access';
 
@@ -852,9 +853,16 @@ export default function EventOperationsModal({
   const isQrPdf = activePayQrUrl.toLowerCase().split('?')[0].endsWith('.pdf');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border max-w-4xl w-full overflow-hidden my-8">
-        <div className="bg-slate-900 text-white px-6 py-4 space-y-3">
+    <ModalShell
+      open={Boolean(event)}
+      onClose={onClose}
+      zIndexClass="z-50"
+      align="sheet"
+      maxWidthClass="max-w-4xl"
+      ariaLabel={event.event_name}
+    >
+      <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full overflow-hidden">
+        <div className="bg-slate-900 dark:bg-slate-950 text-white px-6 py-4 space-y-3 border-b border-white/10">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
               {hasEntryPass ? <Ticket className="w-5 h-5 text-emerald-400 shrink-0" /> : cfg.access_link_url ? <Link2 className="w-5 h-5 text-sky-400 shrink-0" /> : <QrCode className="w-5 h-5 text-emerald-400 shrink-0" />}
@@ -2245,69 +2253,77 @@ export default function EventOperationsModal({
         </div>
       </div>
 
-      {editingFee && (
-        <div className="fixed inset-0 z-[55] flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-emerald-200">
-            <div className="bg-emerald-800 text-white px-5 py-3.5 flex items-center justify-between">
-              <h3 className="text-sm font-bold">Edit Fee Payment</h3>
-              <button type="button" onClick={() => setEditingFee(null)} className="text-emerald-200 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
+      <ModalShell
+        open={Boolean(editingFee)}
+        onClose={() => setEditingFee(null)}
+        zIndexClass="z-[60]"
+        maxWidthClass="max-w-md"
+        ariaLabel="Edit Fee Payment"
+      >
+        <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+          <div className="bg-slate-900 dark:bg-slate-950 text-white px-5 py-3.5 flex items-center justify-between border-b border-white/10">
+            <h3 className="text-sm font-bold">Edit Fee Payment</h3>
+            <button type="button" onClick={() => setEditingFee(null)} className="p-1 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <form onSubmit={handleSaveEditFee} className="p-5 space-y-3 text-xs">
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Student Name *</label>
+                <input type="text" value={editFeeName} onChange={(e) => setEditFeeName(e.target.value)} className="w-full rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-slate-950 px-3 py-2 font-bold" required />
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Matric No *</label>
+                <input type="text" value={editFeeMatric} onChange={(e) => setEditFeeMatric(e.target.value)} className="w-full rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-slate-950 px-3 py-2 font-mono" required />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Phone</label>
+                <input type="text" value={editFeePhone} onChange={(e) => setEditFeePhone(e.target.value)} className="w-full rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-slate-950 px-3 py-2 font-mono" />
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Amount Paid (RM) *</label>
+                <input type="number" step="0.01" value={editFeeAmount} onChange={(e) => setEditFeeAmount(e.target.value)} className="w-full rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-slate-950 px-3 py-2 font-bold tabular-nums" required />
+              </div>
+            </div>
+            {isAdmin && (
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Verification Status</label>
+                <select value={editFeeStatus} onChange={(e) => setEditFeeStatus(e.target.value as 'Verified' | 'Pending' | 'Rejected')} className="w-full rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-slate-950 px-3 py-2 font-bold">
+                  <option value="Verified">Verified</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Rejected">Rejected</option>
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Replace Receipt File (Optional)</label>
+              <input type="file" accept="image/*,application/pdf" onChange={(e) => setEditFeeFile(e.target.files?.[0] || null)} className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:font-bold file:bg-emerald-600 file:text-white cursor-pointer" />
+            </div>
+            {editFeeError && <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 font-semibold">{editFeeError}</div>}
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/10">
+              <button type="button" onClick={() => setEditingFee(null)} className="px-4 py-2 rounded-xl font-semibold text-slate-600 dark:text-slate-300 cursor-pointer">Cancel</button>
+              <button type="submit" disabled={savingEditFee} className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer">
+                {savingEditFee && <Loader2 className="w-4 h-4 animate-spin" />}
+                <span>Save Fee Changes</span>
               </button>
             </div>
-            <form onSubmit={handleSaveEditFee} className="p-5 space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block font-bold text-emerald-900 mb-1">Student Name *</label>
-                  <input type="text" value={editFeeName} onChange={(e) => setEditFeeName(e.target.value)} className="w-full rounded-xl border px-3 py-2 font-bold" required />
-                </div>
-                <div>
-                  <label className="block font-bold text-emerald-900 mb-1">Matric No *</label>
-                  <input type="text" value={editFeeMatric} onChange={(e) => setEditFeeMatric(e.target.value)} className="w-full rounded-xl border px-3 py-2 font-mono" required />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block font-bold text-emerald-900 mb-1">Phone</label>
-                  <input type="text" value={editFeePhone} onChange={(e) => setEditFeePhone(e.target.value)} className="w-full rounded-xl border px-3 py-2 font-mono" />
-                </div>
-                <div>
-                  <label className="block font-bold text-emerald-900 mb-1">Amount Paid (RM) *</label>
-                  <input type="number" step="0.01" value={editFeeAmount} onChange={(e) => setEditFeeAmount(e.target.value)} className="w-full rounded-xl border px-3 py-2 font-bold" required />
-                </div>
-              </div>
-              {isAdmin && (
-                <div>
-                  <label className="block font-bold text-emerald-900 mb-1">Verification Status</label>
-                  <select value={editFeeStatus} onChange={(e) => setEditFeeStatus(e.target.value as 'Verified' | 'Pending' | 'Rejected')} className="w-full rounded-xl border bg-white px-3 py-2 font-bold">
-                    <option value="Verified">Verified</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Rejected">Rejected</option>
-                  </select>
-                </div>
-              )}
-              <div>
-                <label className="block font-bold text-emerald-900 mb-1">Replace Receipt File (Optional)</label>
-                <input type="file" accept="image/*,application/pdf" onChange={(e) => setEditFeeFile(e.target.files?.[0] || null)} className="w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:font-bold file:bg-emerald-600 file:text-white cursor-pointer" />
-              </div>
-              {editFeeError && <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 font-semibold">{editFeeError}</div>}
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <button type="button" onClick={() => setEditingFee(null)} className="px-4 py-2 rounded-xl font-semibold text-slate-600 cursor-pointer">Cancel</button>
-                <button type="submit" disabled={savingEditFee} className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer">
-                  {savingEditFee && <Loader2 className="w-4 h-4 animate-spin" />}
-                  <span>Save Fee Changes</span>
-                </button>
-              </div>
-            </form>
-          </div>
+          </form>
         </div>
-      )}
+      </ModalShell>
 
-      {zoomReceiptFee && zoomReceiptFee.receipt_url && (
-        <div
-          className="fixed inset-0 z-[70] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
-          onClick={() => setZoomReceiptFee(null)}
-        >
-          <div className="max-w-4xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12" onClick={(e) => e.stopPropagation()}>
+      <ModalShell
+        open={Boolean(zoomReceiptFee && zoomReceiptFee.receipt_url)}
+        onClose={() => setZoomReceiptFee(null)}
+        zIndexClass="z-[75]"
+        maxWidthClass="max-w-4xl"
+        backdropClassName="bg-slate-950/90 backdrop-blur-xs"
+        ariaLabel="Member fee receipt preview"
+      >
+        {zoomReceiptFee && (
+          <div className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10 grid grid-cols-1 md:grid-cols-12">
             <div className="md:col-span-7 bg-slate-950 flex items-center justify-center p-4 max-h-[80vh]">
               <img
                 src={zoomReceiptFee.receipt_url}
@@ -2412,8 +2428,8 @@ export default function EventOperationsModal({
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </ModalShell>
 
       <RecordHistoryModal
         target={historyTarget}
@@ -2421,15 +2437,16 @@ export default function EventOperationsModal({
         onClose={() => setHistoryTarget(null)}
       />
 
-      {zoomGuestReceipt && zoomGuestReceipt.receipt_url && (
-        <div
-          className="fixed inset-0 z-[70] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
-          onClick={() => setZoomGuestReceipt(null)}
-        >
-          <div
-            className="max-w-4xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-12"
-            onClick={(e) => e.stopPropagation()}
-          >
+      <ModalShell
+        open={Boolean(zoomGuestReceipt && zoomGuestReceipt.receipt_url)}
+        onClose={() => setZoomGuestReceipt(null)}
+        zIndexClass="z-[75]"
+        maxWidthClass="max-w-4xl"
+        backdropClassName="bg-slate-950/90 backdrop-blur-xs"
+        ariaLabel="Guest receipt preview"
+      >
+        {zoomGuestReceipt && (
+          <div className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10 grid grid-cols-1 md:grid-cols-12">
             <div className="md:col-span-7 bg-slate-950 flex items-center justify-center p-4 max-h-[80vh]">
               <img
                 src={zoomGuestReceipt.receipt_url}
@@ -2556,8 +2573,8 @@ export default function EventOperationsModal({
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </ModalShell>
+    </ModalShell>
   );
 }

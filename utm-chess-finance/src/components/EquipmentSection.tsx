@@ -6,6 +6,7 @@ import { supabase, EquipmentItem, EquipmentLoan, UserProfile, ActivityLogEntry, 
 import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
 import { emitClubNotification } from '@/lib/notifications';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
+import ModalShell from './ui/ModalShell';
 import {
   localDateStr,
   addDaysStr,
@@ -776,12 +777,12 @@ export default function EquipmentSection({
       </div>
 
       {/* View switch */}
-      <div className="inline-flex bg-white/90 backdrop-blur-xl p-1 rounded-2xl border border-emerald-200/80 text-xs font-bold">
+      <div className="inline-flex bg-white/95 dark:bg-slate-900/90 backdrop-blur-xl p-1 rounded-2xl border border-slate-200/80 dark:border-white/10 text-xs font-bold">
         <button
           type="button"
           onClick={() => setView('inventory')}
-          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl cursor-pointer ${
-            view === 'inventory' ? 'bg-emerald-600 text-white' : 'text-slate-600'
+          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl cursor-pointer transition ${
+            view === 'inventory' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
           <Package className="w-3.5 h-3.5" />
@@ -790,8 +791,8 @@ export default function EquipmentSection({
         <button
           type="button"
           onClick={() => setView('calendar')}
-          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl cursor-pointer ${
-            view === 'calendar' ? 'bg-emerald-600 text-white' : 'text-slate-600'
+          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl cursor-pointer transition ${
+            view === 'calendar' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
           <CalendarDays className="w-3.5 h-3.5" />
@@ -804,7 +805,7 @@ export default function EquipmentSection({
           {/* Inventory grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {items.length === 0 ? (
-              <div className="sm:col-span-2 lg:col-span-3 bg-white rounded-2xl p-6 text-center border border-emerald-100 text-xs text-slate-400">
+              <div className="sm:col-span-2 lg:col-span-3 bg-white dark:bg-slate-900 rounded-2xl p-6 text-center border border-slate-200 dark:border-white/10 text-xs text-slate-400">
                 No equipment registered yet.
               </div>
             ) : (
@@ -822,7 +823,7 @@ export default function EquipmentSection({
                 return (
                   <div
                     key={item.id}
-                    className="bg-white rounded-2xl p-4 border border-emerald-200/80 shadow-2xs flex flex-col justify-between space-y-3"
+                    className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl p-4 border border-slate-200/80 dark:border-white/10 shadow-2xs flex flex-col justify-between space-y-3"
                   >
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
@@ -1372,10 +1373,16 @@ export default function EquipmentSection({
       )}
 
       {/* Borrow / Reserve modal */}
-      {borrowTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-emerald-200">
-            <div className="bg-emerald-800 text-white px-5 py-3.5 flex items-center justify-between gap-3">
+      <ModalShell
+        open={Boolean(borrowTarget)}
+        onClose={() => setBorrowTarget(null)}
+        zIndexClass="z-[60]"
+        maxWidthClass="max-w-md"
+        ariaLabel={borrowTarget ? `Borrow ${borrowTarget.item_name}` : 'Borrow equipment'}
+      >
+        {borrowTarget && (
+          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+            <div className="bg-slate-900 dark:bg-slate-950 text-white px-5 py-3.5 flex items-center justify-between gap-3 border-b border-white/10">
               <h3 className="text-sm font-bold">
                 {startDate > todayStr ? 'Reserve' : borrowTarget.requires_approval ? 'Request' : 'Borrow'} — {borrowTarget.item_name}
               </h3>
@@ -1548,29 +1555,37 @@ export default function EquipmentSection({
               </div>
             </form>
           </div>
-        </div>
-      )}
+        )}
+      </ModalShell>
 
       {/* Admin Add / Edit Equipment Modal */}
-      {showItemModal && isAdmin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-emerald-200">
-            <div className="bg-emerald-800 text-white px-5 py-3.5 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold">
-                {editingItem ? `Edit Equipment — ${editingItem.item_name}` : 'Add Club Equipment'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowItemModal(false);
-                  setEditingItem(null);
-                }}
-                className="shrink-0 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      <ModalShell
+        open={Boolean(showItemModal && isAdmin)}
+        onClose={() => {
+          setShowItemModal(false);
+          setEditingItem(null);
+        }}
+        zIndexClass="z-[60]"
+        maxWidthClass="max-w-md"
+        ariaLabel={editingItem ? `Edit Equipment — ${editingItem.item_name}` : 'Add Club Equipment'}
+      >
+        <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+          <div className="bg-slate-900 dark:bg-slate-950 text-white px-5 py-3.5 flex items-center justify-between gap-3 border-b border-white/10">
+            <h3 className="text-sm font-bold">
+              {editingItem ? `Edit Equipment — ${editingItem.item_name}` : 'Add Club Equipment'}
+            </h3>
+            <button
+              type="button"
+              onClick={() => {
+                setShowItemModal(false);
+                setEditingItem(null);
+              }}
+              className="shrink-0 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
             <form onSubmit={handleSaveItem} className="p-5 space-y-3 text-xs max-h-[80vh] overflow-y-auto">
               <div>
                 <label className="block font-bold text-emerald-900 mb-1">Item Name *</label>
@@ -1679,15 +1694,20 @@ export default function EquipmentSection({
                 </button>
               </div>
             </form>
-          </div>
         </div>
-      )}
+      </ModalShell>
 
       {/* QR sticker modal */}
-      {stickerItems && isAdmin && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/70 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl border border-slate-200 my-8">
-            <div className="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between gap-3">
+      <ModalShell
+        open={Boolean(stickerItems && isAdmin)}
+        onClose={() => setStickerItems(null)}
+        zIndexClass="z-[60]"
+        maxWidthClass="max-w-4xl"
+        ariaLabel="Equipment QR Stickers"
+      >
+        {stickerItems && (
+          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+            <div className="bg-slate-900 dark:bg-slate-950 text-white px-5 py-3.5 flex items-center justify-between gap-3 border-b border-white/10">
               <div className="flex items-center gap-2 min-w-0">
                 <QrCode className="w-5 h-5 text-emerald-400 shrink-0" />
                 <div className="min-w-0">
@@ -1758,14 +1778,20 @@ export default function EquipmentSection({
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </ModalShell>
 
       {/* Edit Borrowing Record Modal */}
-      {editingLoan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-emerald-200 my-8">
-            <div className="bg-emerald-800 text-white px-5 py-3.5 flex items-center justify-between gap-3">
+      <ModalShell
+        open={Boolean(editingLoan)}
+        onClose={() => setEditingLoan(null)}
+        zIndexClass="z-[60]"
+        maxWidthClass="max-w-md"
+        ariaLabel={editingLoan ? `Edit Borrowing — ${editingLoan.item_name}` : 'Edit Borrowing'}
+      >
+        {editingLoan && (
+          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+            <div className="bg-slate-900 dark:bg-slate-950 text-white px-5 py-3.5 flex items-center justify-between gap-3 border-b border-white/10">
               <h3 className="text-sm font-bold truncate">
                 Edit Borrowing — {editingLoan.item_name}
               </h3>
@@ -1936,8 +1962,8 @@ export default function EquipmentSection({
               </div>
             </form>
           </div>
-        </div>
-      )}
+        )}
+      </ModalShell>
 
       <RecordHistoryModal
         target={historyTarget}

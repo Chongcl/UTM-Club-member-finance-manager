@@ -25,6 +25,7 @@ import {
   findDuplicateClaims,
   parseItemizedBreakdownFromDescription,
 } from '@/lib/duplicateClaimDetector';
+import ModalShell from './ui/ModalShell';
 import {
   X,
   CheckCircle2,
@@ -43,7 +44,7 @@ import {
   AlertTriangle,
   Download,
   ZoomIn,
-  Sparkles,
+  FileSearch,
   Edit3,
   Trash2,
   History,
@@ -797,11 +798,18 @@ export default function AuditReviewModal({
     : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 backdrop-blur-xs p-2.5 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl border border-emerald-200 max-w-3xl w-full overflow-hidden my-4 sm:my-8">
-        <div className="bg-emerald-800 text-white px-4 sm:px-6 py-4 flex items-center justify-between gap-2 sm:gap-3">
+    <ModalShell
+      open={Boolean(claim)}
+      onClose={onClose}
+      zIndexClass="z-[60]"
+      align="sheet"
+      maxWidthClass="max-w-4xl"
+      ariaLabel={claim.title}
+    >
+      <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full overflow-hidden">
+        <div className="bg-slate-900 dark:bg-slate-950 text-white px-4 sm:px-6 py-4 flex items-center justify-between gap-2 sm:gap-3 border-b border-white/10">
           <div className="min-w-0">
-            <span className="text-[11px] uppercase tracking-wider text-amber-300 font-bold">
+            <span className="text-[11px] uppercase tracking-wider text-emerald-400 font-bold">
               Claim Details &amp; Reimbursement Proof
             </span>
             <h2 className="text-base font-bold mt-0.5 truncate">{claim.title}</h2>
@@ -1124,8 +1132,8 @@ export default function AuditReviewModal({
               claim.ai_extracted_date ||
               claim.ai_ocr_summary) && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2 text-[11px] text-emerald-950 space-y-1.5">
-                <div className="font-extrabold flex items-center gap-1 text-emerald-800">
-                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <div className="font-bold flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
+                  <FileSearch className="w-3.5 h-3.5 shrink-0" />
                   <span>
                     Scanned Receipt Key Info
                     {claim.ai_confidence ? ` (${claim.ai_confidence}% match)` : ''}
@@ -1730,24 +1738,25 @@ export default function AuditReviewModal({
         )}
       </div>
 
-      {fullQrOpen && resolvedClaimantQrUrl && !isClaimantQrPdf && (
-        <div
-          className="fixed inset-0 z-[65] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
-          onClick={() => setFullQrOpen(false)}
-        >
-          <div
-            className="max-w-md w-full bg-white rounded-3xl p-5 flex flex-col items-center gap-4 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-full flex items-center justify-between text-slate-900">
+      <ModalShell
+        open={Boolean(fullQrOpen && resolvedClaimantQrUrl && !isClaimantQrPdf)}
+        onClose={() => setFullQrOpen(false)}
+        zIndexClass="z-[75]"
+        maxWidthClass="max-w-md"
+        backdropClassName="bg-slate-950/90 backdrop-blur-xs"
+        ariaLabel="Claimant DuitNow QR"
+      >
+        {resolvedClaimantQrUrl && (
+          <div className="w-full bg-white dark:bg-slate-900 rounded-2xl p-5 flex flex-col items-center gap-4 shadow-2xl border border-slate-200 dark:border-white/10">
+            <div className="w-full flex items-center justify-between text-slate-900 dark:text-slate-100">
               <div>
                 <div className="text-sm font-extrabold">{claim.claimant_name}</div>
-                <div className="text-[11px] font-mono text-slate-500">DuitNow / TNG QR</div>
+                <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">DuitNow / TNG QR</div>
               </div>
               <button
                 type="button"
                 onClick={() => setFullQrOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center cursor-pointer"
+                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer"
                 aria-label="Close full QR"
               >
                 <X className="w-4 h-4" />
@@ -1772,18 +1781,19 @@ export default function AuditReviewModal({
               <span>Download QR Image</span>
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </ModalShell>
 
-      {fullImageOpen && !isPdf && claim.receipt_url && (
-        <div
-          className="fixed inset-0 z-[60] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
-          onClick={() => setFullImageOpen(false)}
-        >
-          <div
-            className="max-w-5xl w-full flex flex-col items-center gap-3"
-            onClick={(e) => e.stopPropagation()}
-          >
+      <ModalShell
+        open={Boolean(fullImageOpen && !isPdf && claim.receipt_url)}
+        onClose={() => setFullImageOpen(false)}
+        zIndexClass="z-[75]"
+        maxWidthClass="max-w-5xl"
+        backdropClassName="bg-slate-950/90 backdrop-blur-xs"
+        ariaLabel="Receipt full preview"
+      >
+        {claim.receipt_url && (
+          <div className="w-full flex flex-col items-center gap-3">
             <div className="w-full flex items-center justify-between text-white px-2">
               <div className="text-xs font-bold truncate">
                 {claim.receipt_file_name || claim.title}
@@ -1813,18 +1823,18 @@ export default function AuditReviewModal({
               className="max-h-[84vh] w-auto max-w-full object-contain rounded-2xl bg-white shadow-2xl"
             />
           </div>
-        </div>
-      )}
+        )}
+      </ModalShell>
 
-      {compareMatch && (
-        <div
-          className="fixed inset-0 z-[60] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
-          onClick={() => setCompareMatch(null)}
-        >
-          <div
-            className="bg-white rounded-3xl shadow-2xl border-2 border-amber-300 max-w-5xl w-full overflow-hidden my-8"
-            onClick={(e) => e.stopPropagation()}
-          >
+      <ModalShell
+        open={Boolean(compareMatch)}
+        onClose={() => setCompareMatch(null)}
+        zIndexClass="z-[75]"
+        maxWidthClass="max-w-5xl"
+        ariaLabel="Side-by-Side Comparison"
+      >
+        {compareMatch && (
+          <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl shadow-2xl border-2 border-amber-300 dark:border-amber-500/50 w-full overflow-hidden">
             <div className="bg-amber-600 text-white px-6 py-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <AlertTriangle className="w-5 h-5 shrink-0" />
@@ -1958,7 +1968,7 @@ export default function AuditReviewModal({
               </div>
             </div>
 
-            <div className="px-6 py-3 bg-slate-50 border-t flex flex-wrap items-center justify-end gap-2">
+            <div className="px-6 py-3 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-white/10 flex flex-wrap items-center justify-end gap-2">
               {onSelectClaim && (
                 <button
                   type="button"
@@ -1974,14 +1984,14 @@ export default function AuditReviewModal({
               <button
                 type="button"
                 onClick={() => setCompareMatch(null)}
-                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold cursor-pointer"
+                className="px-4 py-2 rounded-xl bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/20 text-slate-800 dark:text-slate-200 text-xs font-bold cursor-pointer"
               >
                 Close Comparison
               </button>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </ModalShell>
+    </ModalShell>
   );
 }

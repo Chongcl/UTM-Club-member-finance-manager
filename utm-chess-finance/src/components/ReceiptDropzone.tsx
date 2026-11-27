@@ -7,7 +7,7 @@ import {
   UploadCloud,
   FileText,
   X,
-  Sparkles,
+  ScanLine,
   Loader2,
   AlertCircle,
   Camera,
@@ -390,7 +390,7 @@ export default function ReceiptDropzone({
     setScanning(true);
     setProgress(10);
     setScanEngineBadge(null);
-    setScanStatusLabel('Local OCR...');
+    setScanStatusLabel('Reading receipt...');
     interface OcrWorker {
       recognize: (img: Blob) => Promise<{ data: { text: string; confidence: number } }>;
       terminate: () => Promise<unknown>;
@@ -832,16 +832,16 @@ export default function ReceiptDropzone({
       )}
 
       {activeFile && (
-        <div className="rounded-xl bg-slate-50 border border-slate-200 p-2.5 space-y-2">
+        <div className="rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-white/10 p-2.5 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-1.5 min-w-0 flex-1">
-              <span className="font-semibold text-slate-700 truncate">
+              <span className="font-semibold text-slate-700 dark:text-slate-200 truncate">
                 {activeFile.name}
                 {sourceFiles.length > 1 ? ` (${sourceFiles.length} receipts stacked)` : ''}
               </span>
               {scanEngineBadge && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold shrink-0 bg-slate-200 text-slate-700">
-                  Local OCR
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-200">
+                  Local Scanner
                 </span>
               )}
             </div>
@@ -851,14 +851,14 @@ export default function ReceiptDropzone({
                   type="button"
                   disabled={scanning}
                   onClick={() => void handleScan()}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-70 text-white font-bold text-[11px] cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-70 text-white font-bold text-[11px] cursor-pointer transition"
                   title="Reads amount, date & merchant from the receipt image(s)"
                 >
-                  {scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                  <span>
+                  {scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <ScanLine className="w-3 h-3" />}
+                  <span className="tabular-nums">
                     {scanning
                       ? `${scanStatusLabel || 'Reading receipt…'} ${progress}%`
-                      : 'Auto-Fill OCR'}
+                      : 'Auto-fill from receipt'}
                   </span>
                 </button>
               )}

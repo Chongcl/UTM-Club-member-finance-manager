@@ -11,6 +11,7 @@ import {
   syncAvailabilityToday,
 } from '@/lib/equipment';
 import { X, Camera, CheckCircle2, AlertTriangle, Upload, QrCode, ShieldCheck, XCircle, Package, RotateCcw, ArrowUpRight, Loader2, MapPin } from 'lucide-react';
+import ModalShell from './ui/ModalShell';
 
 interface QrScannerModalProps {
   isOpen: boolean; onClose: () => void; budgets: Budget[]; rsvps: EventRsvp[];
@@ -425,14 +426,20 @@ export default function QrScannerModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 overflow-y-auto">
-      <div className="bg-white text-slate-900 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl">
-        <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+    <ModalShell
+      open={isOpen}
+      onClose={onClose}
+      zIndexClass="z-[60]"
+      maxWidthClass="max-w-md"
+      ariaLabel={isAdmin ? 'Scan Attendance / Entry Pass QR' : 'Scan Event Attendance QR'}
+    >
+      <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl w-full overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+        <div className="bg-slate-900 dark:bg-slate-950 text-white px-6 py-4 flex justify-between items-center border-b border-white/10">
           <div className="flex items-center gap-2">
             <QrCode className="w-5 h-5 text-emerald-400" />
             <div><h3 className="text-sm font-bold">{isAdmin ? 'Scan Attendance / Entry Pass QR' : 'Scan Event Attendance QR'}</h3><p className="text-[11px] text-slate-400">Automatically records attendance upon scan</p></div>
           </div>
-          <button type="button" onClick={onClose} className="cursor-pointer"><X className="w-5 h-5" /></button>
+          <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-white/10 cursor-pointer" aria-label="Close scanner"><X className="w-4 h-4" /></button>
         </div>
 
         <div className="p-6 space-y-4 text-center">
@@ -590,9 +597,9 @@ export default function QrScannerModal({
             </label>
           </div>
           {successMsg && <div className="p-3 rounded-xl bg-emerald-600 text-white text-xs font-bold"><CheckCircle2 className="w-4 h-4 inline mr-1" />{successMsg}</div>}
-          {errorMsg && <div className="p-3 rounded-xl bg-rose-50 text-rose-700 text-xs font-semibold"><AlertTriangle className="w-4 h-4 inline mr-1" />{errorMsg}</div>}
+          {errorMsg && <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 text-xs font-semibold"><AlertTriangle className="w-4 h-4 inline mr-1" />{errorMsg}</div>}
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }

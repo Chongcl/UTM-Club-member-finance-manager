@@ -45,22 +45,22 @@ export default class ErrorBoundary extends React.Component<
       return (
         <div
           role="alert"
-          className="rounded-3xl border border-rose-200 bg-white/95 text-slate-900 p-6 sm:p-8 text-center space-y-3 shadow-xs"
+          className="rounded-2xl border border-rose-200 dark:border-rose-500/30 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 p-6 sm:p-8 text-center space-y-3 shadow-xs"
         >
-          <div className="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+          <div className="w-11 h-11 rounded-2xl bg-rose-100 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto">
             <AlertTriangle className="w-5 h-5" />
           </div>
-          <h3 className="text-sm sm:text-base font-extrabold">
+          <h3 className="text-sm sm:text-base font-bold">
             Something went wrong in {this.props.sectionName || 'this section'}
           </h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
             {this.state.errorMessage || 'Please reload this section to recover.'}
           </p>
           <div className="pt-1">
             <button
               type="button"
               onClick={this.handleReset}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold cursor-pointer shadow-xs"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer shadow-xs transition"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Reload Section</span>

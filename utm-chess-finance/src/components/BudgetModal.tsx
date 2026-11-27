@@ -25,6 +25,7 @@ import { softDeleteRecord } from '@/lib/history';
 import { emitClubNotification } from '@/lib/notifications';
 import type { MemberLookupHint } from '@/lib/memberLookup';
 import RecordHistoryModal, { HistoryModalTarget } from './RecordHistoryModal';
+import ModalShell from './ui/ModalShell';
 import {
   X,
   Calendar,
@@ -35,7 +36,7 @@ import {
   RefreshCw,
   ShieldCheck,
   ExternalLink,
-  Sparkles,
+  SlidersHorizontal,
   Ticket,
   Settings,
   Users,
@@ -549,9 +550,16 @@ export default function BudgetModal({
     (activityFormat === 'physical' && enablePhysicalLink);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-2.5 sm:p-4 overflow-y-auto">
-      <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border border-slate-200 max-w-3xl w-full overflow-hidden my-4 sm:my-8">
-        <div className="bg-slate-900 text-white px-4 sm:px-6 py-4 flex items-center justify-between gap-2">
+    <ModalShell
+      open={isOpen}
+      onClose={onClose}
+      zIndexClass="z-50"
+      align="sheet"
+      maxWidthClass="max-w-3xl"
+      ariaLabel={isEditing ? `Edit Activity — ${eventName}` : 'New Activity / Fee Collection'}
+    >
+      <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full overflow-hidden">
+        <div className="bg-slate-900 dark:bg-slate-950 text-white px-4 sm:px-6 py-4 flex items-center justify-between gap-2 border-b border-white/10">
           <div className="flex items-center gap-2.5 min-w-0">
             <Calendar className="w-5 h-5 text-emerald-400 shrink-0" />
             <h2 className="text-base font-bold truncate">
@@ -561,9 +569,10 @@ export default function BudgetModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-white cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+            aria-label="Close modal"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -1674,10 +1683,10 @@ export default function BudgetModal({
                         }
                         onSuccess('Auto-assigned passengers!');
                       }}
-                      className="px-3 py-1 rounded-xl bg-emerald-600 text-white font-bold cursor-pointer"
+                      className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer inline-flex items-center gap-1"
                     >
-                      <Sparkles className="w-3 h-3 inline mr-1" />
-                      Auto-Assign
+                      <SlidersHorizontal className="w-3 h-3" />
+                      <span>Auto-Assign</span>
                     </button>
                   )}
                 </div>
@@ -1791,6 +1800,6 @@ export default function BudgetModal({
         logs={logs}
         onClose={() => setHistoryTarget(null)}
       />
-    </div>
+    </ModalShell>
   );
 }

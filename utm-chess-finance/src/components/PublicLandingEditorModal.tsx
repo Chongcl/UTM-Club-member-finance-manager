@@ -39,6 +39,8 @@ import PublicLandingPage, {
   FeatureIcon,
   FooterPlatformIcon,
 } from '@/components/PublicLandingPage';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import ModalShell from '@/components/ui/ModalShell';
 import {
   X,
   Globe,
@@ -53,7 +55,7 @@ import {
   AlertCircle,
   Undo2,
   Redo2,
-  Sparkles,
+  LayoutTemplate,
   Monitor,
   Tablet,
   Smartphone,
@@ -115,7 +117,7 @@ function SectionNavIcon({ id }: { id: LandingSectionId }) {
     case 'announcement':
       return <Megaphone className="w-4 h-4" />;
     case 'hero':
-      return <Sparkles className="w-4 h-4" />;
+      return <LayoutTemplate className="w-4 h-4" />;
     case 'metrics':
       return <BarChart3 className="w-4 h-4" />;
     case 'about':
@@ -317,6 +319,7 @@ export default function PublicLandingEditorModal({
 
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
 
   const previewScrollRef = useRef<HTMLDivElement>(null);
 
@@ -620,9 +623,8 @@ export default function PublicLandingEditorModal({
 
   const handleCloseSafe = () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm('You have unsaved changes. Discard and close the studio?')) {
-        return;
-      }
+      setDiscardConfirmOpen(true);
+      return;
     }
     onClose();
   };
@@ -1021,7 +1023,7 @@ export default function PublicLandingEditorModal({
                     value: '50+',
                     label: 'New Highlight',
                     sublabel: 'Short supporting note',
-                    icon: 'Sparkles',
+                    icon: 'Compass',
                   };
                   updateField('metrics_items', [...draft.metrics_items, item], true);
                   setExpandedItemIds((prev) => ({ ...prev, [item.id]: true }));
@@ -1208,7 +1210,7 @@ export default function PublicLandingEditorModal({
                                 )
                               }
                               className={`p-1.5 rounded-lg border cursor-pointer ${
-                                (item.icon || 'Sparkles') === ic
+                                (item.icon || 'Compass') === ic
                                   ? 'bg-emerald-600 text-white border-emerald-600'
                                   : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
                               }`}
@@ -1268,7 +1270,7 @@ export default function PublicLandingEditorModal({
                     id: `feat-${Date.now()}`,
                     title: 'New Pillar',
                     description: 'Describe what members and guests experience here.',
-                    icon: 'Sparkles',
+                    icon: 'Award',
                     badge: '',
                   };
                   updateField('about_features', [...draft.about_features, feat], true);
@@ -2300,8 +2302,16 @@ export default function PublicLandingEditorModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-2 sm:p-4">
-      <div className="bg-slate-100 text-slate-900 rounded-3xl shadow-2xl border border-slate-700/40 max-w-[96vw] w-[1440px] h-[92vh] overflow-hidden flex flex-col">
+    <ModalShell
+      open={isOpen}
+      onClose={handleCloseSafe}
+      align="full"
+      zIndexClass="z-[70]"
+      backdropClassName="bg-slate-950/80 backdrop-blur-xs"
+      wrapperClassName="bg-slate-950/80 backdrop-blur-xs items-center justify-center p-2 sm:p-4"
+      ariaLabel="Public Landing Studio"
+    >
+      <div className="bg-slate-100 text-slate-900 rounded-2xl shadow-2xl border border-slate-700/40 max-w-[96vw] w-[1440px] h-[92vh] overflow-hidden flex flex-col">
         {/* Top Studio Toolbar */}
         <div className="bg-slate-950 text-white px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
@@ -2355,7 +2365,7 @@ export default function PublicLandingEditorModal({
                 onClick={() => setTemplatesOpen((v) => !v)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-600 text-xs font-bold text-slate-200 cursor-pointer"
               >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                <LayoutTemplate className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Templates</span>
               </button>
               {templatesOpen && (
@@ -2921,6 +2931,20 @@ export default function PublicLandingEditorModal({
           </main>
         </div>
       </div>
-    </div>
+
+      <ConfirmDialog
+        open={discardConfirmOpen}
+        title="Discard unsaved studio changes?"
+        description="Your recent edits to the public landing page haven't been saved yet. Leaving now will revert them."
+        confirmLabel="Discard & Close"
+        cancelLabel="Keep Editing"
+        tone="amber"
+        onCancel={() => setDiscardConfirmOpen(false)}
+        onConfirm={() => {
+          setDiscardConfirmOpen(false);
+          onClose();
+        }}
+      />
+    </ModalShell>
   );
 }

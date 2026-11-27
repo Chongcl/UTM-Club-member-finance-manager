@@ -15,6 +15,7 @@ import {
 import { computeFieldChanges, recordEditHistory, softDeleteRecord } from '@/lib/history';
 import { emitClubNotification } from '@/lib/notifications';
 import type { MemberLookupHint } from '@/lib/memberLookup';
+import ModalShell from './ui/ModalShell';
 import {
   X,
   CheckCircle2,
@@ -406,9 +407,16 @@ export default function PreClaimReviewModal({
     Boolean(onUploadReceipt);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white text-slate-900 rounded-3xl shadow-2xl border border-emerald-200 max-w-2xl w-full overflow-hidden my-8">
-        <div className="bg-emerald-800 text-white px-6 py-4 flex items-center justify-between gap-3">
+    <ModalShell
+      open={Boolean(preClaim)}
+      onClose={onClose}
+      zIndexClass="z-[60]"
+      align="sheet"
+      maxWidthClass="max-w-2xl"
+      ariaLabel={preClaim.title}
+    >
+      <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-t-2xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 w-full overflow-hidden">
+        <div className="bg-slate-900 dark:bg-slate-950 text-white px-6 py-4 flex items-center justify-between gap-3 border-b border-white/10">
           <div className="min-w-0">
             <span className="text-[11px] uppercase tracking-wider text-amber-300 font-bold flex items-center gap-1.5">
               <CalendarClock className="w-3.5 h-3.5" />
@@ -1032,23 +1040,25 @@ export default function PreClaimReviewModal({
         </div>
       </div>
 
-      {fullQrOpen && resolvedQrUrl && !isQrPdf && (
-        <div
-          className="fixed inset-0 z-[65] bg-slate-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-4"
-          onClick={() => setFullQrOpen(false)}
-        >
-          <div
-            className="max-w-md w-full bg-white rounded-3xl p-5 flex flex-col items-center gap-4 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+      <ModalShell
+        open={Boolean(fullQrOpen && resolvedQrUrl && !isQrPdf)}
+        onClose={() => setFullQrOpen(false)}
+        zIndexClass="z-[75]"
+        maxWidthClass="max-w-md"
+        backdropClassName="bg-slate-950/90 backdrop-blur-xs"
+        ariaLabel="DuitNow QR Preview"
+      >
+        {resolvedQrUrl && (
+          <div className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl p-5 flex flex-col items-center gap-4 shadow-2xl border border-slate-200 dark:border-white/10">
             <div className="w-full flex items-center justify-between">
-              <div className="text-sm font-extrabold text-slate-900">
+              <div className="text-sm font-extrabold">
                 {preClaim.requester_name} — DuitNow QR
               </div>
               <button
                 type="button"
                 onClick={() => setFullQrOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center cursor-pointer"
+                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 flex items-center justify-center cursor-pointer"
+                aria-label="Close full QR"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1063,33 +1073,35 @@ export default function PreClaimReviewModal({
               onClick={() =>
                 void downloadFileFromUrl(resolvedQrUrl, `${preClaim.requester_name}_DuitNow_QR.jpg`)
               }
-              className="w-full py-2.5 rounded-xl bg-amber-600 text-white text-xs font-bold cursor-pointer"
+              className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold cursor-pointer"
             >
               <Download className="w-4 h-4 inline mr-1" />
               Download QR
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </ModalShell>
 
-      {fullQuoteOpen && isQuoteImage && (
-        <div
-          className="fixed inset-0 z-[65] bg-slate-950/90 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setFullQuoteOpen(false)}
-        >
-          <div className="max-w-3xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="px-5 py-3 border-b flex items-center justify-between">
-              <span className="font-extrabold text-sm">Quotation Preview</span>
-              <button type="button" onClick={() => setFullQuoteOpen(false)} className="cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="bg-slate-950 p-4 flex justify-center max-h-[80vh]">
-              <img src={quoteUrl} alt="Quotation Full" className="max-h-[72vh] object-contain rounded-xl bg-white" />
-            </div>
+      <ModalShell
+        open={Boolean(fullQuoteOpen && isQuoteImage)}
+        onClose={() => setFullQuoteOpen(false)}
+        zIndexClass="z-[75]"
+        maxWidthClass="max-w-3xl"
+        backdropClassName="bg-slate-950/90 backdrop-blur-xs"
+        ariaLabel="Quotation Preview"
+      >
+        <div className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10">
+          <div className="px-5 py-3 border-b border-slate-200 dark:border-white/10 flex items-center justify-between">
+            <span className="font-extrabold text-sm">Quotation Preview</span>
+            <button type="button" onClick={() => setFullQuoteOpen(false)} className="cursor-pointer p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="bg-slate-950 p-4 flex justify-center max-h-[80vh]">
+            <img src={quoteUrl} alt="Quotation Full" className="max-h-[72vh] object-contain rounded-xl bg-white" />
           </div>
         </div>
-      )}
-    </div>
+      </ModalShell>
+    </ModalShell>
   );
 }

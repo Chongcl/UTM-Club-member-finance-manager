@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import NetworkStatusBanner from './NetworkStatusBanner';
+import ModalShell from './ui/ModalShell';
 import {
   supabase,
   isSupabaseConfigured,
@@ -29,7 +30,7 @@ import {
   Calendar,
   Clock,
   MapPin,
-  Sparkles,
+  Star,
   ArrowRight,
   ChevronLeft,
   ChevronRight,
@@ -156,7 +157,7 @@ export function FeatureIcon({
     case 'Globe':
       return <Globe className={className} />;
     default:
-      return <Sparkles className={className} />;
+      return <Star className={className} />;
   }
 }
 
@@ -534,6 +535,7 @@ export default function PublicLandingPage({
   const [openFaqIds, setOpenFaqIds] = useState<string[]>(['faq-join']);
   const [lightboxPost, setLightboxPost] = useState<Announcement | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [showAuthPw, setShowAuthPw] = useState(false);
   const [submittingAuth, setSubmittingAuth] = useState(false);
   const [authSuccessMsg, setAuthSuccessMsg] = useState<string | null>(null);
   const [navigatingEventSlug, setNavigatingEventSlug] = useState<string | null>(null);
@@ -1030,10 +1032,10 @@ export default function PublicLandingPage({
                         <div
                           className={`w-12 h-12 rounded-2xl ${theme.iconBg} flex items-center justify-center shrink-0`}
                         >
-                          <FeatureIcon name={item.icon || 'Sparkles'} className="w-5 h-5" />
+                          <FeatureIcon name={item.icon || 'Compass'} className="w-5 h-5" />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                          <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 tabular-nums">
                             <AnimatedMetricValue value={item.value} animationLevel={animLevel} />
                           </div>
                           <div className="text-xs font-extrabold text-slate-800 truncate">
@@ -1268,7 +1270,7 @@ export default function PublicLandingPage({
                                   {ev.category}
                                 </span>
                                 <span
-                                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+                                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold tabular-nums ${
                                     ev.effective_fee <= 0
                                       ? 'bg-teal-50 text-teal-800 border border-teal-200'
                                       : 'bg-amber-50 text-amber-900 border border-amber-200'
@@ -1624,13 +1626,10 @@ export default function PublicLandingPage({
                       : 'p-6 sm:p-12 flex flex-col lg:flex-row lg:items-center justify-between gap-6'
                   } shadow-xl relative overflow-hidden`}
                 >
-                  <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-white/10 blur-3xl pointer-events-none" />
-                  <div className="absolute left-1/3 -bottom-24 w-64 h-64 rounded-full bg-black/20 blur-3xl pointer-events-none" />
-
                   <div className="relative space-y-2.5 max-w-2xl">
                     {resolvedConfig.cta_badge && (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 backdrop-blur-xs text-[11px] font-extrabold uppercase tracking-wide">
-                        <Sparkles className="w-3 h-3" />
+                        <Award className="w-3 h-3" />
                         <span>{resolvedConfig.cta_badge}</span>
                       </span>
                     )}
@@ -1971,23 +1970,13 @@ export default function PublicLandingPage({
         onHoverSection={onHoverSection}
       >
         <section className={`relative overflow-hidden border-b ${theme.navBorder}`}>
-          {/* Dot Grid + Mesh Gradient Orbs */}
+          {/* Subtle Structural Dot Grid */}
           <div
-            className="absolute inset-0 opacity-[0.35] pointer-events-none"
+            className="absolute inset-0 opacity-[0.28] pointer-events-none"
             style={{
               backgroundImage: 'radial-gradient(rgba(15, 23, 42, 0.14) 1px, transparent 1px)',
               backgroundSize: '24px 24px',
             }}
-          />
-          <div
-            className={`absolute -top-24 -left-24 w-96 h-96 rounded-full ${theme.orbA} blur-3xl pointer-events-none ${
-              animLevel === 'vivid' ? 'pl-float-slow' : ''
-            }`}
-          />
-          <div
-            className={`absolute top-12 -right-24 w-96 h-96 rounded-full ${theme.orbB} blur-3xl pointer-events-none ${
-              animLevel === 'vivid' ? 'pl-float-slow-delay' : ''
-            }`}
           />
 
           {resolvedConfig.hero_layout === 'banner' ? (
@@ -2006,7 +1995,7 @@ export default function PublicLandingPage({
                 <div className={`relative z-10 ${isSimMobile ? 'p-6 space-y-4' : 'p-6 sm:p-14 space-y-6'} max-w-3xl`}>
                   {resolvedConfig.hero_badge && (
                     <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/20 backdrop-blur-md text-white text-xs font-extrabold">
-                      <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
+                      <Compass className="w-3.5 h-3.5 text-emerald-300" />
                       <span>{resolvedConfig.hero_badge}</span>
                     </div>
                   )}
@@ -2091,7 +2080,7 @@ export default function PublicLandingPage({
                   <div
                     className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full border ${theme.badgeBg} ${theme.badgeText} text-xs font-extrabold`}
                   >
-                    <Sparkles className={`w-3.5 h-3.5 ${theme.accentText}`} />
+                    <Compass className={`w-3.5 h-3.5 ${theme.accentText}`} />
                     <span>{resolvedConfig.hero_badge}</span>
                   </div>
                 )}
@@ -2177,7 +2166,7 @@ export default function PublicLandingPage({
                   <div
                     className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border ${theme.badgeBg} ${theme.badgeText} text-xs font-extrabold`}
                   >
-                    <Sparkles className={`w-3.5 h-3.5 ${theme.accentText} shrink-0`} />
+                    <Compass className={`w-3.5 h-3.5 ${theme.accentText} shrink-0`} />
                     <span>{resolvedConfig.hero_badge}</span>
                   </div>
                 )}
@@ -2397,15 +2386,16 @@ export default function PublicLandingPage({
       </EditableSectionWrapper>
 
       {/* Poster Lightbox Modal */}
-      {lightboxPost && (
-        <div
-          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
-          onClick={() => setLightboxPost(null)}
-        >
-          <div
-            className="bg-white rounded-3xl max-w-3xl w-full overflow-hidden shadow-2xl my-8"
-            onClick={(e) => e.stopPropagation()}
-          >
+      <ModalShell
+        open={Boolean(lightboxPost)}
+        onClose={() => setLightboxPost(null)}
+        zIndexClass="z-[70]"
+        maxWidthClass="max-w-3xl"
+        backdropClassName="bg-slate-950/90 backdrop-blur-xs"
+        ariaLabel={lightboxPost?.title || 'Poster Preview'}
+      >
+        {lightboxPost && (
+          <div className="bg-white rounded-3xl w-full overflow-hidden shadow-2xl border border-slate-200">
             <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
               <div>
                 {lightboxPost.subtitle && (
@@ -2421,6 +2411,7 @@ export default function PublicLandingPage({
                 type="button"
                 onClick={() => setLightboxPost(null)}
                 className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer"
+                aria-label="Close preview"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2462,219 +2453,229 @@ export default function PublicLandingPage({
               )}
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </ModalShell>
 
       {/* Centered Member Auth Modal */}
-      {authModalOpen && !isPreview && (
+      <ModalShell
+        open={authModalOpen && !isPreview}
+        onClose={() => setAuthModalOpen(false)}
+        zIndexClass="z-50"
+        maxWidthClass="max-w-md"
+        ariaLabel="Member Portal Access"
+      >
         <div
-          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
-          onClick={() => setAuthModalOpen(false)}
+          className={`relative w-full bg-white text-slate-900 rounded-3xl shadow-2xl border ${theme.softBorder} overflow-hidden`}
         >
-          <div
-            className={`relative max-w-md w-full bg-white text-slate-900 rounded-3xl shadow-2xl border ${theme.softBorder} overflow-hidden my-8`}
-            onClick={(e) => e.stopPropagation()}
+          <button
+            type="button"
+            onClick={() => setAuthModalOpen(false)}
+            className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/90 hover:bg-white text-slate-600 flex items-center justify-center shadow-2xs border border-slate-200/80 cursor-pointer"
+            aria-label="Close sign in modal"
           >
+            <X className="w-4 h-4" />
+          </button>
+
+          <div className={`bg-gradient-to-b from-slate-100/80 via-white to-white p-6 text-center text-slate-900 border-b ${theme.navBorder}`}>
             <button
               type="button"
-              onClick={() => setAuthModalOpen(false)}
-              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/80 hover:bg-white text-slate-600 flex items-center justify-center shadow-2xs cursor-pointer"
-              aria-label="Close sign in modal"
+              onClick={scrollToTop}
+              title="Return to main page"
+              className="inline-flex flex-col items-center cursor-pointer group"
             >
-              <X className="w-4 h-4" />
+              {logoUrl && !isPdfMedia(logoUrl) ? (
+                <img
+                  src={logoUrl}
+                  alt={clubName}
+                  className={`w-14 h-14 rounded-2xl object-cover mx-auto mb-2 bg-white shadow-sm border ${theme.softBorder} transition group-hover:scale-105`}
+                />
+              ) : (
+                <div
+                  className={`w-13 h-13 rounded-2xl ${theme.primaryBtn} flex items-center justify-center mx-auto mb-2 shadow-sm transition group-hover:scale-105`}
+                >
+                  <Layers className="w-7 h-7" />
+                </div>
+              )}
+              <h2 className="text-lg font-extrabold text-slate-900 group-hover:text-emerald-700 transition">
+                {clubName}
+              </h2>
             </button>
+            <p className="text-xs text-slate-500 mt-0.5">Member Portal Access</p>
+            <button
+              type="button"
+              onClick={scrollToTop}
+              className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-emerald-700 cursor-pointer"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              <span>Return to main page</span>
+            </button>
+          </div>
 
-            <div className={`bg-gradient-to-b from-slate-100/80 via-white to-white p-6 text-center text-slate-900 border-b ${theme.navBorder}`}>
-              <button
-                type="button"
-                onClick={scrollToTop}
-                title="Return to main page"
-                className="inline-flex flex-col items-center cursor-pointer group"
-              >
-                {logoUrl && !isPdfMedia(logoUrl) ? (
-                  <img
-                    src={logoUrl}
-                    alt={clubName}
-                    className={`w-14 h-14 rounded-2xl object-cover mx-auto mb-2 bg-white shadow-sm border ${theme.softBorder} transition group-hover:scale-105`}
-                  />
-                ) : (
-                  <div
-                    className={`w-13 h-13 rounded-2xl ${theme.primaryBtn} flex items-center justify-center mx-auto mb-2 shadow-sm transition group-hover:scale-105`}
-                  >
-                    <Layers className="w-7 h-7" />
-                  </div>
-                )}
-                <h2 className="text-lg font-extrabold text-slate-900 group-hover:text-emerald-700 transition">
-                  {clubName}
-                </h2>
-              </button>
-              <p className="text-xs text-slate-500 mt-0.5">Member Portal Access</p>
-              <button
-                type="button"
-                onClick={scrollToTop}
-                className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-emerald-700 cursor-pointer"
-              >
-                <ArrowLeft className="w-3 h-3" />
-                <span>Return to main page</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 bg-slate-100 p-1 m-5 mb-2 rounded-2xl">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthError(null);
-                  setAuthSuccessMsg(null);
-                  setAuthMode('login');
-                }}
-                className={`py-2 text-xs rounded-xl transition cursor-pointer ${
-                  authMode === 'login'
-                    ? `${theme.primaryBtn} font-extrabold shadow-xs`
-                    : 'text-slate-600 font-semibold hover:text-slate-900'
-                }`}
-              >
-                Member Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthError(null);
-                  setAuthSuccessMsg(null);
-                  setAuthMode('signup');
-                }}
-                className={`py-2 text-xs rounded-xl transition cursor-pointer ${
-                  authMode === 'signup'
-                    ? 'bg-slate-800 text-white font-bold shadow-xs'
-                    : 'text-slate-500 font-medium hover:text-slate-800'
-                }`}
-              >
-                Sign Up
-              </button>
-            </div>
-
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
+          <div className="grid grid-cols-2 bg-slate-100 p-1 m-5 mb-2 rounded-2xl">
+            <button
+              type="button"
+              onClick={() => {
                 setAuthError(null);
                 setAuthSuccessMsg(null);
-                setSubmittingAuth(true);
-                try {
-                  if (authMode === 'signup') {
-                    const res = await supabase.auth.signUp({
-                      email: email.trim(),
-                      password,
-                      options: {
-                        data: {
-                          full_name: fullName.trim(),
-                          matric_no: matricNo.trim().toUpperCase(),
-                          phone_number: phoneNumber.trim(),
-                          role: 'member',
-                        },
-                      },
-                    });
-                    if (res.error) {
-                      setAuthError(res.error.message);
-                    } else if (!res.data.session) {
-                      setAuthSuccessMsg(
-                        'Account registered! Please check your email inbox to confirm, or sign in if verification is disabled.'
-                      );
-                    }
-                  } else {
-                    const res = await supabase.auth.signInWithPassword({
-                      email: email.trim(),
-                      password,
-                    });
-                    if (res.error) setAuthError(res.error.message);
-                  }
-                } catch {
-                  setAuthError('Network error connecting to ClubSync. Please check your connection and try again.');
-                } finally {
-                  setSubmittingAuth(false);
-                }
+                setAuthMode('login');
               }}
-              className="p-6 pt-2 space-y-3 text-xs"
+              className={`py-2 text-xs rounded-xl transition cursor-pointer ${
+                authMode === 'login'
+                  ? `${theme.primaryBtn} font-extrabold shadow-xs`
+                  : 'text-slate-600 font-semibold hover:text-slate-900'
+              }`}
             >
-              {authMode === 'signup' && (
-                <>
+              Member Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthError(null);
+                setAuthSuccessMsg(null);
+                setAuthMode('signup');
+              }}
+              className={`py-2 text-xs rounded-xl transition cursor-pointer ${
+                authMode === 'signup'
+                  ? 'bg-slate-900 text-white font-bold shadow-xs'
+                  : 'text-slate-600 font-medium hover:text-slate-900'
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setAuthError(null);
+              setAuthSuccessMsg(null);
+              setSubmittingAuth(true);
+              try {
+                if (authMode === 'signup') {
+                  const res = await supabase.auth.signUp({
+                    email: email.trim(),
+                    password,
+                    options: {
+                      data: {
+                        full_name: fullName.trim(),
+                        matric_no: matricNo.trim().toUpperCase(),
+                        phone_number: phoneNumber.trim(),
+                        role: 'member',
+                      },
+                    },
+                  });
+                  if (res.error) {
+                    setAuthError(res.error.message);
+                  } else if (!res.data.session) {
+                    setAuthSuccessMsg(
+                      'Account registered! Please check your email inbox to confirm, or sign in if verification is disabled.'
+                    );
+                  }
+                } else {
+                  const res = await supabase.auth.signInWithPassword({
+                    email: email.trim(),
+                    password,
+                  });
+                  if (res.error) setAuthError(res.error.message);
+                }
+              } catch {
+                setAuthError('Network error connecting to ClubSync. Please check your connection and try again.');
+              } finally {
+                setSubmittingAuth(false);
+              }
+            }}
+            className="p-6 pt-2 space-y-3 text-xs"
+          >
+            {authMode === 'signup' && (
+              <>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Full Name *"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 py-2.5 text-sm"
+                  required
+                />
+                <div className="grid grid-cols-2 gap-2">
                   <input
                     type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Full Name *"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 text-sm"
+                    value={matricNo}
+                    onChange={(e) => setMatricNo(e.target.value)}
+                    placeholder="Matric No *"
+                    className="rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 py-2.5 font-mono"
                     required
                   />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      value={matricNo}
-                      onChange={(e) => setMatricNo(e.target.value)}
-                      placeholder="Matric No *"
-                      className="rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 font-mono"
-                      required
-                    />
-                    <input
-                      type="tel"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      placeholder="Phone *"
-                      className="rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 font-mono"
-                      required
-                    />
-                  </div>
-                </>
-              )}
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="Phone *"
+                    className="rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 py-2.5 font-mono"
+                    required
+                  />
+                </div>
+              </>
+            )}
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email *"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white px-3 py-2.5 text-sm"
+              required
+            />
+            <div className="relative">
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email *"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 text-sm"
-                required
-              />
-              <input
-                type="password"
+                type={showAuthPw ? 'text' : 'password'}
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password *"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white px-3 py-2 text-sm"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white pl-3 pr-10 py-2.5 text-sm"
                 required
               />
-              {authError && (
-                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">
-                  {authError}
-                </div>
-              )}
-              {authSuccessMsg && (
-                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold">
-                  {authSuccessMsg}
-                </div>
-              )}
               <button
-                type="submit"
-                disabled={submittingAuth}
-                className={`w-full py-2.5 rounded-xl font-bold text-sm shadow-sm cursor-pointer disabled:opacity-60 inline-flex items-center justify-center gap-2 ${
-                  authMode === 'login'
-                    ? theme.primaryBtn
-                    : 'bg-slate-800 hover:bg-slate-700 text-white'
-                }`}
+                type="button"
+                onClick={() => setShowAuthPw((v) => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+                aria-label={showAuthPw ? 'Hide password' : 'Show password'}
               >
-                {submittingAuth && <Loader2 className="w-4 h-4 animate-spin" />}
-                <span>
-                  {submittingAuth
-                    ? authMode === 'login'
-                      ? 'Signing in...'
-                      : 'Creating account...'
-                    : authMode === 'login'
-                    ? 'Sign In'
-                    : 'Create Member Account'}
-                </span>
+                {showAuthPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
-            </form>
-          </div>
+            </div>
+            {authError && (
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">
+                {authError}
+              </div>
+            )}
+            {authSuccessMsg && (
+              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold">
+                {authSuccessMsg}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={submittingAuth}
+              className={`w-full py-2.5 rounded-xl font-bold text-sm shadow-sm cursor-pointer disabled:opacity-60 inline-flex items-center justify-center gap-2 ${
+                authMode === 'login'
+                  ? theme.primaryBtn
+                  : 'bg-slate-900 hover:bg-slate-800 text-white'
+              }`}
+            >
+              {submittingAuth && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>
+                {submittingAuth
+                  ? authMode === 'login'
+                    ? 'Signing in...'
+                    : 'Creating account...'
+                  : authMode === 'login'
+                  ? 'Sign In'
+                  : 'Create Member Account'}
+              </span>
+            </button>
+          </form>
         </div>
-      )}
+      </ModalShell>
     </div>
   );
 }
