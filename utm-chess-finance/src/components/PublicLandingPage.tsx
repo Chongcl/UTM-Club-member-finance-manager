@@ -1760,7 +1760,8 @@ export default function PublicLandingPage({
     );
   }
 
-  const hasDynamicBg = resolvedConfig.background_effect !== 'none';
+  const hasDynamicBg =
+    resolvedConfig.background_effect !== 'none' || Boolean(resolvedConfig.background_mesh);
   const effectiveBtnColor = resolvedConfig.custom_button_bg || resolvedConfig.custom_accent;
   const landingStyle: React.CSSProperties = {
     ...(effectiveBtnColor ? ({ '--pl-btn-bg': effectiveBtnColor } as React.CSSProperties) : {}),
@@ -1785,11 +1786,15 @@ export default function PublicLandingPage({
       {hasDynamicBg && (
         <ThemeBackgroundLayer
           config={{
-            backgroundId: resolvedConfig.background_effect,
+            backgroundId:
+              resolvedConfig.background_effect === 'none'
+                ? resolvedConfig.background_mesh
+                : resolvedConfig.background_effect,
+            bgMesh: resolvedConfig.background_mesh,
             bgColors: resolvedConfig.background_colors,
             bgSpeed: resolvedConfig.background_speed,
             bgOpacity: resolvedConfig.background_opacity,
-            bgScrim: 0.08,
+            bgScrim: resolvedConfig.background_scrim,
           }}
           darkMode={false}
           contained={isPreview}

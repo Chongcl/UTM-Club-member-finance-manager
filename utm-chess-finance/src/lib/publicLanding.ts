@@ -1,3 +1,5 @@
+import { MeshBackdropId, MESH_BACKDROP_IDS } from '@/lib/themeConfig';
+
 export type FooterLinkPlatform =
   | 'instagram'
   | 'facebook'
@@ -130,6 +132,7 @@ export interface PublicLandingConfig {
   animation_level?: AnimationLevel;
   section_order?: LandingSectionId[];
   background_effect?: PublicBackgroundEffect;
+  background_mesh?: MeshBackdropId;
   background_colors?: {
     primary?: string;
     secondary?: string;
@@ -137,6 +140,7 @@ export interface PublicLandingConfig {
   };
   background_speed?: number;
   background_opacity?: number;
+  background_scrim?: number;
   custom_accent?: string;
   custom_card_bg?: string;
   custom_button_bg?: string;
@@ -217,6 +221,7 @@ export interface ResolvedPublicLandingConfig {
   animation_level: AnimationLevel;
   section_order: LandingSectionId[];
   background_effect: PublicBackgroundEffect;
+  background_mesh: MeshBackdropId;
   background_colors: {
     primary: string;
     secondary: string;
@@ -224,6 +229,7 @@ export interface ResolvedPublicLandingConfig {
   };
   background_speed: number;
   background_opacity: number;
+  background_scrim: number;
   custom_accent: string;
   custom_card_bg: string;
   custom_button_bg: string;
@@ -850,8 +856,14 @@ export function resolvePublicLandingConfig(
       : 'signup';
 
   const bgEffect: PublicBackgroundEffect = cfg.background_effect || 'none';
+  const validMeshIds = new Set<string>(MESH_BACKDROP_IDS);
+  const bgMesh: MeshBackdropId =
+    typeof cfg.background_mesh === 'string' && validMeshIds.has(cfg.background_mesh.trim())
+      ? (cfg.background_mesh.trim() as MeshBackdropId)
+      : '';
   const bgSpeedRaw = Number(cfg.background_speed);
   const bgOpacityRaw = Number(cfg.background_opacity);
+  const bgScrimRaw = Number(cfg.background_scrim);
 
   return {
     theme_preset: themePreset,
@@ -860,6 +872,7 @@ export function resolvePublicLandingConfig(
     animation_level: animationLevel,
     section_order: normalizeSectionOrder(cfg.section_order),
     background_effect: bgEffect,
+    background_mesh: bgMesh,
     background_colors: {
       primary: cfg.background_colors?.primary || '#10b981',
       secondary: cfg.background_colors?.secondary || '#0ea5e9',
@@ -871,6 +884,9 @@ export function resolvePublicLandingConfig(
     background_opacity: Number.isFinite(bgOpacityRaw)
       ? Math.min(1, Math.max(0.15, bgOpacityRaw))
       : 0.72,
+    background_scrim: Number.isFinite(bgScrimRaw)
+      ? Math.min(0.65, Math.max(0, bgScrimRaw))
+      : 0.08,
     custom_accent: cfg.custom_accent || '',
     custom_card_bg: cfg.custom_card_bg || '',
     custom_button_bg: cfg.custom_button_bg || '',

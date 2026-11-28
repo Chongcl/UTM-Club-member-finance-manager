@@ -36,7 +36,7 @@ import {
   resolvePublicLandingConfig,
   writeCachedPublicSnapshot,
 } from '@/lib/publicLanding';
-import { DYNAMIC_BG_OPTIONS } from '@/lib/themeConfig';
+import { DYNAMIC_BG_OPTIONS, MeshBackdropId, getColorsForMode } from '@/lib/themeConfig';
 import PublicLandingPage, {
   FeatureIcon,
   FooterPlatformIcon,
@@ -72,6 +72,7 @@ import {
   ExternalLink,
   Layout,
   Palette,
+  Check,
   ChevronDown,
   ChevronRight,
   Megaphone,
@@ -276,6 +277,7 @@ export default function PublicLandingEditorModal({
   const [fullPreview, setFullPreview] = useState(false);
   const [showHiddenSections, setShowHiddenSections] = useState(true);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [fineTuneOpen, setFineTuneOpen] = useState(false);
 
   const [expandedItemIds, setExpandedItemIds] = useState<Record<string, boolean>>({});
   const [draggedSectionId, setDraggedSectionId] = useState<LandingSectionId | null>(null);
@@ -621,6 +623,98 @@ export default function PublicLandingEditorModal({
       true
     );
     setTemplatesOpen(false);
+  };
+
+  const meshOptions = DYNAMIC_BG_OPTIONS.filter((o) => o.source === 'mesh');
+  const reactBitsOptions = DYNAMIC_BG_OPTIONS.filter((o) => o.source === 'react-bits');
+  const activeMeshId: MeshBackdropId = draft.background_effect.startsWith('mesh-')
+    ? (draft.background_effect as MeshBackdropId)
+    : draft.background_mesh || '';
+  const hasAnimatedEffect =
+    draft.background_effect !== 'none' && !draft.background_effect.startsWith('mesh-');
+
+  const handleSelectLandingMesh = (meshId: MeshBackdropId) => {
+    if (!meshId) {
+      applyDraftChange((prev) => {
+        if (prev.background_effect.startsWith('mesh-')) {
+          return {
+            ...prev,
+            background_effect: 'none',
+            background_mesh: '',
+          };
+        }
+        const effectOpt = DYNAMIC_BG_OPTIONS.find((o) => o.id === prev.background_effect);
+        return {
+          ...prev,
+          background_mesh: '',
+          background_colors: effectOpt
+            ? getColorsForMode(effectOpt, false)
+            : prev.background_colors,
+        };
+      }, true);
+      return;
+    }
+
+    const opt = DYNAMIC_BG_OPTIONS.find((o) => o.id === meshId);
+    if (!opt) return;
+    const matchedColors = getColorsForMode(opt, false);
+
+    applyDraftChange((prev) => {
+      const hasEffectNow =
+        prev.background_effect !== 'none' && !prev.background_effect.startsWith('mesh-');
+      if (hasEffectNow) {
+        return {
+          ...prev,
+          background_mesh: meshId,
+          background_colors: matchedColors,
+        };
+      }
+      return {
+        ...prev,
+        background_effect: meshId,
+        background_mesh: meshId,
+        background_colors: matchedColors,
+      };
+    }, true);
+  };
+
+  const handleSelectLandingEffect = (effectId: PublicBackgroundEffect) => {
+    applyDraftChange((prev) => {
+      const currentMesh: MeshBackdropId = prev.background_effect.startsWith('mesh-')
+        ? (prev.background_effect as MeshBackdropId)
+        : prev.background_mesh || '';
+
+      if (effectId === 'none') {
+        if (currentMesh) {
+          return {
+            ...prev,
+            background_effect: currentMesh,
+            background_mesh: currentMesh,
+          };
+        }
+        return {
+          ...prev,
+          background_effect: 'none',
+          background_mesh: '',
+        };
+      }
+
+      const opt = DYNAMIC_BG_OPTIONS.find((o) => o.id === effectId);
+      if (!opt) return prev;
+      const meshOpt = currentMesh
+        ? DYNAMIC_BG_OPTIONS.find((o) => o.id === currentMesh)
+        : undefined;
+
+      return {
+        ...prev,
+        background_effect: opt.id,
+        background_mesh: currentMesh,
+        background_colors: currentMesh
+          ? prev.background_colors ||
+            (meshOpt ? getColorsForMode(meshOpt, false) : getColorsForMode(opt, false))
+          : getColorsForMode(opt, false),
+      };
+    }, true);
   };
 
   const handleCloseSafe = () => {
@@ -2836,97 +2930,237 @@ export default function PublicLandingEditorModal({
                       </div>
                     </div>
 
-                    {/* Dynamic Page Background (React Bits & Magic UI) */}
-                    <div className="space-y-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200">
-                      <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                        Dynamic Page Background (Optional)
-                      </div>
-                      <select
-                        value={draft.background_effect}
-                        onChange={(e) => {
-                          const nextEffect = e.target.value as PublicBackgroundEffect;
-                          updateField('background_effect', nextEffect, true);
-                          const matchedOpt = DYNAMIC_BG_OPTIONS.find((o) => o.id === nextEffect);
-                          if (matchedOpt) {
-                            updateField('background_colors', { ...matchedOpt.defaultColors }, false);
-                          }
-                        }}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 font-bold text-slate-800 cursor-pointer"
-                      >
-                        <option value="none">None (Use Classic Gradient Preset)</option>
-                        {DYNAMIC_BG_OPTIONS.map((opt) => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.name}
-                          </option>
-                        ))}
-                      </select>
-
-                      {draft.background_effect !== 'none' && (
-                        <div className="space-y-2.5 pt-1">
-                          <div className="grid grid-cols-3 gap-2">
-                            {(
-                              [
-                                { key: 'primary', label: 'Primary', fallback: '#10b981' },
-                                { key: 'secondary', label: 'Secondary', fallback: '#0ea5e9' },
-                                { key: 'accent', label: 'Glow', fallback: '#f59e0b' },
-                              ] as const
-                            ).map((c) => (
-                              <label
-                                key={c.key}
-                                className="flex items-center gap-1.5 p-1.5 rounded-lg bg-white border border-slate-200 cursor-pointer"
+                    {/* Background Studio (Composable Colorful Mesh + Animated Effects, matching Theme Studio) */}
+                    <div className="space-y-4">
+                      {/* Group 1: Colorful Mesh */}
+                      <div className="space-y-2 p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700">
+                              Colorful Mesh
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              Pairs with any animated effect below
+                            </div>
+                          </div>
+                          {activeMeshId && (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectLandingMesh('')}
+                              className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer shrink-0"
+                            >
+                              Clear Mesh
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {meshOptions.map((opt) => {
+                            const active = activeMeshId === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => handleSelectLandingMesh(opt.id as MeshBackdropId)}
+                                className={`p-2 rounded-xl border text-left transition cursor-pointer space-y-1.5 ${
+                                  active
+                                    ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/70'
+                                    : 'border-slate-200 bg-white hover:border-emerald-300'
+                                }`}
                               >
-                                <input
-                                  type="color"
-                                  value={draft.background_colors[c.key] || c.fallback}
-                                  onChange={(e) =>
-                                    updateField(
-                                      'background_colors',
-                                      { ...draft.background_colors, [c.key]: e.target.value },
-                                      false
-                                    )
-                                  }
-                                  className="w-5 h-5 rounded cursor-pointer border-0 bg-transparent p-0 shrink-0"
-                                />
-                                <span className="text-[10px] font-bold text-slate-700 truncate">{c.label}</span>
-                              </label>
-                            ))}
+                                <div
+                                  className="w-full h-10 rounded-lg border border-black/10 relative"
+                                  style={{ background: opt.preview }}
+                                >
+                                  {active && (
+                                    <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center">
+                                      <Check className="w-2.5 h-2.5" />
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] font-bold text-slate-900 truncate">
+                                  {opt.name}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Group 2: Animated Effects (React Bits) */}
+                      <div className="space-y-2 p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700">
+                            Animated Effects (React Bits)
                           </div>
-                          <div className="grid grid-cols-2 gap-2.5">
-                            <div>
-                              <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-0.5">
-                                <span>Speed</span>
-                                <span className="font-mono">{draft.background_speed.toFixed(1)}x</span>
-                              </div>
-                              <input
-                                type="range"
-                                min={0}
-                                max={1.5}
-                                step={0.1}
-                                value={draft.background_speed}
-                                onChange={(e) =>
-                                  updateField('background_speed', parseFloat(e.target.value), false)
-                                }
-                                className="w-full accent-emerald-600 cursor-pointer"
-                              />
-                            </div>
-                            <div>
-                              <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-0.5">
-                                <span>Intensity</span>
-                                <span className="font-mono">{Math.round(draft.background_opacity * 100)}%</span>
-                              </div>
-                              <input
-                                type="range"
-                                min={0.15}
-                                max={1}
-                                step={0.05}
-                                value={draft.background_opacity}
-                                onChange={(e) =>
-                                  updateField('background_opacity', parseFloat(e.target.value), false)
-                                }
-                                className="w-full accent-emerald-600 cursor-pointer"
-                              />
-                            </div>
+                          {hasAnimatedEffect ? (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectLandingEffect('none')}
+                              className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer shrink-0"
+                            >
+                              Effect Off
+                            </button>
+                          ) : !activeMeshId ? (
+                            <span className="px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-700 text-[10px] font-bold shrink-0">
+                              None (Classic Gradient)
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="space-y-1.5">
+                          {reactBitsOptions.map((opt) => {
+                            const active = draft.background_effect === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                type="button"
+                                onClick={() => handleSelectLandingEffect(opt.id)}
+                                className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-xl border text-left transition cursor-pointer ${
+                                  active
+                                    ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/70'
+                                    : 'border-slate-200 bg-white hover:border-emerald-300'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div
+                                    className="w-9 h-9 rounded-lg border border-black/10 shrink-0"
+                                    style={{ background: opt.preview }}
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="text-[11px] font-bold text-slate-900 truncate">
+                                      {opt.name.replace('React Bits · ', '')}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 truncate">
+                                      {opt.desc}
+                                    </div>
+                                  </div>
+                                </div>
+                                {active && (
+                                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {!activeMeshId && !hasAnimatedEffect && (
+                          <div className="text-[10px] text-slate-500 pt-0.5">
+                            Currently using the classic theme preset gradient. Pick a mesh or animated effect above to customize.
                           </div>
+                        )}
+                      </div>
+
+                      {/* Collapsible Fine-Tune Background */}
+                      {(activeMeshId || hasAnimatedEffect) && (
+                        <div className="rounded-2xl bg-slate-50 border border-slate-200 overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => setFineTuneOpen((v) => !v)}
+                            className="w-full px-3.5 py-2.5 flex items-center justify-between font-extrabold text-slate-800 cursor-pointer"
+                          >
+                            <span>Fine-Tune Background</span>
+                            {fineTuneOpen ? (
+                              <ChevronDown className="w-4 h-4 text-slate-500" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4 text-slate-500" />
+                            )}
+                          </button>
+                          {fineTuneOpen && (
+                            <div className="px-3.5 pb-3.5 pt-2.5 border-t border-slate-200 space-y-3">
+                              <div className="grid grid-cols-3 gap-2">
+                                {(
+                                  [
+                                    { key: 'primary', label: 'Primary', fallback: '#10b981' },
+                                    { key: 'secondary', label: 'Secondary', fallback: '#0ea5e9' },
+                                    { key: 'accent', label: 'Glow', fallback: '#f59e0b' },
+                                  ] as const
+                                ).map((c) => (
+                                  <label
+                                    key={c.key}
+                                    className="flex items-center gap-1.5 p-1.5 rounded-lg bg-white border border-slate-200 cursor-pointer"
+                                  >
+                                    <input
+                                      type="color"
+                                      value={draft.background_colors[c.key] || c.fallback}
+                                      onChange={(e) =>
+                                        updateField(
+                                          'background_colors',
+                                          { ...draft.background_colors, [c.key]: e.target.value },
+                                          false
+                                        )
+                                      }
+                                      className="w-5 h-5 rounded cursor-pointer border-0 bg-transparent p-0 shrink-0"
+                                    />
+                                    <span className="text-[10px] font-bold text-slate-700 truncate">
+                                      {c.label}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+
+                              <div className="space-y-2.5">
+                                <div>
+                                  <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-0.5">
+                                    <span>Animation Speed</span>
+                                    <span className="font-mono tabular-nums">
+                                      {draft.background_speed.toFixed(1)}x
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={0}
+                                    max={1.5}
+                                    step={0.1}
+                                    value={draft.background_speed}
+                                    onChange={(e) =>
+                                      updateField('background_speed', parseFloat(e.target.value), false)
+                                    }
+                                    className="w-full accent-emerald-600 cursor-pointer"
+                                  />
+                                </div>
+
+                                <div>
+                                  <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-0.5">
+                                    <span>Background Intensity</span>
+                                    <span className="font-mono tabular-nums">
+                                      {Math.round(draft.background_opacity * 100)}%
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={0.15}
+                                    max={1}
+                                    step={0.05}
+                                    value={draft.background_opacity}
+                                    onChange={(e) =>
+                                      updateField('background_opacity', parseFloat(e.target.value), false)
+                                    }
+                                    className="w-full accent-emerald-600 cursor-pointer"
+                                  />
+                                </div>
+
+                                <div>
+                                  <div className="flex justify-between text-[10px] font-bold text-slate-600 mb-0.5">
+                                    <span>Contrast Veil</span>
+                                    <span className="font-mono tabular-nums">
+                                      {Math.round(draft.background_scrim * 100)}%
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={0}
+                                    max={0.65}
+                                    step={0.05}
+                                    value={draft.background_scrim}
+                                    onChange={(e) =>
+                                      updateField('background_scrim', parseFloat(e.target.value), false)
+                                    }
+                                    className="w-full accent-emerald-600 cursor-pointer"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
