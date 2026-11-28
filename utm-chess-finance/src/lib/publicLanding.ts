@@ -24,6 +24,10 @@ export type CardSurfaceStyle = 'glass' | 'crisp' | 'elevated' | 'liquid-glass';
 
 export type PublicBackgroundEffect =
   | 'none'
+  | 'mesh-sunrise'
+  | 'mesh-botanical'
+  | 'mesh-lavender'
+  | 'mesh-ocean-glass'
   | 'rb-aurora'
   | 'rb-soft-aurora'
   | 'rb-particles'

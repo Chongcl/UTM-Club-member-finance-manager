@@ -1,4 +1,8 @@
 export type DynamicBgId =
+  | 'mesh-sunrise'
+  | 'mesh-botanical'
+  | 'mesh-lavender'
+  | 'mesh-ocean-glass'
   | 'rb-aurora'
   | 'rb-soft-aurora'
   | 'rb-particles'
@@ -46,6 +50,10 @@ export interface ClubThemeConfig {
 }
 
 export const DYNAMIC_BG_IDS: readonly DynamicBgId[] = [
+  'mesh-sunrise',
+  'mesh-botanical',
+  'mesh-lavender',
+  'mesh-ocean-glass',
   'rb-aurora',
   'rb-soft-aurora',
   'rb-particles',
@@ -85,15 +93,67 @@ export const DEFAULT_THEME_CONFIG: ClubThemeConfig = {
 
 export interface DynamicBgOption {
   id: DynamicBgId;
-  source: 'react-bits' | 'magic-ui';
+  source: 'mesh' | 'react-bits' | 'magic-ui';
   name: string;
   desc: string;
   preview: string;
   recommendedMode: 'dark' | 'light' | 'both';
   defaultColors: { primary: string; secondary: string; accent: string };
+  lightColors?: { primary: string; secondary: string; accent: string };
+}
+
+export function getColorsForMode(
+  opt: DynamicBgOption,
+  darkMode: boolean
+): { primary: string; secondary: string; accent: string } {
+  return !darkMode && opt.lightColors ? { ...opt.lightColors } : { ...opt.defaultColors };
 }
 
 export const DYNAMIC_BG_OPTIONS: DynamicBgOption[] = [
+  {
+    id: 'mesh-sunrise',
+    source: 'mesh',
+    name: 'Sunrise Glass Mesh',
+    desc: 'Warm peach, soft rose & sky-blue ambient glow for crisp daylight cards',
+    preview:
+      'radial-gradient(at 15% 15%, #fed7aa 0, transparent 55%), radial-gradient(at 85% 20%, #fbcfe8 0, transparent 55%), radial-gradient(at 50% 85%, #bae6fd 0, transparent 60%), #fffbf7',
+    recommendedMode: 'light',
+    defaultColors: { primary: '#fb923c', secondary: '#f472b6', accent: '#38bdf8' },
+    lightColors: { primary: '#fdba74', secondary: '#f9a8d4', accent: '#7dd3fc' },
+  },
+  {
+    id: 'mesh-botanical',
+    source: 'mesh',
+    name: 'Botanical Mint Wash',
+    desc: 'Fresh mint, seafoam teal & soft lemon wash with fine architectural dots',
+    preview:
+      'radial-gradient(at 15% 15%, #a7f3d0 0, transparent 55%), radial-gradient(at 85% 20%, #fef08a 0, transparent 55%), radial-gradient(at 50% 85%, #99f6e4 0, transparent 60%), #f6fcf9',
+    recommendedMode: 'light',
+    defaultColors: { primary: '#10b981', secondary: '#14b8a6', accent: '#eab308' },
+    lightColors: { primary: '#6ee7b7', secondary: '#5eead4', accent: '#fde047' },
+  },
+  {
+    id: 'mesh-lavender',
+    source: 'mesh',
+    name: 'Lavender Cloud Veil',
+    desc: 'Pastel violet, cotton-candy sky & blush blobs in airy porcelain light',
+    preview:
+      'radial-gradient(at 15% 15%, #ddd6fe 0, transparent 55%), radial-gradient(at 85% 20%, #bae6fd 0, transparent 55%), radial-gradient(at 50% 85%, #fecdd3 0, transparent 60%), #fbfaff',
+    recommendedMode: 'light',
+    defaultColors: { primary: '#a78bfa', secondary: '#38bdf8', accent: '#fb7185' },
+    lightColors: { primary: '#c4b5fd', secondary: '#7dd3fc', accent: '#fda4af' },
+  },
+  {
+    id: 'mesh-ocean-glass',
+    source: 'mesh',
+    name: 'Ocean Porcelain Grid',
+    desc: 'Luminous cyan, porcelain blue & crisp geometric hairline grid',
+    preview:
+      'radial-gradient(at 15% 15%, #a5f3fc 0, transparent 55%), radial-gradient(at 85% 25%, #bfdbfe 0, transparent 55%), radial-gradient(at 50% 90%, #c7d2fe 0, transparent 60%), #f4f9ff',
+    recommendedMode: 'light',
+    defaultColors: { primary: '#06b6d4', secondary: '#3b82f6', accent: '#6366f1' },
+    lightColors: { primary: '#67e8f9', secondary: '#93c5fd', accent: '#a5b4fc' },
+  },
   {
     id: 'rb-aurora',
     source: 'react-bits',
@@ -102,6 +162,7 @@ export const DYNAMIC_BG_OPTIONS: DynamicBgOption[] = [
     preview: 'linear-gradient(135deg, #0ea5e9 0%, #10b981 50%, #f59e0b 100%)',
     recommendedMode: 'both',
     defaultColors: { primary: '#10b981', secondary: '#0ea5e9', accent: '#f59e0b' },
+    lightColors: { primary: '#38bdf8', secondary: '#34d399', accent: '#fbbf24' },
   },
   {
     id: 'rb-soft-aurora',
@@ -111,6 +172,7 @@ export const DYNAMIC_BG_OPTIONS: DynamicBgOption[] = [
     preview: 'linear-gradient(135deg, #fde68a 0%, #93c5fd 55%, #c4b5fd 100%)',
     recommendedMode: 'both',
     defaultColors: { primary: '#fdba74', secondary: '#93c5fd', accent: '#c4b5fd' },
+    lightColors: { primary: '#fb923c', secondary: '#60a5fa', accent: '#c084fc' },
   },
   {
     id: 'rb-particles',
@@ -120,6 +182,7 @@ export const DYNAMIC_BG_OPTIONS: DynamicBgOption[] = [
     preview: 'linear-gradient(135deg, #040712 0%, #1e293b 60%, #fb923c 100%)',
     recommendedMode: 'both',
     defaultColors: { primary: '#e2e8f0', secondary: '#38bdf8', accent: '#fb923c' },
+    lightColors: { primary: '#0ea5e9', secondary: '#10b981', accent: '#f97316' },
   },
   {
     id: 'rb-galaxy',
@@ -129,6 +192,7 @@ export const DYNAMIC_BG_OPTIONS: DynamicBgOption[] = [
     preview: 'linear-gradient(135deg, #020617 0%, #0f172a 55%, #3b82f6 100%)',
     recommendedMode: 'dark',
     defaultColors: { primary: '#e2e8f0', secondary: '#60a5fa', accent: '#fb923c' },
+    lightColors: { primary: '#2563eb', secondary: '#0d9488', accent: '#f59e0b' },
   },
   {
     id: 'rb-light-rays',
@@ -138,6 +202,7 @@ export const DYNAMIC_BG_OPTIONS: DynamicBgOption[] = [
     preview: 'linear-gradient(180deg, #10b981 0%, #050a07 75%, #020617 100%)',
     recommendedMode: 'both',
     defaultColors: { primary: '#10b981', secondary: '#4ade80', accent: '#34d399' },
+    lightColors: { primary: '#0d9488', secondary: '#34d399', accent: '#38bdf8' },
   },
   {
     id: 'rb-dot-grid',
@@ -147,6 +212,7 @@ export const DYNAMIC_BG_OPTIONS: DynamicBgOption[] = [
     preview: 'radial-gradient(rgba(56,189,248,0.45) 1.5px, transparent 1.5px), linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
     recommendedMode: 'both',
     defaultColors: { primary: '#64748b', secondary: '#94a3b8', accent: '#38bdf8' },
+    lightColors: { primary: '#64748b', secondary: '#94a3b8', accent: '#0284c7' },
   },
   {
     id: 'mu-grid-pattern',
@@ -156,6 +222,7 @@ export const DYNAMIC_BG_OPTIONS: DynamicBgOption[] = [
     preview: 'linear-gradient(to right, rgba(148,163,184,0.22) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.22) 1px, transparent 1px), #f5f7fb',
     recommendedMode: 'light',
     defaultColors: { primary: '#94a3b8', secondary: '#cbd5e1', accent: '#38bdf8' },
+    lightColors: { primary: '#64748b', secondary: '#cbd5e1', accent: '#38bdf8' },
   },
   {
     id: 'mu-dot-pattern',
@@ -165,6 +232,7 @@ export const DYNAMIC_BG_OPTIONS: DynamicBgOption[] = [
     preview: 'radial-gradient(rgba(16,185,129,0.42) 1.5px, transparent 1.5px), #f4faf7',
     recommendedMode: 'light',
     defaultColors: { primary: '#34d399', secondary: '#a7f3d0', accent: '#059669' },
+    lightColors: { primary: '#10b981', secondary: '#34d399', accent: '#059669' },
   },
 ];
 
@@ -340,59 +408,81 @@ export const STARTER_THEME_PRESETS: StarterThemePreset[] = [
     },
   },
   {
-    id: 'starter-porcelain-liquid',
-    name: 'Porcelain Liquid',
+    id: 'starter-sunrise-glass',
+    name: 'Sunrise Glass',
     mode: 'light',
-    subtitle: 'Hairline Grid + Glacier Ocean',
-    swatch: 'linear-gradient(135deg, #F5F7FB 0%, #38BDF8 55%, #818CF8 100%)',
+    subtitle: 'Sunrise Mesh + Solar Mist Glass',
+    swatch:
+      'radial-gradient(at 20% 20%, #fed7aa 0, transparent 60%), radial-gradient(at 80% 80%, #bae6fd 0, transparent 60%), linear-gradient(135deg, #fffbf7 0%, #fbcfe8 100%)',
     patch: {
-      backgroundId: 'mu-grid-pattern',
-      bgColors: { primary: '#38BDF8', secondary: '#818CF8', accent: '#F5F7FB' },
-      bgSpeed: 0.5,
-      bgOpacity: 0.72,
+      backgroundId: 'mesh-sunrise',
+      bgColors: { primary: '#fdba74', secondary: '#f9a8d4', accent: '#7dd3fc' },
+      bgSpeed: 0.6,
+      bgOpacity: 0.85,
       bgScrim: 0.08,
-      colorPalette: 'porcelain-ocean',
-      surfaceMode: 'liquid-glass',
-      glassBlur: 18,
-      glassOpacity: 0.78,
-      mobileNavGlass: true,
-    },
-  },
-  {
-    id: 'starter-solar-mist',
-    name: 'Solar Mist',
-    mode: 'light',
-    subtitle: 'Soft Aurora + Sunlit Amber',
-    swatch: 'linear-gradient(135deg, #FAF9F6 0%, #FDBA74 55%, #93C5FD 100%)',
-    patch: {
-      backgroundId: 'rb-soft-aurora',
-      bgColors: { primary: '#FDBA74', secondary: '#93C5FD', accent: '#FAF9F6' },
-      bgSpeed: 0.65,
-      bgOpacity: 0.68,
-      bgScrim: 0.1,
       colorPalette: 'solar-mist',
       surfaceMode: 'liquid-glass',
       glassBlur: 18,
-      glassOpacity: 0.78,
+      glassOpacity: 0.74,
       mobileNavGlass: true,
     },
   },
   {
-    id: 'starter-emerald-dew',
-    name: 'Emerald Dew',
+    id: 'starter-botanical-mint',
+    name: 'Botanical Mint',
     mode: 'light',
-    subtitle: 'Optical Dots + Sunlit Jade',
-    swatch: 'linear-gradient(135deg, #F4FAF7 0%, #34D399 55%, #A7F3D0 100%)',
+    subtitle: 'Botanical Mesh + Emerald Dew',
+    swatch:
+      'radial-gradient(at 20% 20%, #a7f3d0 0, transparent 60%), radial-gradient(at 85% 25%, #fef08a 0, transparent 60%), linear-gradient(135deg, #f6fcf9 0%, #99f6e4 100%)',
     patch: {
-      backgroundId: 'mu-dot-pattern',
-      bgColors: { primary: '#34D399', secondary: '#A7F3D0', accent: '#F4FAF7' },
+      backgroundId: 'mesh-botanical',
+      bgColors: { primary: '#6ee7b7', secondary: '#5eead4', accent: '#fde047' },
       bgSpeed: 0.6,
-      bgOpacity: 0.75,
+      bgOpacity: 0.85,
       bgScrim: 0.08,
       colorPalette: 'emerald-dew',
       surfaceMode: 'liquid-glass',
       glassBlur: 18,
-      glassOpacity: 0.78,
+      glassOpacity: 0.74,
+      mobileNavGlass: true,
+    },
+  },
+  {
+    id: 'starter-lavender-cloud',
+    name: 'Lavender Cloud',
+    mode: 'light',
+    subtitle: 'Lavender Mesh + Rose Quartz',
+    swatch:
+      'radial-gradient(at 20% 20%, #ddd6fe 0, transparent 60%), radial-gradient(at 85% 80%, #fecdd3 0, transparent 60%), linear-gradient(135deg, #fbfaff 0%, #bae6fd 100%)',
+    patch: {
+      backgroundId: 'mesh-lavender',
+      bgColors: { primary: '#c4b5fd', secondary: '#7dd3fc', accent: '#fda4af' },
+      bgSpeed: 0.6,
+      bgOpacity: 0.85,
+      bgScrim: 0.08,
+      colorPalette: 'rose-quartz',
+      surfaceMode: 'liquid-glass',
+      glassBlur: 18,
+      glassOpacity: 0.74,
+      mobileNavGlass: true,
+    },
+  },
+  {
+    id: 'starter-porcelain-aurora',
+    name: 'Porcelain Aurora',
+    mode: 'light',
+    subtitle: 'Aurora Ribbons + Porcelain Ocean',
+    swatch: 'linear-gradient(135deg, #F5F7FB 0%, #38BDF8 50%, #34D399 100%)',
+    patch: {
+      backgroundId: 'rb-aurora',
+      bgColors: { primary: '#38bdf8', secondary: '#34d399', accent: '#fbbf24' },
+      bgSpeed: 0.65,
+      bgOpacity: 0.75,
+      bgScrim: 0.1,
+      colorPalette: 'porcelain-ocean',
+      surfaceMode: 'liquid-glass',
+      glassBlur: 18,
+      glassOpacity: 0.76,
       mobileNavGlass: true,
     },
   },
