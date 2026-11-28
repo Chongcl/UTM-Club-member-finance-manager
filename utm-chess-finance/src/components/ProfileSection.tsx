@@ -692,29 +692,29 @@ export default function ProfileSection({
 
               <div className="flex flex-wrap items-center gap-1.5 text-xs">
                 {profile.matric_no && (
-                  <span className="px-2.5 py-0.5 rounded-lg bg-slate-900 text-white font-mono font-bold text-[11px]">
+                  <span className="px-2.5 py-0.5 rounded-lg bg-slate-900 dark:bg-white/10 text-white font-mono font-bold text-[11px] border border-transparent dark:border-white/15">
                     {profile.matric_no}
                   </span>
                 )}
                 {profile.member_type && (
-                  <span className="px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200/80 font-bold text-[11px]">
+                  <span className="px-2.5 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-500/30 font-bold text-[11px]">
                     {profile.member_type}
                   </span>
                 )}
                 {profile.batch_year && (
-                  <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200 font-semibold text-[11px]">
+                  <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-200 border border-slate-200 dark:border-white/15 font-semibold text-[11px]">
                     Batch {profile.batch_year}
                   </span>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                 <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span className="truncate font-medium text-slate-700">{profile.email}</span>
+                <span className="truncate font-medium text-slate-700 dark:text-slate-200">{profile.email}</span>
                 <button
                   type="button"
                   onClick={() => setActiveTab('security')}
-                  className="text-[11px] font-bold text-emerald-700 hover:text-emerald-600 underline underline-offset-2 cursor-pointer"
+                  className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-300 underline underline-offset-2 cursor-pointer"
                 >
                   Security &amp; Email
                 </button>
@@ -724,27 +724,27 @@ export default function ProfileSection({
 
           {/* Right Mini Metrics */}
           <div className="grid grid-cols-3 gap-2.5 sm:gap-3 shrink-0">
-            <div className="rounded-2xl bg-slate-50/90 border border-slate-200/80 px-3.5 py-2.5 flex flex-col justify-center">
+            <div className="rounded-2xl bg-slate-50/90 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/10 px-3.5 py-2.5 flex flex-col justify-center">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Attending
               </div>
-              <div className="text-lg sm:text-xl font-extrabold text-slate-900 mt-0.5">
+              <div className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white mt-0.5">
                 {attendingCount}
               </div>
-              <div className="text-[10px] text-slate-500 truncate">Events</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">Events</div>
             </div>
 
-            <div className="rounded-2xl bg-slate-50/90 border border-slate-200/80 px-3.5 py-2.5 flex flex-col justify-center">
+            <div className="rounded-2xl bg-slate-50/90 dark:bg-white/[0.06] border border-slate-200/80 dark:border-white/10 px-3.5 py-2.5 flex flex-col justify-center">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Receipts
               </div>
-              <div className="text-lg sm:text-xl font-extrabold text-slate-900 mt-0.5">
+              <div className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white mt-0.5">
                 {myFeePayments.length}
               </div>
-              <div className="text-[10px] text-slate-500 truncate">Submitted</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">Submitted</div>
             </div>
 
-            <div className="rounded-2xl bg-emerald-50/70 border border-emerald-200/80 px-3 py-2.5 flex items-center gap-2.5">
+            <div className="rounded-2xl bg-emerald-50/70 dark:bg-emerald-500/15 border border-emerald-200/80 dark:border-emerald-500/30 px-3 py-2.5 flex items-center gap-2.5">
               <div className="relative w-11 h-11 shrink-0 hidden sm:flex items-center justify-center">
                 <svg className="w-11 h-11 -rotate-90" viewBox="0 0 44 44">
                   <circle
@@ -754,7 +754,7 @@ export default function ProfileSection({
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="4"
-                    className="text-emerald-200/70"
+                    className="text-emerald-200/70 dark:text-emerald-950"
                   />
                   <circle
                     cx="22"
@@ -766,21 +766,21 @@ export default function ProfileSection({
                     strokeDasharray={ringCircumference}
                     strokeDashoffset={ringOffset}
                     strokeLinecap="round"
-                    className="text-emerald-600 transition-all duration-500"
+                    className="text-emerald-600 dark:text-emerald-400 transition-all duration-500"
                   />
                 </svg>
-                <span className="absolute text-[10px] font-extrabold text-emerald-900">
+                <span className="absolute text-[10px] font-extrabold text-emerald-900 dark:text-emerald-200">
                   {profileCompleteness}%
                 </span>
               </div>
               <div className="min-w-0">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
                   Profile
                 </div>
-                <div className="text-lg sm:text-base font-extrabold text-emerald-950 sm:hidden">
+                <div className="text-lg sm:text-base font-extrabold text-emerald-950 dark:text-white sm:hidden">
                   {profileCompleteness}%
                 </div>
-                <div className="text-[11px] font-bold text-emerald-900 leading-tight hidden sm:block">
+                <div className="text-[11px] font-bold text-emerald-900 dark:text-emerald-100 leading-tight hidden sm:block">
                   {profileCompleteness === 100 ? 'Complete' : 'Add dorm/QR'}
                 </div>
               </div>
@@ -789,9 +789,9 @@ export default function ProfileSection({
         </div>
 
         {/* Segmented Tab Bar */}
-        <div className="px-5 sm:px-6 pb-4 pt-1 border-t border-slate-100 bg-slate-50/50">
+        <div className="px-4 sm:px-6 pb-4 pt-2 border-t border-slate-100 dark:border-white/10 bg-slate-50/50 dark:bg-white/[0.03]">
           <div
-            className="lg-tab-pill inline-flex items-center gap-1.5 overflow-x-auto p-1 rounded-2xl border border-slate-200/70"
+            className="lg-tab-pill flex w-full sm:w-fit max-w-full items-center gap-1 sm:gap-1.5 overflow-x-auto p-1 rounded-2xl border border-slate-200/70 dark:border-white/10"
             role="tablist"
             aria-label="Profile sections"
           >
@@ -804,10 +804,10 @@ export default function ProfileSection({
                   role="tab"
                   aria-selected={selected}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 transition cursor-pointer ${
                     selected
                       ? 'lg-tab-active bg-slate-900 text-white shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-white/10'
                   }`}
                 >
                   {tab.icon}
@@ -830,14 +830,14 @@ export default function ProfileSection({
         <form onSubmit={handleSavePersonal} className="space-y-5">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* Identity & Contact Card */}
-            <div className="bg-white/95 backdrop-blur-xl rounded-3xl border border-slate-200/80 shadow-sm p-5 sm:p-6 space-y-4">
-              <div className="flex items-start gap-3 pb-3 border-b border-slate-100">
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200/70 text-emerald-700 flex items-center justify-center shrink-0">
+            <div className="bg-white/95 dark:bg-slate-900/90 text-slate-900 dark:text-slate-100 backdrop-blur-xl rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm p-5 sm:p-6 space-y-4">
+              <div className="flex items-start gap-3 pb-3 border-b border-slate-100 dark:border-white/10">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200/70 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
                   <UserCheck className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">Identity &amp; Contact</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Identity &amp; Contact</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     Used to auto-fill attendance passes, event registrations, and claims.
                   </p>
                 </div>
@@ -845,36 +845,36 @@ export default function ProfileSection({
 
               <div className="space-y-3.5 text-xs">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Full Name *</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Full Name *</label>
                   <input
                     type="text"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                    className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                     required
                   />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">Matric No *</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Matric No *</label>
                     <input
                       type="text"
                       value={matricNo}
                       onChange={(e) => setMatricNo(e.target.value)}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono uppercase text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm font-mono uppercase text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                       Phone / WhatsApp *
                     </label>
                     <input
                       type="tel"
                       value={phoneNumber}
                       onChange={(e) => setPhoneNumber(e.target.value)}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                       required
                     />
                   </div>
@@ -882,7 +882,7 @@ export default function ProfileSection({
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block font-bold text-slate-700">IC / Passport No</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300">IC / Passport No</label>
                     <span className="text-[10px] text-slate-400">
                       Masked by default for privacy
                     </span>
@@ -893,12 +893,12 @@ export default function ProfileSection({
                       value={icNo}
                       onChange={(e) => setIcNo(e.target.value)}
                       placeholder="e.g., 040101-01-1234"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 pr-10 text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 pr-10 text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                     />
                     <button
                       type="button"
                       onClick={() => setShowIc((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
                       aria-label={showIc ? 'Hide IC number' : 'Reveal IC number'}
                       title={showIc ? 'Hide IC / Passport No' : 'Show IC / Passport No'}
                     >
@@ -910,14 +910,14 @@ export default function ProfileSection({
             </div>
 
             {/* Campus & Club Info Card */}
-            <div className="bg-white/95 backdrop-blur-xl rounded-3xl border border-slate-200/80 shadow-sm p-5 sm:p-6 space-y-4">
-              <div className="flex items-start gap-3 pb-3 border-b border-slate-100">
-                <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200/70 text-teal-700 flex items-center justify-center shrink-0">
+            <div className="bg-white/95 dark:bg-slate-900/90 text-slate-900 dark:text-slate-100 backdrop-blur-xl rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm p-5 sm:p-6 space-y-4">
+              <div className="flex items-start gap-3 pb-3 border-b border-slate-100 dark:border-white/10">
+                <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-500/15 border border-teal-200/70 dark:border-teal-500/30 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0">
                   <MapPin className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">Campus &amp; Club Info</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">Campus &amp; Club Info</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                     Helps organize department rosters, academic batch records, and carpools.
                   </p>
                 </div>
@@ -926,13 +926,13 @@ export default function ProfileSection({
               <div className="space-y-3.5 text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                       Department / Unit *
                     </label>
                     <select
                       value={memberType}
                       onChange={(e) => setMemberType(e.target.value)}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm font-semibold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                     >
                       {departments.map((opt) => (
                         <option key={opt} value={opt}>
@@ -942,11 +942,11 @@ export default function ProfileSection({
                     </select>
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">Year of Study</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Year of Study</label>
                     <select
                       value={yearOfStudy}
                       onChange={(e) => setYearOfStudy(e.target.value)}
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                     >
                       {['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Postgraduate'].map((y) => (
                         <option key={y} value={y}>
@@ -958,7 +958,7 @@ export default function ProfileSection({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Faculty / Course Code
                   </label>
                   <input
@@ -966,13 +966,13 @@ export default function ProfileSection({
                     value={course}
                     onChange={(e) => setCourse(e.target.value)}
                     placeholder="e.g., FSKSM / SECJ"
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                    className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                   />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                       Residential College / Dormitory
                     </label>
                     <input
@@ -980,20 +980,20 @@ export default function ProfileSection({
                       value={dormitory}
                       onChange={(e) => setDormitory(e.target.value)}
                       placeholder="e.g., KTDI / KTR / KTHO"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                     />
                     <p className="text-[11px] text-slate-400 mt-1">
                       Auto-fills your pickup dorm for event carpools
                     </p>
                   </div>
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">Hometown</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Hometown</label>
                     <input
                       type="text"
                       value={hometown}
                       onChange={(e) => setHometown(e.target.value)}
                       placeholder="e.g., George Town, Penang"
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                     />
                   </div>
                 </div>
@@ -1002,23 +1002,23 @@ export default function ProfileSection({
           </div>
 
           {personalError && (
-            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-semibold">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{personalError}</span>
             </div>
           )}
 
           {/* Save Bar */}
-          <div className="bg-white/95 backdrop-blur-xl rounded-2xl border border-slate-200/80 shadow-sm px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="bg-white/95 dark:bg-slate-900/90 text-slate-900 dark:text-slate-100 backdrop-blur-xl rounded-2xl border border-slate-200/80 dark:border-white/10 shadow-sm px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-xs">
               {isPersonalDirty ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-bold">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-200 font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                   Unsaved changes
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 text-slate-500 font-medium">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   All personal &amp; academic details up to date
                 </span>
               )}
@@ -1028,7 +1028,7 @@ export default function ProfileSection({
                 <button
                   type="button"
                   onClick={handleDiscardPersonal}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Discard</span>
@@ -1055,18 +1055,18 @@ export default function ProfileSection({
       {activeTab === 'payout' && (
         <form
           onSubmit={handleSavePayout}
-          className="bg-white/95 backdrop-blur-xl rounded-3xl border border-slate-200/80 shadow-sm p-5 sm:p-6 space-y-6"
+          className="bg-white/95 dark:bg-slate-900/90 text-slate-900 dark:text-slate-100 backdrop-blur-xl rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm p-5 sm:p-6 space-y-6"
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-white/10">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200/70 text-emerald-700 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200/70 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
                 <Landmark className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-slate-900">
+                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
                   Payout &amp; Bank / DuitNow QR
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Optional — pre-fills your reimbursement claims so the Treasurer can pay you back quickly.
                 </p>
               </div>
@@ -1081,19 +1081,19 @@ export default function ProfileSection({
             {/* Left/Top: Bank Inputs + Preview Strip */}
             <div className="lg:col-span-7 space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Bank / eWallet Name</label>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Bank / eWallet Name</label>
                 <input
                   type="text"
                   value={bankName}
                   onChange={(e) => setBankName(e.target.value)}
                   placeholder="e.g., Maybank / CIMB / Bank Islam / TNG eWallet"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                  className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Account No / DuitNow Phone
                   </label>
                   <input
@@ -1101,11 +1101,11 @@ export default function ProfileSection({
                     value={bankAccountNo}
                     onChange={(e) => setBankAccountNo(e.target.value)}
                     placeholder="e.g., 162106789012"
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                    className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm font-mono font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Recipient Holder Name
                   </label>
                   <input
@@ -1113,13 +1113,13 @@ export default function ProfileSection({
                     value={bankAccountHolder}
                     onChange={(e) => setBankAccountHolder(e.target.value)}
                     placeholder={fullName || 'Account Holder Name'}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                    className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950/80 px-3.5 py-2.5 text-sm font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               {/* Subtle Live Treasurer Payout Preview */}
-              <div className="rounded-2xl bg-slate-900 text-white p-4 space-y-2 border border-slate-800">
+              <div className="rounded-2xl bg-slate-900 dark:bg-slate-950 text-white p-4 space-y-2 border border-slate-800 dark:border-white/10">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">
                     Treasurer Payout Preview
@@ -1149,7 +1149,7 @@ export default function ProfileSection({
 
             {/* Right/Bottom: Personal DuitNow / TNG QR Uploader */}
             <div className="lg:col-span-5 space-y-3 text-xs">
-              <label className="block font-bold text-slate-700">
+              <label className="block font-bold text-slate-700 dark:text-slate-300">
                 Personal DuitNow / TNG QR (JPG, PNG, PDF · max 50MB)
               </label>
 
@@ -1175,25 +1175,25 @@ export default function ProfileSection({
                 }}
                 className={`rounded-2xl border-2 border-dashed p-5 text-center transition cursor-pointer ${
                   dragActive
-                    ? 'border-emerald-500 bg-emerald-50'
-                    : 'border-slate-300 hover:border-emerald-400 bg-slate-50/70'
+                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/15'
+                    : 'border-slate-300 dark:border-white/20 hover:border-emerald-400 bg-slate-50/70 dark:bg-white/[0.04]'
                 }`}
               >
-                <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 shadow-2xs text-emerald-700 flex items-center justify-center mx-auto mb-2">
+                <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/15 shadow-2xs text-emerald-700 dark:text-emerald-400 flex items-center justify-center mx-auto mb-2">
                   <Upload className="w-4 h-4" />
                 </div>
-                <div className="font-extrabold text-slate-800">
+                <div className="font-extrabold text-slate-800 dark:text-slate-100">
                   Click or drag QR image / PDF here
                 </div>
-                <div className="text-[11px] text-slate-500 mt-0.5">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                   High-contrast DuitNow or TNG QR works best
                 </div>
               </div>
 
               {(bankQrFile || bankQrUrl) && (
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 flex flex-col sm:flex-row items-center gap-4">
                   {isPdfQr ? (
-                    <div className="w-28 h-28 rounded-xl border border-emerald-200 bg-emerald-50 flex flex-col items-center justify-center text-emerald-800 shrink-0">
+                    <div className="w-28 h-28 rounded-xl border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/15 flex flex-col items-center justify-center text-emerald-800 dark:text-emerald-300 shrink-0">
                       <FileText className="w-8 h-8" />
                       <span className="text-[10px] font-extrabold mt-1">PDF QR</span>
                     </div>
@@ -1201,7 +1201,7 @@ export default function ProfileSection({
                     <button
                       type="button"
                       onClick={() => setQrZoomSrc(qrPreviewSrc)}
-                      className="relative group w-28 h-28 rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0 cursor-zoom-in shadow-2xs"
+                      className="relative group w-28 h-28 rounded-xl border border-slate-200 dark:border-white/15 bg-white overflow-hidden shrink-0 cursor-zoom-in shadow-2xs"
                       title="Click to enlarge QR"
                     >
                       <img
@@ -1214,21 +1214,21 @@ export default function ProfileSection({
                       </span>
                     </button>
                   ) : (
-                    <div className="w-28 h-28 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-400 shrink-0">
+                    <div className="w-28 h-28 rounded-xl border border-slate-200 dark:border-white/15 bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 shrink-0">
                       <QrCode className="w-8 h-8" />
                     </div>
                   )}
 
                   <div className="min-w-0 flex-1 space-y-2 text-center sm:text-left">
-                    <div className="font-extrabold text-slate-900 truncate">
+                    <div className="font-extrabold text-slate-900 dark:text-white truncate">
                       {bankQrFile ? bankQrFile.name : 'Saved Personal QR'}
                     </div>
                     {bankQrFile ? (
-                      <div className="text-[11px] text-amber-700 font-semibold">
+                      <div className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold">
                         Staged — click Save Changes to upload
                       </div>
                     ) : (
-                      <div className="text-[11px] text-emerald-700 font-semibold">
+                      <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
                         Ready for Treasurer payouts
                       </div>
                     )}
@@ -1237,7 +1237,7 @@ export default function ProfileSection({
                         <button
                           type="button"
                           onClick={() => downloadFileFromUrl(bankQrUrl, `${matricNo}_Payment_QR`)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-white/15 hover:bg-slate-800 dark:hover:bg-white/25 text-white font-bold cursor-pointer"
                         >
                           <Download className="w-3.5 h-3.5" />
                           <span>Download</span>
@@ -1249,7 +1249,7 @@ export default function ProfileSection({
                           setBankQrFile(null);
                           setBankQrUrl('');
                         }}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold cursor-pointer"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-500/15 hover:bg-rose-100 dark:hover:bg-rose-500/25 text-rose-700 dark:text-rose-300 font-bold cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>Remove</span>
@@ -1262,16 +1262,16 @@ export default function ProfileSection({
           </div>
 
           {payoutError && (
-            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-semibold">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>{payoutError}</span>
             </div>
           )}
 
-          <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-slate-500">
+          <div className="pt-4 border-t border-slate-100 dark:border-white/10 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs text-slate-500 dark:text-slate-400">
               {isPayoutDirty ? (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-bold">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-200 font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                   Unsaved payout changes
                 </span>
@@ -1297,10 +1297,10 @@ export default function ProfileSection({
 
       {/* TAB 3: ACCOUNT & SECURITY */}
       {activeTab === 'security' && (
-        <section className="bg-white/95 backdrop-blur-xl rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden divide-y divide-slate-100">
+        <section className="bg-white/95 dark:bg-slate-900/90 text-slate-900 dark:text-slate-100 backdrop-blur-xl rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm overflow-hidden divide-y divide-slate-100 dark:divide-white/10">
           <div className="p-5 sm:p-6">
-            <h3 className="text-base font-extrabold text-slate-900">Account &amp; Security</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Account &amp; Security</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Manage your sign-in credentials, chat privacy preference, and active session.
             </p>
           </div>
@@ -1308,16 +1308,16 @@ export default function ProfileSection({
           {/* Row 1: Email Address */}
           <div className="p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3.5 min-w-0">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200/70 text-emerald-700 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200/70 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
                 <Mail className="w-4 h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-extrabold text-slate-900">Email Address</div>
-                <div className="text-sm font-semibold text-slate-700 truncate mt-0.5">
+                <div className="text-xs font-extrabold text-slate-900 dark:text-white">Email Address</div>
+                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate mt-0.5">
                   {profile.email}
                 </div>
                 {pendingNewEmail && (
-                  <span className="inline-flex items-center gap-1 mt-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
+                  <span className="inline-flex items-center gap-1 mt-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-200 text-[11px] font-bold">
                     Pending verification: {pendingNewEmail}
                   </span>
                 )}
@@ -1326,9 +1326,9 @@ export default function ProfileSection({
             <button
               type="button"
               onClick={openChangeEmailModal}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-extrabold cursor-pointer shrink-0 shadow-2xs"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-800 dark:text-slate-100 text-xs font-extrabold cursor-pointer shrink-0 shadow-2xs"
             >
-              <Mail className="w-3.5 h-3.5 text-slate-500" />
+              <Mail className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
               <span>Change Email</span>
             </button>
           </div>
@@ -1336,15 +1336,15 @@ export default function ProfileSection({
           {/* Row 2: Password */}
           <div className="p-5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-white/10 border border-slate-200 dark:border-white/15 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0">
                 <KeyRound className="w-4 h-4" />
               </div>
               <div>
-                <div className="text-xs font-extrabold text-slate-900">Password</div>
-                <div className="text-sm font-mono tracking-widest text-slate-700 mt-0.5">
+                <div className="text-xs font-extrabold text-slate-900 dark:text-white">Password</div>
+                <div className="text-sm font-mono tracking-widest text-slate-700 dark:text-slate-300 mt-0.5">
                   ••••••••••••
                 </div>
-                <p className="text-[11px] text-slate-500 mt-0.5">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                   Keep your ClubSync account secure
                 </p>
               </div>
@@ -1352,9 +1352,9 @@ export default function ProfileSection({
             <button
               type="button"
               onClick={openResetPwModal}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-extrabold cursor-pointer shrink-0 shadow-2xs"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-white/5 hover:bg-slate-50 dark:hover:bg-white/10 text-slate-800 dark:text-slate-100 text-xs font-extrabold cursor-pointer shrink-0 shadow-2xs"
             >
-              <Lock className="w-3.5 h-3.5 text-slate-500" />
+              <Lock className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
               <span>Reset Password</span>
             </button>
           </div>
@@ -1362,14 +1362,14 @@ export default function ProfileSection({
           {/* Row 3: Chat & Privacy */}
           <div className="p-5 sm:px-6 flex items-start sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-200/70 text-teal-700 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-500/15 border border-teal-200/70 dark:border-teal-500/30 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0">
                 <ShieldCheck className="w-4 h-4" />
               </div>
               <div>
-                <div className="text-xs font-extrabold text-slate-900">
+                <div className="text-xs font-extrabold text-slate-900 dark:text-white">
                   Allow members to continue chat with me on WhatsApp
                 </div>
-                <p className="text-[11px] text-slate-500 mt-0.5 max-w-xl leading-relaxed">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-xl leading-relaxed">
                   Off by default. Your raw phone number is never displayed inside Club Chat — enabling this only lets club members open a direct WhatsApp shortcut from Chat.
                 </p>
               </div>
@@ -1381,7 +1381,7 @@ export default function ProfileSection({
               disabled={savingWhatsapp}
               onClick={handleToggleWhatsapp}
               className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer disabled:opacity-60 ${
-                allowWhatsappChat ? 'bg-emerald-600' : 'bg-slate-300'
+                allowWhatsappChat ? 'bg-emerald-600' : 'bg-slate-300 dark:bg-slate-700'
               }`}
               title="Toggle WhatsApp chat permission"
             >
@@ -1394,16 +1394,16 @@ export default function ProfileSection({
           </div>
 
           {/* Row 4: Session */}
-          <div className="p-5 sm:px-6 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="p-5 sm:px-6 bg-slate-50/60 dark:bg-white/[0.03] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-white border border-slate-200 text-slate-700 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-white dark:bg-white/10 border border-slate-200 dark:border-white/15 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0">
                 <UserCheck className="w-4 h-4" />
               </div>
               <div>
-                <div className="text-xs font-extrabold text-slate-900">Active Session</div>
-                <div className="text-xs text-slate-500 mt-0.5">
+                <div className="text-xs font-extrabold text-slate-900 dark:text-white">Active Session</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Signed in with account role:{' '}
-                  <span className="font-bold text-slate-800">{roleDisplayLabel}</span>
+                  <span className="font-bold text-slate-800 dark:text-white">{roleDisplayLabel}</span>
                 </div>
               </div>
             </div>
@@ -1419,7 +1419,7 @@ export default function ProfileSection({
                     setSigningOut(false);
                   }
                 }}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-extrabold cursor-pointer shrink-0 disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-500/15 hover:bg-rose-100 dark:hover:bg-rose-500/25 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-extrabold cursor-pointer shrink-0 disabled:opacity-60"
               >
                 {signingOut ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1437,25 +1437,25 @@ export default function ProfileSection({
       {activeTab === 'activity' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* My Event RSVPs */}
-          <section className="bg-white/95 backdrop-blur-xl rounded-3xl border border-slate-200/80 shadow-sm p-5 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <section className="bg-white/95 dark:bg-slate-900/90 text-slate-900 dark:text-slate-100 backdrop-blur-xl rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm p-5 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/10">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200/70 text-emerald-700 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200/70 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
                   <Calendar className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
                     My Event RSVPs ({myRsvps.length})
                   </h3>
-                  <p className="text-[11px] text-slate-500">Attendance &amp; carpool status</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Attendance &amp; carpool status</p>
                 </div>
               </div>
             </div>
 
             {myRsvps.length === 0 ? (
               <div className="py-10 text-center space-y-1">
-                <Calendar className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="text-xs font-semibold text-slate-500">No event responses yet.</p>
+                <Calendar className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">No event responses yet.</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1469,15 +1469,15 @@ export default function ProfileSection({
                   return (
                     <div
                       key={r.id}
-                      className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-2.5 text-xs"
+                      className="p-4 rounded-2xl bg-slate-50/80 dark:bg-white/[0.04] border border-slate-200/80 dark:border-white/10 space-y-2.5 text-xs"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="font-extrabold text-slate-900 truncate">
+                          <div className="font-extrabold text-slate-900 dark:text-white truncate">
                             {ev?.event_name || 'Club Activity'}
                           </div>
                           {ev?.event_date && (
-                            <div className="text-[11px] text-slate-500 mt-0.5">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                               {formatReadableDate(ev.event_date)}
                             </div>
                           )}
@@ -1485,8 +1485,8 @@ export default function ProfileSection({
                         <span
                           className={`px-2.5 py-1 rounded-full text-[11px] font-extrabold shrink-0 ${
                             r.attendance === 'Attending'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : 'bg-slate-200 text-slate-700'
+                              ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30'
+                              : 'bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-300'
                           }`}
                         >
                           {r.attendance}
@@ -1494,12 +1494,12 @@ export default function ProfileSection({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-slate-700">
-                          <Car className="w-3 h-3 text-emerald-600" />
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/15 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                          <Car className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                           {transportText}
                         </span>
                         {r.qr_checked_in && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-[11px] font-bold text-teal-800">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 dark:bg-teal-500/15 border border-teal-200 dark:border-teal-500/30 text-[11px] font-bold text-teal-800 dark:text-teal-300">
                             <QrCode className="w-3 h-3" />
                             QR Checked-In
                           </span>
@@ -1513,25 +1513,25 @@ export default function ProfileSection({
           </section>
 
           {/* My Fee Receipts */}
-          <section className="bg-white/95 backdrop-blur-xl rounded-3xl border border-slate-200/80 shadow-sm p-5 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <section className="bg-white/95 dark:bg-slate-900/90 text-slate-900 dark:text-slate-100 backdrop-blur-xl rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-sm p-5 sm:p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-white/10">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200/70 text-teal-700 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-teal-50 dark:bg-teal-500/15 border border-teal-200/70 dark:border-teal-500/30 text-teal-700 dark:text-teal-300 flex items-center justify-center">
                   <Receipt className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
                     My Fee Receipts ({myFeePayments.length})
                   </h3>
-                  <p className="text-[11px] text-slate-500">Activity fees &amp; verification status</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Activity fees &amp; verification status</p>
                 </div>
               </div>
             </div>
 
             {myFeePayments.length === 0 ? (
               <div className="py-10 text-center space-y-1">
-                <Receipt className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="text-xs font-semibold text-slate-500">
+                <Receipt className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                   No fee payments submitted yet.
                 </p>
               </div>
@@ -1541,21 +1541,21 @@ export default function ProfileSection({
                   const ev = budgets.find((b) => b.id === f.budget_id);
                   const statusBadge =
                     f.status === 'Verified'
-                      ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                      ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/30'
                       : f.status === 'Rejected'
-                      ? 'bg-rose-100 text-rose-700 border-rose-200'
-                      : 'bg-amber-100 text-amber-800 border-amber-200';
+                      ? 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-500/30'
+                      : 'bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-500/30';
                   return (
                     <div
                       key={f.id}
-                      className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 flex items-center justify-between gap-3 text-xs"
+                      className="p-4 rounded-2xl bg-slate-50/80 dark:bg-white/[0.04] border border-slate-200/80 dark:border-white/10 flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="min-w-0 space-y-1">
-                        <div className="font-extrabold text-slate-900 truncate">
+                        <div className="font-extrabold text-slate-900 dark:text-white truncate">
                           {ev?.event_name || 'Event Fee'}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-extrabold text-emerald-700">
+                          <span className="font-extrabold text-emerald-700 dark:text-emerald-400">
                             RM {Number(f.amount_paid).toFixed(2)}
                           </span>
                           <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${statusBadge}`}>
@@ -1574,7 +1574,7 @@ export default function ProfileSection({
                           href={f.receipt_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-300 text-emerald-700 font-bold shrink-0"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/15 hover:border-emerald-300 text-emerald-700 dark:text-emerald-300 font-bold shrink-0"
                         >
                           <span>View Receipt</span>
                           <ExternalLink className="w-3 h-3" />
@@ -1681,40 +1681,40 @@ export default function ProfileSection({
                 </div>
               ) : (
                 <form onSubmit={handleChangeEmailSubmit} className="p-6 space-y-4 text-xs">
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-bold text-slate-500">Current Email</span>
-                    <span className="font-mono font-bold text-slate-800 truncate">
+                  <div className="p-3 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Current Email</span>
+                    <span className="font-mono font-bold text-slate-800 dark:text-slate-100 truncate">
                       {profile.email}
                     </span>
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">New Email Address</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">New Email Address</label>
                     <input
                       type="email"
                       value={newEmailInput}
                       onChange={(e) => setNewEmailInput(e.target.value)}
                       placeholder="name@graduate.utm.my"
-                      className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-700 mb-1">Current Password</label>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Current Password</label>
                     <div className="relative">
                       <input
                         type={showEmailPw ? 'text' : 'password'}
                         value={emailCurrentPw}
                         onChange={(e) => setEmailCurrentPw(e.target.value)}
                         placeholder="Verify with current password"
-                        className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                        className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3.5 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                         required
                       />
                       <button
                         type="button"
                         onClick={() => setShowEmailPw((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
                         aria-label="Toggle current password visibility"
                       >
                         {showEmailPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -1723,17 +1723,17 @@ export default function ProfileSection({
                   </div>
 
                   {emailModalError && (
-                    <div className="flex items-start gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">
+                    <div className="flex items-start gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 font-semibold">
                       <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                       <span>{emailModalError}</span>
                     </div>
                   )}
 
-                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-white/10">
                     <button
                       type="button"
                       onClick={() => setChangeEmailOpen(false)}
-                      className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
+                      className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 font-bold cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -1782,20 +1782,20 @@ export default function ProfileSection({
 
               <form onSubmit={handleResetPwSubmit} className="p-6 space-y-4 text-xs">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Current Password</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Current Password</label>
                   <div className="relative">
                     <input
                       type={showCurrentPw ? 'text' : 'password'}
                       value={currentPwInput}
                       onChange={(e) => setCurrentPwInput(e.target.value)}
                       placeholder="Enter your current password"
-                      className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3.5 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowCurrentPw((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
                       aria-label="Toggle current password visibility"
                     >
                       {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -1804,20 +1804,20 @@ export default function ProfileSection({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">New Password</label>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">New Password</label>
                   <div className="relative">
                     <input
                       type={showNewPw ? 'text' : 'password'}
                       value={newPwInput}
                       onChange={(e) => setNewPwInput(e.target.value)}
                       placeholder="Minimum 6 characters"
-                      className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3.5 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowNewPw((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
                       aria-label="Toggle new password visibility"
                     >
                       {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -1832,7 +1832,7 @@ export default function ProfileSection({
                           <div
                             key={idx}
                             className={`h-1 rounded-full transition-colors ${
-                              idx <= pwStrength.bars ? pwStrength.barClass : 'bg-slate-200'
+                              idx <= pwStrength.bars ? pwStrength.barClass : 'bg-slate-200 dark:bg-white/10'
                             }`}
                           />
                         ))}
@@ -1848,7 +1848,7 @@ export default function ProfileSection({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                     Confirm New Password
                   </label>
                   <div className="relative">
@@ -1857,13 +1857,13 @@ export default function ProfileSection({
                       value={confirmPwInput}
                       onChange={(e) => setConfirmPwInput(e.target.value)}
                       placeholder="Re-enter new password"
-                      className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 px-3.5 py-2.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPw((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
                       aria-label="Toggle confirm password visibility"
                     >
                       {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -1872,37 +1872,37 @@ export default function ProfileSection({
                   {confirmPwInput && (
                     <div className="mt-1.5 flex items-center gap-1.5 text-[11px] font-bold">
                       {newPwInput === confirmPwInput ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-600">
+                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                           <Check className="w-3.5 h-3.5" />
                           Passwords match
                         </span>
                       ) : (
-                        <span className="text-rose-600">Passwords do not match</span>
+                        <span className="text-rose-600 dark:text-rose-400">Passwords do not match</span>
                       )}
                     </div>
                   )}
                 </div>
 
                 {pwModalError && (
-                  <div className="flex items-start gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold">
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-500/15 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 font-semibold">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                     <span>{pwModalError}</span>
                   </div>
                 )}
 
                 {resetLinkNotice && (
-                  <div className="flex items-start gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold">
-                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-200 font-semibold">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
                     <span>{resetLinkNotice}</span>
                   </div>
                 )}
 
-                <div className="pt-1 flex items-center justify-between gap-2 border-t border-slate-100">
+                <div className="pt-1 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-white/10">
                   <button
                     type="button"
                     disabled={sendingResetLink}
                     onClick={handleSendPasswordResetEmail}
-                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-600 underline underline-offset-2 text-left cursor-pointer disabled:opacity-60"
+                    className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-600 underline underline-offset-2 text-left cursor-pointer disabled:opacity-60"
                   >
                     {sendingResetLink
                       ? 'Sending reset link...'
@@ -1914,7 +1914,7 @@ export default function ProfileSection({
                   <button
                     type="button"
                     onClick={() => setResetPwOpen(false)}
-                    className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-bold cursor-pointer"
+                    className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 font-bold cursor-pointer"
                   >
                     Cancel
                   </button>

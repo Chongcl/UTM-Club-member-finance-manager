@@ -88,9 +88,9 @@ export default function ThemeBackgroundLayer({
     : 'pointer-events-none fixed inset-0 -z-10 overflow-hidden';
 
   const renderMeshLayer = (meshId: string) => {
-    const a1 = darkMode ? 0.24 * opacity : 0.48 * opacity;
-    const a2 = darkMode ? 0.2 * opacity : 0.42 * opacity;
-    const a3 = darkMode ? 0.18 * opacity : 0.4 * opacity;
+    const a1 = darkMode ? 0.17 * opacity : 0.48 * opacity;
+    const a2 = darkMode ? 0.14 * opacity : 0.42 * opacity;
+    const a3 = darkMode ? 0.13 * opacity : 0.4 * opacity;
 
     const layers: string[] = [
       `radial-gradient(65% 55% at 10% 8%, ${hexToRgba(primary, a1)} 0%, transparent 65%)`,
@@ -255,6 +255,7 @@ export default function ThemeBackgroundLayer({
 
   return (
     <div
+      style={{ backgroundColor: darkMode ? '#070910' : '#F8FAFC' }}
       className={`${positionClass} ${darkMode ? 'bg-[#070910]' : 'bg-[#F8FAFC]'}`}
       aria-hidden="true"
     >

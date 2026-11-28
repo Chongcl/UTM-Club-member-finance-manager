@@ -284,6 +284,10 @@ export default function ThemeStudioDrawer({
 
       <form
         onSubmit={onSubmitSave}
+        style={{
+          backgroundColor: isDarkCanvas ? 'rgba(15, 23, 42, 0.96)' : 'rgba(255, 255, 255, 0.96)',
+          color: isDarkCanvas ? '#f1f5f9' : '#0f172a',
+        }}
         className={`relative z-10 w-full sm:w-[420px] max-h-[88dvh] sm:max-h-none sm:h-[100dvh] sm:border-l rounded-t-3xl sm:rounded-none shadow-2xl backdrop-blur-2xl flex flex-col overflow-hidden transition-transform duration-200 ease-out ${drawerChrome} ${
           visible ? 'translate-y-0 sm:translate-x-0' : 'translate-y-full sm:translate-y-0 sm:translate-x-full'
         }`}
@@ -366,7 +370,7 @@ export default function ThemeStudioDrawer({
 
           {/* 3 Focused Tabs */}
           <div
-            className={`grid grid-cols-3 gap-1 p-1 rounded-2xl border text-xs font-bold ${
+            className={`grid grid-cols-3 gap-1 p-1 rounded-2xl border text-[11px] sm:text-xs font-bold ${
               isDarkCanvas ? 'bg-white/5 border-white/10' : 'bg-slate-100 border-slate-200/80'
             }`}
           >
@@ -384,7 +388,7 @@ export default function ThemeStudioDrawer({
                   key={t.id}
                   type="button"
                   onClick={() => setActiveTab(t.id)}
-                  className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl transition cursor-pointer ${
+                  className={`flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1.5 sm:px-2 rounded-xl transition cursor-pointer ${
                     active
                       ? isDarkCanvas
                         ? 'bg-slate-800 text-white shadow-xs'
@@ -1139,6 +1143,9 @@ export default function ThemeStudioDrawer({
 
         {/* 3. Sticky Footer Actions */}
         <div
+          style={{
+            backgroundColor: isDarkCanvas ? 'rgba(15, 23, 42, 0.98)' : 'rgba(255, 255, 255, 0.98)',
+          }}
           className={`shrink-0 px-5 py-3.5 border-t flex items-center justify-between gap-2 text-xs ${
             isDarkCanvas ? 'border-white/10 bg-slate-900/95' : 'border-slate-200 bg-white/95'
           }`}

@@ -241,7 +241,7 @@ export default function Navbar({
   const renderLogo = () => {
     if (!logoUrl) {
       return (
-        <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-xs shrink-0">
+        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-xs shrink-0">
           <Layers className="w-4 h-4" />
         </div>
       );
@@ -253,7 +253,7 @@ export default function Navbar({
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="w-9 h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow-xs shrink-0"
+          className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shadow-xs shrink-0"
           title="Open Official Club Logo PDF"
         >
           <FileText className="w-4 h-4" />
@@ -264,7 +264,7 @@ export default function Navbar({
       <img
         src={logoUrl}
         alt={clubName}
-        className="w-9 h-9 rounded-xl object-cover border border-slate-200 dark:border-white/15 shadow-xs shrink-0 bg-white"
+        className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-slate-200 dark:border-white/15 shadow-xs shrink-0 bg-white"
       />
     );
   };
@@ -278,13 +278,13 @@ export default function Navbar({
             : 'bg-white/85 border-slate-200/80 text-slate-900'
         }`}
       >
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2 sm:gap-3">
+        <div className="max-w-7xl mx-auto px-2.5 sm:px-6 h-16 flex items-center justify-between gap-1.5 sm:gap-3">
           {/* Left: Hamburger Drawer Trigger + Brand + Subtle Batch / Active Section Pill */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
-              className={`p-2 rounded-xl border transition cursor-pointer shrink-0 ${
+              className={`p-1.5 sm:p-2 rounded-xl border transition cursor-pointer shrink-0 ${
                 darkMode
                   ? 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/10'
                   : 'bg-slate-100 text-slate-700 border-slate-200/80 hover:bg-slate-200/70'
@@ -298,11 +298,11 @@ export default function Navbar({
               type="button"
               onClick={() => handleNav('activities')}
               title="Return to Main Homepage"
-              className="flex items-center gap-2 sm:gap-2.5 cursor-pointer text-left group min-w-0"
+              className="flex items-center gap-1.5 sm:gap-2.5 cursor-pointer text-left group min-w-0"
             >
               {renderLogo()}
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm sm:text-[15px] font-bold tracking-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition truncate max-w-[104px] sm:max-w-[200px]">
+                <span className="text-[13px] sm:text-[15px] font-bold tracking-tight group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition truncate max-w-[140px] sm:max-w-[200px]">
                   {clubName || 'ClubSync'}
                 </span>
                 {returningHome && (
@@ -331,12 +331,12 @@ export default function Navbar({
           </div>
 
           {/* Right: Clean Utility & Account Controls */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {canCustomizeTheme && onOpenThemeStudio && (
               <button
                 type="button"
                 onClick={onOpenThemeStudio}
-                className={`inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 px-1.5 sm:px-2.5 py-1.5 sm:py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                   darkMode
                     ? 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/10'
                     : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
@@ -353,7 +353,7 @@ export default function Navbar({
               <button
                 type="button"
                 onClick={onToggleDarkMode}
-                className={`p-2 rounded-xl border transition cursor-pointer ${
+                className={`p-1.5 sm:p-2 rounded-xl border transition cursor-pointer ${
                   darkMode
                     ? 'bg-white/5 border-white/10 text-amber-300 hover:bg-white/10'
                     : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -370,7 +370,7 @@ export default function Navbar({
             <button
               type="button"
               onClick={onOpenNewClaim}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
               title="Submit Claim"
               aria-label="Submit Claim"
             >
@@ -383,7 +383,7 @@ export default function Navbar({
               <button
                 type="button"
                 onClick={() => setAccountMenuOpen((v) => !v)}
-                className={`inline-flex items-center gap-1.5 sm:gap-2 pl-1.5 pr-2 sm:pr-2.5 py-1 rounded-xl border transition cursor-pointer ${
+                className={`inline-flex items-center gap-1 sm:gap-2 pl-1 pr-1.5 sm:pl-1.5 sm:pr-2.5 py-1 rounded-xl border transition cursor-pointer ${
                   darkMode
                     ? 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-100'
                     : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-800'

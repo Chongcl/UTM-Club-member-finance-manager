@@ -1306,18 +1306,24 @@ export default function PublicLandingPage({
                             </div>
 
                             <div className="space-y-1.5 pt-1 text-xs text-slate-600">
-                              <div className="flex items-center gap-2">
-                                <Calendar className={`w-3.5 h-3.5 ${theme.accentText} shrink-0`} />
-                                <span>{ev.event_date}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Clock className={`w-3.5 h-3.5 ${theme.accentText} shrink-0`} />
-                                <span>{ev.event_time}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <MapPin className={`w-3.5 h-3.5 ${theme.accentText} shrink-0`} />
-                                <span>{ev.location}</span>
-                              </div>
+                              {Boolean(ev.event_date?.trim()) && (
+                                <div className="flex items-center gap-2">
+                                  <Calendar className={`w-3.5 h-3.5 ${theme.accentText} shrink-0`} />
+                                  <span>{ev.event_date}</span>
+                                </div>
+                              )}
+                              {Boolean(ev.event_time?.trim()) && (
+                                <div className="flex items-center gap-2">
+                                  <Clock className={`w-3.5 h-3.5 ${theme.accentText} shrink-0`} />
+                                  <span>{ev.event_time}</span>
+                                </div>
+                              )}
+                              {Boolean(ev.location?.trim()) && (
+                                <div className="flex items-center gap-2">
+                                  <MapPin className={`w-3.5 h-3.5 ${theme.accentText} shrink-0`} />
+                                  <span>{ev.location}</span>
+                                </div>
+                              )}
                             </div>
 
                             {cap > 0 && (

@@ -963,7 +963,7 @@ export default function FloatingChatDock({
         <button
           type="button"
           onClick={() => onToggleOpen(true)}
-          className="fixed bottom-[84px] right-4 md:bottom-5 md:right-5 z-40 inline-flex items-center gap-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg border border-emerald-400/40 cursor-pointer transition hover:scale-[1.03]"
+          className="fixed bottom-[82px] right-3 md:bottom-5 md:right-5 z-40 inline-flex items-center gap-2 p-2.5 sm:px-4 sm:py-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg border border-emerald-400/40 cursor-pointer transition hover:scale-[1.03]"
           aria-label="Open Club Chat"
           title="Club Chat"
         >

@@ -2409,9 +2409,9 @@ export default function PublicLandingEditorModal({
     >
       <div className="bg-slate-100 text-slate-900 rounded-2xl shadow-2xl border border-slate-700/40 max-w-[96vw] w-[1440px] h-[92vh] overflow-hidden flex flex-col">
         {/* Top Studio Toolbar */}
-        <div className="bg-slate-950 text-white px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center shrink-0">
+        <div className="bg-slate-950 text-white px-4 sm:px-5 py-2.5 flex flex-wrap xl:flex-nowrap items-center justify-between gap-2.5 border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center shrink-0">
               <Globe className="w-4 h-4 text-white" />
             </div>
             <div className="min-w-0">
@@ -2420,20 +2420,20 @@ export default function PublicLandingEditorModal({
                   Public Landing Studio
                 </h2>
                 {hasUnsavedChanges && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold shrink-0">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                     <span>Unsaved changes</span>
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400 hidden sm:block truncate">
+              <p className="text-[11px] text-slate-400 hidden 2xl:block truncate">
                 Click any section in the preview to inspect &amp; edit, or drag rows to reorder
               </p>
             </div>
           </div>
 
           {/* Center Controls: Undo/Redo + Templates + Responsive Switch */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
             <div className="inline-flex items-center bg-slate-900 border border-slate-800 rounded-xl p-0.5">
               <button
                 type="button"

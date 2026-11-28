@@ -2003,7 +2003,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           </div>
         )}
 
-      <div className="relative flex flex-col min-h-screen">
+      <div className="relative flex flex-col min-h-screen min-w-0 w-full">
         <Navbar
           profile={profile}
           clubName={clubName}
@@ -2094,7 +2094,7 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           </div>
         )}
 
-        <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-20 sm:pb-10 space-y-6 flex-1">
+        <main className="max-w-7xl w-full min-w-0 mx-auto px-3.5 sm:px-6 pt-5 sm:pt-8 pb-32 md:pb-10 space-y-6 flex-1">
           {activeTab === 'activities' &&
             (isInitialLoading ? (
               <DashboardSkeleton darkMode={isDarkCanvas} />
@@ -2694,22 +2694,22 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
 
             return (
               <ErrorBoundary sectionName="Claims & Pre-Claims">
-                <section className="bg-white/90 backdrop-blur-xl text-slate-900 rounded-3xl border border-emerald-100 overflow-hidden shadow-xs">
-                <div className="p-5 border-b flex flex-wrap justify-between items-center gap-3">
-                  <div className="flex flex-wrap items-center gap-3">
+                <section className="w-full max-w-full min-w-0 bg-white/90 backdrop-blur-xl text-slate-900 rounded-3xl border border-emerald-100 overflow-hidden shadow-xs">
+                <div className="p-4 sm:p-5 border-b flex flex-wrap justify-between items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 max-w-full min-w-0">
                     <div className="flex items-center gap-2">
-                      <Receipt className="w-5 h-5 text-emerald-700" />
+                      <Receipt className="w-5 h-5 text-emerald-700 shrink-0" />
                       <h2 className="text-base font-extrabold">Claims &amp; Pre-Claims</h2>
                     </div>
 
-                    <div className="lg-tab-pill inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 gap-1 text-xs">
+                    <div className="lg-tab-pill flex max-w-full overflow-x-auto p-1 rounded-xl bg-slate-100 border border-slate-200 gap-1 text-xs">
                       <button
                         type="button"
                         onClick={() => {
                           setClaimsSubTab('receipts');
                           setClaimsStatusFilter('ALL');
                         }}
-                        className={`px-3 py-1.5 rounded-lg font-extrabold cursor-pointer transition ${
+                        className={`px-2.5 sm:px-3 py-1.5 rounded-lg font-extrabold whitespace-nowrap cursor-pointer transition ${
                           claimsSubTab === 'receipts'
                             ? 'lg-tab-active bg-emerald-600 text-white shadow-2xs'
                             : 'text-slate-600 hover:text-slate-900'
@@ -2723,13 +2723,13 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
                           setClaimsSubTab('preclaims');
                           setClaimsStatusFilter('ALL');
                         }}
-                        className={`px-3 py-1.5 rounded-lg font-extrabold inline-flex items-center gap-1 cursor-pointer transition ${
+                        className={`px-2.5 sm:px-3 py-1.5 rounded-lg font-extrabold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer transition ${
                           claimsSubTab === 'preclaims'
                             ? 'lg-tab-active bg-emerald-600 text-white shadow-2xs'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
                       >
-                        <CalendarClock className="w-3.5 h-3.5" />
+                        <CalendarClock className="w-3.5 h-3.5 shrink-0" />
                         <span>Pre-Claims ({visiblePreClaims.length})</span>
                       </button>
                     </div>
