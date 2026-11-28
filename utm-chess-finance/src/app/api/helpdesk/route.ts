@@ -9,9 +9,11 @@ const TOTAL_BUDGET_MS = 22000;
 const BASE_ALLOWED_ACTIONS: ChatbotActionTab[] = [
   'none',
   'new_claim',
+  'new_preclaim',
   'activities',
   'equipment',
   'claims',
+  'preclaims',
   'profile',
   'qr_scanner',
 ];
@@ -57,8 +59,12 @@ function computeServerAllowedActions(
 ): Set<ChatbotActionTab> {
   const allowed = new Set<ChatbotActionTab>(BASE_ALLOWED_ACTIONS);
 
+  if (role === 'owner' || (role === 'admin' && Boolean(perms?.can_manage_activities))) {
+    allowed.add('new_activity');
+  }
   if (role === 'owner' || (role === 'admin' && Boolean(perms?.can_manage_finance))) {
     allowed.add('ledger');
+    allowed.add('new_finance_entry');
   }
   if (role === 'owner' || (role === 'admin' && Boolean(perms?.can_manage_members))) {
     allowed.add('members');
@@ -140,24 +146,52 @@ function resanitizeContext(
   return cloned;
 }
 
+const ACTION_CATALOG_DESC: Record<ChatbotActionTab, string> = {
+  none: 'No navigation needed',
+  activities: 'Home & Activities main tab (events, RSVP, carpool, announcements, fee status)',
+  equipment: 'Equipment Borrowing & Inventory tab',
+  claims: 'Claims tab (Receipt Claims sub-tab)',
+  preclaims: 'Claims tab -> Pre-Claims sub-tab',
+  new_claim: 'Open empty Receipt Claim submission form modal (user fills details manually)',
+  new_preclaim: 'Open empty Pre-Claim / Cash Advance form modal (user fills details manually)',
+  ledger: 'Finance Ledger tab',
+  new_finance_entry: 'Finance Ledger tab + open empty New Finance Entry modal (user fills details manually)',
+  new_activity: 'Activities tab + open empty New Activity modal (user fills details manually)',
+  members: 'Members Directory & Club Settings tab',
+  logs: 'Activity Logs / Audit Trail tab',
+  profile: 'My Profile tab (personal info, bank/DuitNow QR, email/password security, my activity)',
+  qr_scanner: 'Open QR Attendance Scanner modal',
+  theme_studio: 'Open Theme Studio drawer',
+  public_page_editor: 'Open Public Landing Page Studio modal',
+};
+
 function buildSystemInstruction(
   role: HelpdeskRoleMode,
   allowedActions: ChatbotActionTab[],
   safeContext: Record<string, unknown>
 ): string {
+  const actionGuideLines = allowedActions
+    .filter((a) => a !== 'none')
+    .map((a) => `  - "${a}": ${ACTION_CATALOG_DESC[a]}`);
+
   return [
     'You are the ClubSync AI Helpdesk Guide—friendly, accurate, and concise.',
     'Reply naturally in the user’s language (English, Bahasa Melayu, or Manglish).',
     'STRICT GROUNDING RULE:',
     '- Answer ONLY using facts present in the VERIFIED_PORTAL_CONTEXT JSON below. NEVER invent RM amounts, dates, member names, rules, or policies.',
     '- If asked about data not present in VERIFIED_PORTAL_CONTEXT (such as club bank/cash balances, event budgets, or other members’ claims/private details), politely explain that they do not have permission to view that restricted information in their current role.',
-    'READ-ONLY GUIDE & SAFE NAVIGATION:',
-    '- You are strictly a read-only guide. You CANNOT edit settings, approve claims, delete rows, or change database records.',
-    '- When guiding the user to perform a task or inspect a page, give crisp numbered steps and attach a relevant actionTab ONLY from ALLOWED_ACTIONS.',
+    'READ-ONLY GUIDE & DIRECT SAFE NAVIGATION:',
+    '- You are strictly read-only. You CANNOT edit settings, pre-fill/submit forms, approve claims, delete rows, or change database records—users ALWAYS fill in details and save/submit manually.',
+    '- However, you CAN redirect the user straight to the right page, sub-tab, or empty modal from ALLOWED_ACTIONS.',
+    '- Set "autoNavigate": true ONLY when the user explicitly asks you to open, go to, take them to, redirect to, or launch a page/tab/form (e.g. "open pre-claim", "take me to ledger", "go to profile", "buka claims", "open theme studio", "create new claim"). Always remind them to fill in the details manually.',
+    '- Set "autoNavigate": false for informational or how-to questions (e.g. "how do I submit a claim?", "what is our balance?"), while still attaching a helpful clickable actionTab + actionLabel button.',
+    '- If the user asks to open a restricted page not in ALLOWED_ACTIONS, set actionTab to "none", autoNavigate to false, and politely explain permission limits.',
     `- Current effective roleMode: "${role}".`,
     `- ALLOWED_ACTIONS: ${JSON.stringify(allowedActions)}`,
+    'Available navigation targets for this user:',
+    ...actionGuideLines,
     'RESPONSE FORMAT (STRICT JSON ONLY):',
-    '{"reply":"string","actionTab":"one of ALLOWED_ACTIONS or none","actionLabel":"optional short button text e.g. Open New Claim","followUpChips":["2-3 short relevant follow-up questions"]}',
+    '{"reply":"string","actionTab":"one of ALLOWED_ACTIONS or none","actionLabel":"optional short button text e.g. Open Pre-Claim Form","autoNavigate":false,"followUpChips":["2-3 short relevant follow-up questions"]}',
     '',
     `VERIFIED_PORTAL_CONTEXT=${JSON.stringify(safeContext)}`,
   ].join('\n');
@@ -167,6 +201,7 @@ function parseGeminiJsonPayload(rawText: string): {
   reply?: string;
   actionTab?: string;
   actionLabel?: string;
+  autoNavigate?: unknown;
   followUpChips?: unknown;
 } | null {
   const trimmed = rawText.trim();
@@ -313,6 +348,8 @@ export async function POST(req: NextRequest) {
       const actionTab: ChatbotActionTab =
         requestedAction && effectiveAllowedSet.has(requestedAction) ? requestedAction : 'none';
 
+      const autoNavigate = actionTab !== 'none' && parsed?.autoNavigate === true;
+
       const actionLabel =
         actionTab !== 'none' && typeof parsed?.actionLabel === 'string' && parsed.actionLabel.trim()
           ? parsed.actionLabel.trim().slice(0, 48)
@@ -330,6 +367,7 @@ export async function POST(req: NextRequest) {
         reply,
         actionTab,
         actionLabel,
+        autoNavigate,
         followUpChips,
         model,
       });

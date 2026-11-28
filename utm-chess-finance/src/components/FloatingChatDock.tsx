@@ -370,6 +370,7 @@ export default function FloatingChatDock({
           reply?: string;
           actionTab?: ChatbotActionTab;
           actionLabel?: string;
+          autoNavigate?: boolean;
           followUpChips?: string[];
         };
         const aiReply = typeof data?.reply === 'string' ? data.reply.trim() : '';
@@ -388,6 +389,9 @@ export default function FloatingChatDock({
             followUpChips: Array.isArray(data.followUpChips) ? data.followUpChips.slice(0, 3) : [],
           };
           setBotMessages((prev) => [...prev, botMsg]);
+          if (data.autoNavigate === true && safeAction !== 'none' && onNavigateAction) {
+            onNavigateAction(safeAction);
+          }
           return;
         }
       }
@@ -455,14 +459,22 @@ export default function FloatingChatDock({
     switch (tab) {
       case 'new_claim':
         return 'Open New Claim';
+      case 'new_preclaim':
+        return 'Open Pre-Claim Form';
       case 'activities':
         return 'View Activities';
+      case 'new_activity':
+        return 'Open New Activity';
       case 'equipment':
         return 'Open Equipment';
       case 'ledger':
         return 'View Ledger';
+      case 'new_finance_entry':
+        return 'Open Finance Entry';
       case 'claims':
         return 'View Claims';
+      case 'preclaims':
+        return 'View Pre-Claims';
       case 'profile':
         return 'My Profile';
       case 'members':

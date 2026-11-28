@@ -23,11 +23,15 @@ export interface LedgerSnapshotRow {
 export type ChatbotActionTab =
   | 'none'
   | 'new_claim'
+  | 'new_preclaim'
   | 'activities'
+  | 'new_activity'
   | 'equipment'
   | 'ledger'
+  | 'new_finance_entry'
   | 'profile'
   | 'claims'
+  | 'preclaims'
   | 'members'
   | 'logs'
   | 'theme_studio'
@@ -819,15 +823,20 @@ export function getAllowedHelpdeskActions(permissions: ChatbotPermissions): Chat
   const actions: ChatbotActionTab[] = [
     'none',
     'new_claim',
+    'new_preclaim',
     'activities',
     'equipment',
     'claims',
+    'preclaims',
     'profile',
     'qr_scanner',
   ];
 
+  if (role === 'owner' || (role === 'admin' && Boolean(permissions.can_manage_activities))) {
+    actions.push('new_activity');
+  }
   if (role === 'owner' || (role === 'admin' && Boolean(permissions.can_manage_finance))) {
-    actions.push('ledger');
+    actions.push('ledger', 'new_finance_entry');
   }
   if (role === 'owner' || (role === 'admin' && Boolean(permissions.can_manage_members))) {
     actions.push('members');

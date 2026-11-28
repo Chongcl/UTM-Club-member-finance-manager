@@ -4191,8 +4191,38 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
               setClaimModalPreClaimId(null);
               setIsClaimModalOpen(true);
               navigated = true;
+            } else if (action === 'new_preclaim') {
+              setClaimModalInitMode('preclaim');
+              setClaimModalPreClaimId(null);
+              setIsClaimModalOpen(true);
+              navigated = true;
             } else if (action === 'qr_scanner') {
               setIsQrScannerOpen(true);
+              navigated = true;
+            } else if (action === 'preclaims') {
+              setActiveTab('claims');
+              setClaimsSubTab('preclaims');
+              navigated = true;
+            } else if (action === 'claims') {
+              setActiveTab('claims');
+              setClaimsSubTab('receipts');
+              navigated = true;
+            } else if (
+              action === 'new_activity' &&
+              isAdminOrOwner &&
+              effectivePermissions.can_manage_activities
+            ) {
+              setActiveTab('activities');
+              setEditingActivity(null);
+              setIsBudgetModalOpen(true);
+              navigated = true;
+            } else if (
+              action === 'new_finance_entry' &&
+              isAdminOrOwner &&
+              effectivePermissions.can_manage_finance
+            ) {
+              setActiveTab('ledger');
+              setQuickAdjustFinanceOpen(true);
               navigated = true;
             } else if (
               action === 'theme_studio' &&
@@ -4212,7 +4242,6 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
             } else if (
               action === 'activities' ||
               action === 'equipment' ||
-              action === 'claims' ||
               action === 'profile' ||
               (action === 'ledger' && isAdminOrOwner && effectivePermissions.can_manage_finance) ||
               (action === 'members' && isAdminOrOwner && effectivePermissions.can_manage_members) ||
