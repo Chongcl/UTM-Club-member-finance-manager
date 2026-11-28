@@ -1811,12 +1811,28 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
         isAdminOrOwner &&
         (effectivePermissions.can_manage_finance ||
           effectivePermissions.can_manage_claims_fees),
+      roleMode: isAdminOrOwner ? roleMode : 'member',
+      can_manage_finance: effectivePermissions.can_manage_finance,
+      can_manage_claims_fees: effectivePermissions.can_manage_claims_fees,
+      can_manage_activities: effectivePermissions.can_manage_activities,
+      can_manage_equipment: effectivePermissions.can_manage_equipment,
+      can_manage_members: effectivePermissions.can_manage_members,
+      can_view_sensitive_profiles: effectivePermissions.can_view_sensitive_profiles,
+      can_manage_public_page: effectivePermissions.can_manage_public_page,
+      canCustomizeTheme: isAdminOrOwner && effectivePermissions.can_manage_posters_polls,
     }),
     [
       isAdminOrOwner,
       isOwner,
+      roleMode,
       effectivePermissions.can_manage_finance,
       effectivePermissions.can_manage_claims_fees,
+      effectivePermissions.can_manage_activities,
+      effectivePermissions.can_manage_equipment,
+      effectivePermissions.can_manage_members,
+      effectivePermissions.can_view_sensitive_profiles,
+      effectivePermissions.can_manage_public_page,
+      effectivePermissions.can_manage_posters_polls,
     ]
   );
 
@@ -4173,12 +4189,29 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
               setClaimModalInitMode('receipt');
               setClaimModalPreClaimId(null);
               setIsClaimModalOpen(true);
+            } else if (action === 'qr_scanner') {
+              setIsQrScannerOpen(true);
+            } else if (
+              action === 'theme_studio' &&
+              isAdminOrOwner &&
+              effectivePermissions.can_manage_posters_polls
+            ) {
+              setSavedThemeSnapshot(themeConfig);
+              setShowThemeStudio(true);
+            } else if (
+              action === 'public_page_editor' &&
+              isAdminOrOwner &&
+              effectivePermissions.can_manage_public_page
+            ) {
+              setShowPublicPageEditor(true);
             } else if (
               action === 'activities' ||
               action === 'equipment' ||
               action === 'claims' ||
               action === 'profile' ||
-              (action === 'ledger' && isAdminOrOwner)
+              (action === 'ledger' && isAdminOrOwner && effectivePermissions.can_manage_finance) ||
+              (action === 'members' && isAdminOrOwner && effectivePermissions.can_manage_members) ||
+              (action === 'logs' && isAdminOrOwner)
             ) {
               setActiveTab(action);
             }

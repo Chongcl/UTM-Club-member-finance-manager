@@ -59,6 +59,11 @@ const ACTION_TAB_OPTIONS: { value: ChatbotActionTab; label: string }[] = [
   { value: 'ledger', label: 'Ledger' },
   { value: 'claims', label: 'Claims' },
   { value: 'profile', label: 'My Profile' },
+  { value: 'qr_scanner', label: 'Scan QR' },
+  { value: 'members', label: 'Members' },
+  { value: 'logs', label: 'Activity Logs' },
+  { value: 'theme_studio', label: 'Theme Studio' },
+  { value: 'public_page_editor', label: 'Public Page Editor' },
 ];
 
 export default function ChatbotTrainerModal({

@@ -27,7 +27,12 @@ export type ChatbotActionTab =
   | 'equipment'
   | 'ledger'
   | 'profile'
-  | 'claims';
+  | 'claims'
+  | 'members'
+  | 'logs'
+  | 'theme_studio'
+  | 'public_page_editor'
+  | 'qr_scanner';
 
 export interface ChatbotRule {
   id: string;
@@ -57,6 +62,15 @@ export interface ChatbotPermissions {
   isAdmin: boolean;
   isOwner: boolean;
   canViewFinance: boolean;
+  roleMode?: 'member' | 'admin' | 'owner';
+  can_manage_finance?: boolean;
+  can_manage_claims_fees?: boolean;
+  can_manage_activities?: boolean;
+  can_manage_equipment?: boolean;
+  can_manage_members?: boolean;
+  can_view_sensitive_profiles?: boolean;
+  can_manage_public_page?: boolean;
+  canCustomizeTheme?: boolean;
 }
 
 export interface ChatbotEventBudgetSummary {
@@ -128,9 +142,10 @@ export interface ChatbotSnapshot {
 export interface ChatbotMatchResult {
   matched: boolean;
   reply: string;
-  source: 'custom' | 'faq' | 'builtin' | 'restricted' | 'fallback';
+  source: 'ai' | 'custom' | 'faq' | 'builtin' | 'restricted' | 'fallback';
   matchedLabel?: string;
   actionTab?: ChatbotActionTab;
+  actionLabel?: string;
   copyable?: boolean;
   followUpChips: string[];
 }
@@ -786,6 +801,237 @@ export function resolveTemplateVariables(
     }
     return `{{${key}}}`;
   });
+}
+
+export type HelpdeskRoleMode = 'member' | 'admin' | 'owner';
+
+export function resolveEffectiveHelpdeskRole(permissions: ChatbotPermissions): HelpdeskRoleMode {
+  if (permissions.roleMode === 'owner' || permissions.roleMode === 'admin' || permissions.roleMode === 'member') {
+    return permissions.roleMode;
+  }
+  if (permissions.isOwner) return 'owner';
+  if (permissions.isAdmin) return 'admin';
+  return 'member';
+}
+
+export function getAllowedHelpdeskActions(permissions: ChatbotPermissions): ChatbotActionTab[] {
+  const role = resolveEffectiveHelpdeskRole(permissions);
+  const actions: ChatbotActionTab[] = [
+    'none',
+    'new_claim',
+    'activities',
+    'equipment',
+    'claims',
+    'profile',
+    'qr_scanner',
+  ];
+
+  if (role === 'owner' || (role === 'admin' && Boolean(permissions.can_manage_finance))) {
+    actions.push('ledger');
+  }
+  if (role === 'owner' || (role === 'admin' && Boolean(permissions.can_manage_members))) {
+    actions.push('members');
+  }
+  if (role === 'owner' || role === 'admin') {
+    actions.push('logs');
+  }
+  if (role === 'owner' || (role === 'admin' && Boolean(permissions.can_manage_public_page))) {
+    actions.push('public_page_editor');
+  }
+  if (role === 'owner' || (role === 'admin' && Boolean(permissions.canCustomizeTheme))) {
+    actions.push('theme_studio');
+  }
+
+  return actions;
+}
+
+export interface SanitizedHelpdeskContext {
+  club: {
+    clubName: string;
+    currentBatch: string;
+    clubTagline: string;
+    clubAbout: string;
+    instagramUrl: string;
+    contactEmail: string;
+    departments: string[];
+    leadership: ChatbotLeadershipSummary;
+  };
+  user: {
+    userName: string;
+    userRoleLabel: string;
+    roleMode: HelpdeskRoleMode;
+  };
+  events: {
+    event_name: string;
+    status: 'Active' | 'Closed';
+    event_date: string;
+    event_time: string;
+    location: string;
+    registration_fee: number;
+    allocated?: number;
+    spent?: number;
+    pending?: number;
+    remaining?: number;
+    pctUsed?: number;
+  }[];
+  announcements: { title: string; message: string; is_pinned?: boolean; created_at: string }[];
+  availableEquipment: { item_name: string; available_quantity: number; total_quantity: number; location: string }[];
+  myRecords: {
+    myPendingClaims: { title: string; amount: number; status: string; expense_date: string }[];
+    myAllClaims: { title: string; amount: number; status: string; expense_date: string }[];
+    myPreClaims: { title: string; estimated_amount: number; status: string }[];
+    myUpcomingRsvps: { event_name: string; event_date: string; location: string; qr_checked_in: boolean; pass_approved: boolean }[];
+    myActiveLoans: { item_name: string; quantity: number; return_date: string; status: string }[];
+  };
+  rules: { question: string; keywords: string[]; answer: string; audience: 'all' | 'admin'; action_tab: ChatbotActionTab }[];
+  faqItems: { question: string; answer: string }[];
+  financeSummary?: {
+    clubBalance: number;
+    bankBalance: number;
+    cashBalance: number;
+    totalIncome: number;
+    totalExpense: number;
+    approvalThreshold: number;
+    overspentEvents: { event_name: string; allocated: number; spent: number; remaining: number; pctUsed: number }[];
+    highBurnEvents: { event_name: string; allocated: number; spent: number; remaining: number; pctUsed: number }[];
+  };
+  pendingClaimsQueue?: {
+    pendingClaimsCount: number;
+    pendingClaimsTotal: number;
+    pendingClaims: { title: string; claimant_name: string; amount: number; event_name: string; expense_date: string }[];
+  };
+}
+
+export function buildSanitizedHelpdeskContext(
+  snapshot: ChatbotSnapshot,
+  permissions: ChatbotPermissions,
+  customRules: ChatbotRule[],
+  faqItems: PublicFaqItem[] = []
+): SanitizedHelpdeskContext {
+  const role = resolveEffectiveHelpdeskRole(permissions);
+  const allowFinance = role === 'owner' || (role === 'admin' && Boolean(permissions.can_manage_finance));
+  const allowClaimsQueue = role === 'owner' || (role === 'admin' && Boolean(permissions.can_manage_claims_fees));
+
+  const templatePerms: ChatbotPermissions = {
+    ...permissions,
+    canViewFinance: allowFinance,
+  };
+
+  const sanitizedRules = customRules
+    .filter((r) => r.is_active && (role !== 'member' || r.audience === 'all'))
+    .slice(0, 30)
+    .map((r) => ({
+      question: r.question,
+      keywords: (r.keywords || []).slice(0, 12),
+      answer: resolveTemplateVariables(r.answer, snapshot, templatePerms),
+      audience: r.audience,
+      action_tab: r.action_tab || 'none',
+    }));
+
+  const ctx: SanitizedHelpdeskContext = {
+    club: {
+      clubName: snapshot.clubName,
+      currentBatch: snapshot.currentBatch,
+      clubTagline: snapshot.clubTagline,
+      clubAbout: snapshot.clubAbout,
+      instagramUrl: snapshot.instagramUrl,
+      contactEmail: snapshot.contactEmail,
+      departments: snapshot.departments,
+      leadership: snapshot.leadership,
+    },
+    user: {
+      userName: snapshot.userName,
+      userRoleLabel: snapshot.userRoleLabel,
+      roleMode: role,
+    },
+    events: snapshot.events.slice(0, 20).map((ev) => {
+      const base = {
+        event_name: ev.event_name,
+        status: ev.status,
+        event_date: ev.event_date,
+        event_time: ev.event_time,
+        location: ev.location,
+        registration_fee: ev.registration_fee,
+      };
+      if (!allowFinance) return base;
+      return {
+        ...base,
+        allocated: ev.allocated,
+        spent: ev.spent,
+        pending: ev.pending,
+        remaining: ev.remaining,
+        pctUsed: ev.pctUsed,
+      };
+    }),
+    announcements: snapshot.announcements.slice(0, 6),
+    availableEquipment: snapshot.availableEquipment.slice(0, 12),
+    myRecords: {
+      myPendingClaims: snapshot.myPendingClaims.slice(0, 8).map((c) => ({
+        title: c.title,
+        amount: Number(c.amount || 0),
+        status: c.status,
+        expense_date: c.expense_date,
+      })),
+      myAllClaims: snapshot.myAllClaims.slice(0, 8).map((c) => ({
+        title: c.title,
+        amount: Number(c.amount || 0),
+        status: c.status,
+        expense_date: c.expense_date,
+      })),
+      myPreClaims: snapshot.myPreClaims.slice(0, 6).map((pc) => ({
+        title: pc.title,
+        estimated_amount: Number(pc.estimated_amount || 0),
+        status: pc.status,
+      })),
+      myUpcomingRsvps: snapshot.myUpcomingRsvps.slice(0, 8),
+      myActiveLoans: snapshot.myActiveLoans.slice(0, 6).map((l) => ({
+        item_name: l.item_name,
+        quantity: Number(l.quantity || 1),
+        return_date: l.return_date || 'TBA',
+        status: l.status,
+      })),
+    },
+    rules: sanitizedRules,
+    faqItems: faqItems.slice(0, 12).map((f) => ({
+      question: f.question,
+      answer: resolveTemplateVariables(f.answer, snapshot, templatePerms),
+    })),
+  };
+
+  if (allowFinance) {
+    ctx.financeSummary = {
+      clubBalance: snapshot.financeSummary.clubBalance,
+      bankBalance: snapshot.financeSummary.bankBalance,
+      cashBalance: snapshot.financeSummary.cashBalance,
+      totalIncome: snapshot.financeSummary.totalIncome,
+      totalExpense: snapshot.financeSummary.totalExpense,
+      approvalThreshold: snapshot.approvalThreshold,
+      overspentEvents: snapshot.financeSummary.overspentEvents.map((e) => ({
+        event_name: e.event_name,
+        allocated: e.allocated,
+        spent: e.spent,
+        remaining: e.remaining,
+        pctUsed: e.pctUsed,
+      })),
+      highBurnEvents: snapshot.financeSummary.highBurnEvents.map((e) => ({
+        event_name: e.event_name,
+        allocated: e.allocated,
+        spent: e.spent,
+        remaining: e.remaining,
+        pctUsed: e.pctUsed,
+      })),
+    };
+  }
+
+  if (allowClaimsQueue) {
+    ctx.pendingClaimsQueue = {
+      pendingClaimsCount: snapshot.financeSummary.pendingClaimsCount,
+      pendingClaimsTotal: snapshot.financeSummary.pendingClaimsTotal,
+      pendingClaims: snapshot.financeSummary.pendingClaims.slice(0, 15),
+    };
+  }
+
+  return ctx;
 }
 
 // =====================================================================
