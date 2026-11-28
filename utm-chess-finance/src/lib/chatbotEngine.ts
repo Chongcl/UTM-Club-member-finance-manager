@@ -74,6 +74,20 @@ export interface ChatbotEventBudgetSummary {
   pctUsed: number;
 }
 
+export interface ChatbotLeadershipEntry {
+  name: string;
+  department: string;
+  batch: string;
+}
+
+export interface ChatbotLeadershipSummary {
+  presidents: ChatbotLeadershipEntry[];
+  admins: ChatbotLeadershipEntry[];
+  highCommittee: ChatbotLeadershipEntry[];
+  totalMembers: number;
+  departmentCounts: { name: string; count: number }[];
+}
+
 export interface ChatbotSnapshot {
   clubName: string;
   currentBatch: string;
@@ -81,6 +95,11 @@ export interface ChatbotSnapshot {
   userName: string;
   userRoleLabel: string;
   contactEmail: string;
+  clubTagline: string;
+  clubAbout: string;
+  instagramUrl: string;
+  departments: string[];
+  leadership: ChatbotLeadershipSummary;
   approvalThreshold: number;
   publicVars: Record<string, string>;
   adminVars: Record<string, string>;
@@ -137,6 +156,11 @@ export const PUBLIC_TEMPLATE_VARS: TemplateVarMeta[] = [
   { token: '{{my_total_claimed}}', label: 'My Total Claimed', description: 'User total submitted claims RM', adminOnly: false },
   { token: '{{my_upcoming_rsvps}}', label: 'My RSVPs', description: 'User attending events list', adminOnly: false },
   { token: '{{my_active_loans}}', label: 'My Loans', description: 'User unreturned equipment loans', adminOnly: false },
+  { token: '{{club_president}}', label: 'Club President', description: 'Active Owner / President contact name', adminOnly: false },
+  { token: '{{high_committee_list}}', label: 'High Committee', description: 'High Committee / EXCO members list', adminOnly: false },
+  { token: '{{club_admins_list}}', label: 'Admins & Treasurers', description: 'Authorized Treasurers & Admins list', adminOnly: false },
+  { token: '{{club_departments}}', label: 'Departments & Units', description: 'Club departments with member counts', adminOnly: false },
+  { token: '{{total_members_count}}', label: 'Total Members #', description: 'Active members in current directory', adminOnly: false },
 ];
 
 export const ADMIN_TEMPLATE_VARS: TemplateVarMeta[] = [
@@ -249,6 +273,26 @@ export const STARTER_KNOWLEDGE_PACK: Omit<ChatbotRule, 'id'>[] = [
     is_quick_chip: false,
     is_active: true,
   },
+  {
+    question: 'Club Leadership & Committee',
+    keywords: ['who is president', 'high committee', 'club leaders', 'committee list', 'exco'],
+    answer:
+      '**{{club_name}} Leadership ({{current_batch}}):**\n• **President / Club Owner:** {{club_president}}\n• **High Committee / EXCO:**\n{{high_committee_list}}\n• **Admins & Treasurers:**\n{{club_admins_list}}',
+    audience: 'all',
+    action_tab: 'profile',
+    is_quick_chip: false,
+    is_active: true,
+  },
+  {
+    question: 'What Is This Web Portal For',
+    keywords: ['what is this web', 'about clubsync', 'portal purpose', 'features overview'],
+    answer:
+      '**Welcome to {{club_name}} ({{current_batch}}):**\n• **Portal Purpose:** Official all-in-one club operations hub for **Activities & Entry QR Passes**, **Carpool**, **Equipment Loans**, **Receipt Claims & Pre-Claims (OCR)**, **Finance Ledger**, and **Club Chat**.\n• **Active Departments ({{total_members_count}} members):**\n{{club_departments}}',
+    audience: 'all',
+    action_tab: 'activities',
+    is_quick_chip: false,
+    is_active: true,
+  },
 ];
 
 const LOCAL_RULES_KEY = 'clubsync_chatbot_rules_v1';
@@ -324,6 +368,12 @@ export interface BuildChatbotSnapshotInput {
   openingCashBalance: number;
   claimThreshold: number;
   contactEmail?: string;
+  members?: UserProfile[];
+  ownerUserId?: string | null;
+  departments?: string[];
+  clubTagline?: string;
+  clubAbout?: string;
+  instagramUrl?: string;
 }
 
 export function buildChatbotSnapshot(input: BuildChatbotSnapshotInput): ChatbotSnapshot {
@@ -570,6 +620,66 @@ export function buildChatbotSnapshot(input: BuildChatbotSnapshotInput): ChatbotS
       ? 'Treasurer / Admin'
       : 'Member';
 
+  const roster = input.members || [];
+  const toLeadershipEntry = (m: UserProfile): ChatbotLeadershipEntry => ({
+    name: m.full_name || 'Member',
+    department: m.member_type || 'Member',
+    batch: m.batch_year || input.currentBatch || '2026/2027',
+  });
+
+  const presidents = roster
+    .filter((m) => m.role === 'owner' || (Boolean(input.ownerUserId) && m.id === input.ownerUserId))
+    .map(toLeadershipEntry);
+  const presidentNames = new Set(presidents.map((p) => p.name.toLowerCase()));
+  const admins = roster
+    .filter(
+      (m) =>
+        m.role === 'treasurer' &&
+        !presidentNames.has((m.full_name || '').toLowerCase()) &&
+        m.id !== input.ownerUserId
+    )
+    .map(toLeadershipEntry);
+  const highCommittee = roster
+    .filter((m) => /\b(high committee|exco|executive committee)\b/i.test(m.member_type || ''))
+    .map(toLeadershipEntry);
+
+  const deptCountMap = new Map<string, number>();
+  for (const d of input.departments || []) {
+    const clean = d.trim();
+    if (clean) deptCountMap.set(clean, 0);
+  }
+  for (const m of roster) {
+    const dept = (m.member_type || 'Member').trim() || 'Member';
+    deptCountMap.set(dept, (deptCountMap.get(dept) || 0) + 1);
+  }
+  const departmentCounts = Array.from(deptCountMap.entries()).map(([name, count]) => ({
+    name,
+    count,
+  }));
+
+  const clubPresidentText =
+    presidents.length > 0
+      ? presidents.map((p) => `**${p.name}** (${p.department} • Batch ${p.batch})`).join(', ')
+      : 'Check the People tab in Club Chat or Members roster';
+  const highCommitteeText =
+    highCommittee.length > 0
+      ? highCommittee
+          .slice(0, 12)
+          .map((hc) => `• **${hc.name}** (${hc.department} • Batch ${hc.batch})`)
+          .join('\n')
+      : 'No members currently tagged under High Committee / EXCO.';
+  const clubAdminsText =
+    admins.length > 0
+      ? admins
+          .slice(0, 12)
+          .map((a) => `• **${a.name}** (${a.department} • Batch ${a.batch})`)
+          .join('\n')
+      : 'No separate Treasurer/Admin accounts assigned yet.';
+  const clubDepartmentsText =
+    departmentCounts.length > 0
+      ? departmentCounts.map((d) => `• **${d.name}:** ${d.count} member(s)`).join('\n')
+      : 'No departments configured yet.';
+
   return {
     clubName: input.clubName || 'ClubSync',
     currentBatch: input.currentBatch || '2026/2027',
@@ -577,6 +687,17 @@ export function buildChatbotSnapshot(input: BuildChatbotSnapshotInput): ChatbotS
     userName: input.profile?.full_name || 'Member',
     userRoleLabel: roleLabel,
     contactEmail: input.contactEmail || '',
+    clubTagline: input.clubTagline || '',
+    clubAbout: input.clubAbout || '',
+    instagramUrl: input.instagramUrl || '',
+    departments: departmentCounts.map((d) => d.name),
+    leadership: {
+      presidents,
+      admins,
+      highCommittee,
+      totalMembers: roster.length,
+      departmentCounts,
+    },
     approvalThreshold: Number(input.claimThreshold || 200),
     publicVars: {
       club_name: input.clubName || 'ClubSync',
@@ -592,6 +713,11 @@ export function buildChatbotSnapshot(input: BuildChatbotSnapshotInput): ChatbotS
       my_total_claimed: formatRM(myTotalClaimed),
       my_upcoming_rsvps: myRsvpsText,
       my_active_loans: myLoansText,
+      club_president: clubPresidentText,
+      high_committee_list: highCommitteeText,
+      club_admins_list: clubAdminsText,
+      club_departments: clubDepartmentsText,
+      total_members_count: String(roster.length),
     },
     adminVars: {
       club_balance: formatRM(clubBalance),
@@ -846,7 +972,6 @@ const SYNONYM_MAP: Record<string, string> = {
   // Admin / Owner Ops & Logs
   admin: 'role',
   owner: 'role',
-  president: 'role',
   treasurer: 'role',
   bendahari: 'role',
   pin: 'role',
@@ -854,6 +979,63 @@ const SYNONYM_MAP: Record<string, string> = {
   role: 'role',
   permission: 'role',
   permissions: 'role',
+  // Leadership & Committee
+  presiden: 'leadership',
+  president: 'leadership',
+  pengerusi: 'leadership',
+  highcommittee: 'leadership',
+  exco: 'leadership',
+  leader: 'leadership',
+  leaders: 'leadership',
+  leadership: 'leadership',
+  vice: 'leadership',
+  secretary: 'leadership',
+  setiausaha: 'leadership',
+  // About & Portal Purpose
+  aboutportal: 'about',
+  clubsync: 'about',
+  purpose: 'about',
+  kegunaan: 'about',
+  fungsi: 'about',
+  feature: 'about',
+  features: 'about',
+  about: 'about',
+  // Departments & Units
+  department: 'department',
+  departments: 'department',
+  unit: 'department',
+  units: 'department',
+  biro: 'department',
+  division: 'department',
+  // Privacy & Data Safety
+  privacy: 'privacy',
+  safe: 'privacy',
+  secure: 'privacy',
+  confidential: 'privacy',
+  privasi: 'privacy',
+  // Troubleshooting
+  troubleshoot: 'troubleshoot',
+  bug: 'troubleshoot',
+  error: 'troubleshoot',
+  glitch: 'troubleshoot',
+  lag: 'troubleshoot',
+  slow: 'troubleshoot',
+  stuck: 'troubleshoot',
+  broken: 'troubleshoot',
+  masalah: 'troubleshoot',
+  // Membership Onboarding
+  join: 'join',
+  signup: 'join',
+  register: 'join',
+  daftar: 'join',
+  membership: 'join',
+  // Claim Status / Payout / Rejection
+  rejected: 'claimstatus',
+  payout: 'claimstatus',
+  paid: 'claimstatus',
+  reimbursed: 'claimstatus',
+  timeline: 'claimstatus',
+  whoami: 'whoami',
   member: 'members',
   members: 'members',
   ahli: 'members',
@@ -912,6 +1094,15 @@ function normalizeRawText(text: string): string {
     .replace(/\bnon[-\s]?member\b/g, 'nonmember')
     .replace(/\b(?:2|two)[-\s]?stage\b/g, 'twostage')
     .replace(/\bcheck[-\s]?in\b/g, 'checkin')
+    .replace(/\bhigh\s+committee\b/g, 'highcommittee')
+    .replace(/\bexecutive\s+committee\b/g, 'highcommittee')
+    .replace(/\bwho\s+am\s+i\b/g, 'whoami')
+    .replace(/\bwhat\s+is\s+this\b/g, 'aboutportal')
+    .replace(/\bweb(?:site)?\s+for\b/g, 'aboutportal')
+    .replace(/\bportal\s+for\b/g, 'aboutportal')
+    .replace(/\bforgot\s+password\b/g, 'troubleshoot')
+    .replace(/\b(?:can'?t|cannot)\s+log\s*in\b/g, 'troubleshoot')
+    .replace(/\bnot\s+working\b/g, 'troubleshoot')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -1050,6 +1241,19 @@ export interface MatchChatbotOptions {
   permissions: ChatbotPermissions;
 }
 
+function findMatchingEvent(
+  events: ChatbotEventBudgetSummary[],
+  rawNorm: string
+): ChatbotEventBudgetSummary | undefined {
+  return events.find((ev) => {
+    const evNorm = normalizeRawText(ev.event_name);
+    if (!evNorm) return false;
+    if (rawNorm.includes(evNorm)) return true;
+    const evWords = evNorm.split(' ').filter((w) => w.length >= 4 && !STOP_WORDS.has(w));
+    return evWords.length > 0 && evWords.filter((w) => rawNorm.includes(w)).length >= Math.min(2, evWords.length);
+  });
+}
+
 export function matchChatbotQuery(
   rawQuery: string,
   { customRules, faqItems = [], snapshot, permissions }: MatchChatbotOptions
@@ -1135,13 +1339,7 @@ export function matchChatbotQuery(
     permissions.canViewFinance &&
     (has('budget') || has('spent') || has('remaining') || has('balance') || has('cost'))
   ) {
-    const matchedEv = snapshot.events.find((ev) => {
-      const evNorm = normalizeRawText(ev.event_name);
-      if (!evNorm) return false;
-      if (rawNorm.includes(evNorm)) return true;
-      const evWords = evNorm.split(' ').filter((w) => w.length >= 4 && !STOP_WORDS.has(w));
-      return evWords.length > 0 && evWords.filter((w) => rawNorm.includes(w)).length >= Math.min(2, evWords.length);
-    });
+    const matchedEv = findMatchingEvent(snapshot.events, rawNorm);
     if (matchedEv) {
       const statusFlag =
         matchedEv.allocated <= 0
@@ -1264,9 +1462,31 @@ export function matchChatbotQuery(
     }
   }
 
-  // 2C. Personal Status Intents (All Users)
-  if ((has('my') && (has('claim') || has('preclaim') || has('loan') || has('rsvp') || has('status'))) ||
-      rawNorm.includes('my claims & loans')) {
+  // 2C. Personal Status & Identity Intents (All Users)
+  if (has('whoami')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'My Account & Club Overview',
+      actionTab: 'profile',
+      reply: [
+        `**Your Account Summary (${snapshot.clubName}):**`,
+        `• **Name:** ${snapshot.userName}`,
+        `• **Access Role:** ${snapshot.userRoleLabel}`,
+        `• **Active Batch:** ${snapshot.currentBatch}`,
+        `• **Claims:** ${snapshot.publicVars.my_pending_claims} (Total submitted: ${snapshot.publicVars.my_total_claimed})`,
+        `• **Equipment Loans:**\n${snapshot.publicVars.my_active_loans}`,
+        `• **Attending RSVPs:**\n${snapshot.publicVars.my_upcoming_rsvps}`,
+      ].join('\n'),
+      followUpChips: ['My claims & loans', 'Update bank & profile', 'Upcoming events'],
+    };
+  }
+
+  if (
+    !has('claimstatus') &&
+    ((has('my') && (has('claim') || has('preclaim') || has('loan') || has('rsvp') || has('status'))) ||
+      rawNorm.includes('my claims & loans'))
+  ) {
     const claimsList =
       snapshot.myAllClaims.length > 0
         ? snapshot.myAllClaims
@@ -1571,6 +1791,151 @@ export function matchChatbotQuery(
     };
   }
 
+  if (
+    has('leadership') ||
+    (/\b(who|siapa)\b/i.test(rawNorm) && (has('role') || has('contact') || has('members')))
+  ) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Club Leadership & High Committee',
+      actionTab: 'profile',
+      reply: [
+        `**${snapshot.clubName} Leadership & Committee (Batch ${snapshot.currentBatch}):**`,
+        `• **President / Club Owner:** ${snapshot.publicVars.club_president}`,
+        ``,
+        `**High Committee / EXCO:**`,
+        snapshot.publicVars.high_committee_list,
+        ``,
+        `**Treasurers & Admins:**`,
+        snapshot.publicVars.club_admins_list,
+        ``,
+        `Switch to the **People** tab right here in Club Chat to send a direct message to any leader!`,
+      ].join('\n'),
+      followUpChips: ['Club departments & members', 'What is this web for?', 'Club Chat & DMs'],
+    };
+  }
+
+  if (has('about')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: `About ${snapshot.clubName} & ClubSync`,
+      actionTab: 'activities',
+      reply: [
+        `**About ${snapshot.clubName} (${snapshot.currentBatch}):**`,
+        snapshot.clubTagline ? `• _"${snapshot.clubTagline}"_` : null,
+        snapshot.clubAbout ? `• ${snapshot.clubAbout}` : null,
+        ``,
+        `**What This Web Portal Is For (ClubSync):**`,
+        `• **Activities & Attendance:** Browse events, RSVP, join carpools, pay fees, and check in with your digital **Entry QR Pass**.`,
+        `• **Equipment Borrowing:** Check real-time club gear stock and borrow or return items cleanly.`,
+        `• **Claims & Finance:** Submit receipt claims & cash-advance pre-claims with local OCR, while Treasurers/Owners manage budgets, approvals, and auditable Excel ledgers.`,
+        `• **Public Pages & Chat:** Share public \`/e/<slug>\` guest event links, customize themes, and ask **Help Desk**, **Public Lounge**, or **People DMs**.`,
+      ]
+        .filter((line) => line !== null)
+        .join('\n'),
+      followUpChips: ['Who is President & High Committee?', 'Club departments & members', 'Upcoming events'],
+    };
+  }
+
+  if (
+    has('department') ||
+    (/\b(how many|total|count|berapa|senarai)\b/i.test(rawNorm) && has('members'))
+  ) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Departments, Units & Member Count',
+      actionTab: 'profile',
+      reply: [
+        `**${snapshot.clubName} Organization Overview (Batch ${snapshot.currentBatch}):**`,
+        `• **Total Directory Members:** ${snapshot.leadership.totalMembers}`,
+        ``,
+        `**Departments / Units Breakdown:**`,
+        snapshot.publicVars.club_departments,
+        ``,
+        `You can update your own Department or Unit under **Profile → Personal & Academic**.`,
+      ].join('\n'),
+      followUpChips: ['Who is President & High Committee?', 'How to join as a member', 'Update bank & profile'],
+    };
+  }
+
+  if (has('claimstatus')) {
+    const recentClaimsText =
+      snapshot.myAllClaims.length > 0
+        ? snapshot.myAllClaims
+            .slice(0, 4)
+            .map((c) => `• **${c.title}** — ${formatRM(Number(c.amount || 0))} [${c.status}]`)
+            .join('\n')
+        : null;
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Claim Payout & Rejection Help',
+      actionTab: 'claims',
+      reply: [
+        `**Claim Review, Payout Timeline & Rejection Guide:**`,
+        `• **Statuses:** Claims start as **Pending** → verified by Treasurer (and Owner/President if above the 2-stage threshold) → **Approved** or **Rejected**.`,
+        `• **If a Claim Was Rejected:** Open **Claims**, inspect the reviewer's reason/history notes, fix any blurry receipt or missing bank details, and submit an updated claim.`,
+        `• **Faster Payouts:** Ensure your **DuitNow QR** and bank account number are saved under **Profile → Payout & Bank QR**.`,
+        recentClaimsText ? `\n**Your Recent Claims (${snapshot.publicVars.my_pending_claims}):**\n${recentClaimsText}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      followUpChips: ['My claims & loans', 'How to submit a claim', 'Update bank & profile'],
+    };
+  }
+
+  if (has('privacy')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Data Privacy & Role Security',
+      actionTab: 'profile',
+      reply: [
+        `**Privacy & Security Safeguards in ${snapshot.clubName}:**`,
+        `• **Masked Personal IDs:** Your IC/Passport number is masked by default in **Profile** and only revealed when explicitly toggled.`,
+        `• **Strict Role Isolation:** Club-wide bank/cash balances, budgets, and sensitive member contacts are blocked for regular members and enforced across both UI and Help Desk.`,
+        `• **Audit & Soft-Delete Protection:** Admin actions and deletions go to **Activity Logs** as traceable soft-deletes rather than silent erasure.`,
+      ].join('\n'),
+      followUpChips: ['Update bank & profile', 'Who is President & High Committee?', 'What is this web for?'],
+    };
+  }
+
+  if (has('troubleshoot')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Troubleshooting & Support',
+      actionTab: 'profile',
+      reply: [
+        `**Quick Troubleshooting Checklist (${snapshot.clubName}):**`,
+        `• **Can't Log In / Forgot Password:** Use the **Forgot Password** link on the sign-in form (or **Profile → Account & Security → Reset Password** once signed in).`,
+        `• **Receipt Upload / OCR Issues:** Upload crisp JPG/PNG photos or PDFs in **Submit Claim**; if OCR misreads a blurry total, edit the RM field manually before submitting.`,
+        `• **Missing Admin Tabs / Public Editor:** Check your role in **Hamburger Drawer** (unlock Admin PIN if authorized, or ask the Club Owner in **People** DMs).`,
+        `• **UI Glitch / Stale Session:** Hard-refresh the browser tab or check **Notification Bell** / sign out and back in.`,
+      ].join('\n'),
+      followUpChips: ['Committee contact', 'Club Chat & DMs', 'How to navigate portal'],
+    };
+  }
+
+  if (has('join') && !has('carpool') && !has('guest')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Membership Sign Up & Onboarding',
+      actionTab: 'activities',
+      reply: [
+        `**How Membership & Onboarding Works (${snapshot.clubName}):**`,
+        `1. New students sign up via **Member Sign Up** on the public portal landing page with their email, full name, UTM Matric No, and WhatsApp phone.`,
+        `2. Once signed in, complete **Profile** (Department/Unit, Residential College/Dorm, and Payout Bank/DuitNow QR) to unlock carpool auto-fill and claims.`,
+        `3. Non-member guests don't need membership to attend open events — they can register via **Open Public Events** or \`/e/<slug>\`.`,
+      ].join('\n'),
+      followUpChips: ['Update bank & profile', 'Guest registration guide', 'Club departments & members'],
+    };
+  }
+
   if (has('role')) {
     return {
       matched: true,
@@ -1583,7 +1948,7 @@ export function matchChatbotQuery(
         `• **Switch Role / PIN Unlock:** Open the top-left **Hamburger Drawer** and check **Workspace & Admin Controls** to switch between **Member**, **Admin**, or **Owner** mode (or enter the Admin PIN when prompted).`,
         `• **Permissions:** **Owners** control full finance, member promotions, Public Page Studio, and Theme Studio; **Treasurers/Admins** verify fees, review claims, and manage events/equipment; **Members** RSVP, borrow gear, and submit claims.`,
       ].join('\n'),
-      followUpChips: ['Members & roster', 'Activity & audit logs', 'How to navigate portal'],
+      followUpChips: ['Who is President & High Committee?', 'Members & roster', 'Activity & audit logs'],
     };
   }
 
@@ -1594,13 +1959,13 @@ export function matchChatbotQuery(
       matchedLabel: 'Member Roster & Directory',
       actionTab: 'profile',
       reply: [
-        `**Member Directory & Contacts (${snapshot.clubName}):**`,
+        `**Member Directory & Contacts (${snapshot.clubName} — ${snapshot.leadership.totalMembers} member(s)):**`,
         permissions.isAdmin || permissions.isOwner
           ? `• Open the top-left **Hamburger Drawer → Members** to search members by department, matric no, or batch, update committee roles, and manage access.`
           : `• To find and message fellow members, Exco, or Treasurers directly, switch to the **People** tab right inside this Club Chat window.`,
         `• Your own department, matric number, and dorm pickup info can be updated anytime in **Profile**.`,
       ].join('\n'),
-      followUpChips: ['Club Chat & DMs', 'Role & PIN unlock', 'Update bank & profile'],
+      followUpChips: ['Who is President & High Committee?', 'Club departments & members', 'Club Chat & DMs'],
     };
   }
 
@@ -1619,7 +1984,7 @@ export function matchChatbotQuery(
       ].join('\n'),
       followUpChips: permissions.canViewFinance
         ? ['Excel import & export', 'Monthly finance summary', 'Role & PIN unlock']
-        : ['My claims & loans', 'Committee contact', 'How to navigate portal'],
+        : ['Data privacy & security', 'My claims & loans', 'How to navigate portal'],
     };
   }
 
@@ -1631,11 +1996,11 @@ export function matchChatbotQuery(
       actionTab: 'activities',
       reply: [
         `**Using Club Chat (${snapshot.clubName}):**`,
-        `• **Help Desk (This Tab):** Instant 24/7 answers using live portal data, FAQs, and club policies.`,
+        `• **Help Desk (This Tab):** Instant 24/7 answers using live portal data, FAQs, leadership directory, and club policies.`,
         `• **Public Lounge:** Club-wide announcement & discussion room where members and Exco chat together.`,
         `• **People (Direct Messages):** Start a private 1-on-1 DM with any member, Exco, or Treasurer, with live unread badges.`,
       ].join('\n'),
-      followUpChips: ['Committee contact', 'Notifications & reminders', 'How to navigate portal'],
+      followUpChips: ['Who is President & High Committee?', 'Committee contact', 'How to navigate portal'],
     };
   }
 
@@ -1682,7 +2047,7 @@ export function matchChatbotQuery(
         `• **Active Batch:** **${snapshot.currentBatch}**`,
         `• **Active Activities:** ${snapshot.publicVars.active_events_count} open/active event(s) in this session.`,
       ].join('\n'),
-      followUpChips: ['Upcoming events', 'Latest announcements', 'How to navigate portal'],
+      followUpChips: ['Upcoming events', 'Who is President & High Committee?', 'Latest announcements'],
     };
   }
 
@@ -1698,11 +2063,30 @@ export function matchChatbotQuery(
         `• **Top-Right Bar:** Quick **Submit Claim**, **Theme Studio** (Palette), **Light/Dark toggle**, **Notification Bell**, and **Account / Sign Out**.`,
         `• **Mobile Bottom Liquid Glass Dock:** Quick jump between **Home**, **Gear**, **Scan QR**, **Claims**, and **Profile**.`,
       ].join('\n'),
-      followUpChips: ['Upcoming events', 'How to submit a claim', 'Theme & Dark Mode'],
+      followUpChips: ['What is this web for?', 'Upcoming events', 'Theme & Dark Mode'],
     };
   }
 
   // 2E. Live Portal Info Intents
+  const specificEvent = findMatchingEvent(snapshot.events, rawNorm);
+  if (specificEvent) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: `Event Details: ${specificEvent.event_name}`,
+      actionTab: 'activities',
+      reply: [
+        `**${specificEvent.event_name}** (${specificEvent.status})`,
+        `• **Date:** ${specificEvent.event_date}${specificEvent.event_time ? ` · ${specificEvent.event_time}` : ''}`,
+        `• **Location:** ${specificEvent.location}`,
+        `• **Registration Fee:** ${specificEvent.registration_fee > 0 ? formatRM(specificEvent.registration_fee) : 'Free'}`,
+        ``,
+        `Open **Home & Activities** and select **${specificEvent.event_name}** to RSVP, view/pay fees, arrange carpool, or open your Entry QR Pass.`,
+      ].join('\n'),
+      followUpChips: ['How to pay event fees', 'QR pass & attendance', 'How to join carpool'],
+    };
+  }
+
   if (has('announcement')) {
     const annText =
       snapshot.announcements.length > 0
@@ -1751,13 +2135,15 @@ export function matchChatbotQuery(
       actionTab: 'profile',
       reply: [
         `**Committee & Portal Support (${snapshot.clubName}):**`,
+        `• **President / Club Owner:** ${snapshot.publicVars.club_president}`,
         snapshot.contactEmail ? `• **Club Email:** ${snapshot.contactEmail}` : null,
+        snapshot.instagramUrl ? `• **Instagram:** ${snapshot.instagramUrl}` : null,
         `• **Live Messaging:** Switch to the **Public** or **People** tab in Club Chat to message an Exco or Treasurer directly.`,
         `• **Profile Settings:** Visit **My Profile** to update your DuitNow QR, matric no, or password.`,
       ]
         .filter(Boolean)
         .join('\n'),
-      followUpChips: starterFollowUps.slice(0, 3),
+      followUpChips: ['Who is President & High Committee?', ...starterFollowUps.slice(0, 2)],
     };
   }
 
@@ -1773,13 +2159,13 @@ export function matchChatbotQuery(
       permissions.canViewFinance || permissions.isAdmin
         ? [
             `• **Treasury & Audit:** Live club balance, bank/cash split, pending claims queue, overspent event budgets, monthly finance summary, 2-stage threshold, Excel import/export, and Activity Logs.`,
-            `• **Events & Operations:** Upcoming events, QR attendance scanner, carpool coordination, equipment stock/loans, and Member Roster.`,
-            `• **Studios & Controls:** Public Page Editor, Theme Studio (mesh + effects + glass), Light/Dark mode, and Admin PIN / Role switcher.`,
+            `• **Club Leadership & People:** Who is President/High Committee, departments, member counts, QR attendance scanner, carpool coordination, and equipment stock.`,
+            `• **Studios & Controls:** Public Page Editor, Theme Studio (mesh + effects + glass), Light/Dark mode, Admin PIN / Role switcher, and troubleshooting.`,
           ]
         : [
-            `• **Claims & Money Back:** How to submit claims, OCR receipt stitching, splitting itemized costs, pre-claims/cash advances, and checking your pending claim status.`,
-            `• **Events & Passes:** Upcoming activities, RSVPs, Entry QR Pass, paying fees, carpool transport, and sharing \`/e/<slug>\` guest links.`,
-            `• **Equipment & Account:** Borrowing club gear, checking your active loans, updating DuitNow/bank details, password/email security, and app navigation.`,
+            `• **Club Info & Leadership:** What this web portal is for, President & High Committee directory, departments, announcements, and troubleshooting.`,
+            `• **Claims & Money Back:** Submitting claims, OCR receipt stitching, splitting itemized costs, pre-claims, payout/rejection help, and personal claim status.`,
+            `• **Events, Gear & Account:** Upcoming activities, Entry QR Pass, paying fees, carpool, guest links, borrowing gear, and updating DuitNow/profile.`,
           ];
     return {
       matched: true,
@@ -1790,7 +2176,9 @@ export function matchChatbotQuery(
         `Hi **${snapshot.userName}**! I'm the **${snapshot.clubName} Help Desk** (${snapshot.userRoleLabel} • Batch ${snapshot.currentBatch}). Ask me anything about:`,
         ...roleTips,
       ].join('\n'),
-      followUpChips: starterFollowUps,
+      followUpChips: permissions.canViewFinance
+        ? ['Current club balance', 'Who is President & High Committee?', 'What is this web for?']
+        : ['What is this web for?', 'Who is President & High Committee?', 'Upcoming events'],
     };
   }
 
@@ -1801,6 +2189,9 @@ export function matchChatbotQuery(
         'Pending claims to review',
         'Check overspent budgets',
         'Monthly finance summary',
+        'Who is the President & High Committee?',
+        'What is this web portal for?',
+        'Club departments & members',
         'Upcoming events',
         'Available equipment',
         'How to submit a claim',
@@ -1809,10 +2200,15 @@ export function matchChatbotQuery(
         'Update bank & profile',
         'Public Page Editor',
         'Theme & Dark Mode',
+        'Troubleshooting help',
       ]
     : [
+        'Who is the President & High Committee?',
+        'What is this web portal for?',
+        'Club departments & members',
         'Upcoming events',
         'My claims & loans',
+        'Claim payout & rejection help',
         'How to submit a claim',
         'Available equipment',
         'How to request a pre-claim',
@@ -1821,6 +2217,7 @@ export function matchChatbotQuery(
         'QR pass & attendance',
         'Update bank & profile',
         'Theme & Dark Mode',
+        'Troubleshooting help',
       ];
 
   const rankedSuggestions = candidateTopics

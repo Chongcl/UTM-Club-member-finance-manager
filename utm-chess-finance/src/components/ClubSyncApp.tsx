@@ -1840,6 +1840,12 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
         openingCashBalance,
         claimThreshold,
         contactEmail: contactEmailInput,
+        members: allMembers,
+        ownerUserId,
+        departments,
+        clubTagline: clubTaglineInput,
+        clubAbout: clubAboutInput,
+        instagramUrl: instagramUrlInput,
       }),
     [
       clubName,
@@ -1859,6 +1865,12 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
       openingCashBalance,
       claimThreshold,
       contactEmailInput,
+      allMembers,
+      ownerUserId,
+      departments,
+      clubTaglineInput,
+      clubAboutInput,
+      instagramUrlInput,
     ]
   );
 
