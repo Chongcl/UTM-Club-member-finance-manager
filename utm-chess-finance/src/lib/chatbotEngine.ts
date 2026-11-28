@@ -209,6 +209,46 @@ export const STARTER_KNOWLEDGE_PACK: Omit<ChatbotRule, 'id'>[] = [
     is_quick_chip: false,
     is_active: true,
   },
+  {
+    question: 'Guest Registration Policy',
+    keywords: ['guest registration', 'non member join', 'public event guest', 'tetamu'],
+    answer:
+      '**Guest & Non-Member Event Registration ({{club_name}}):**\n• External visitors and non-members can register from the public landing page or shareable `/e/<event-slug>` link without a member login.\n• For paid events, guests upload their DuitNow/bank transfer proof on the registration form and receive a digital **Entry Pass QR** upon submission.',
+    audience: 'all',
+    action_tab: 'activities',
+    is_quick_chip: false,
+    is_active: true,
+  },
+  {
+    question: 'Event Fee Verification Guide',
+    keywords: ['fee verification', 'verify fee', 'payment receipt status', 'semak yuran'],
+    answer:
+      '**Activity & Registration Fee Verification ({{club_name}}):**\n• After transferring via DuitNow QR or bank transfer and uploading your payment slip on the activity card, your fee stays **Pending** until verified by the Treasurer.\n• Verified member fees and verified guest fees are posted automatically into the Finance Ledger.',
+    audience: 'all',
+    action_tab: 'activities',
+    is_quick_chip: false,
+    is_active: true,
+  },
+  {
+    question: 'Excel Export & Audit Trail',
+    keywords: ['excel report', 'csv import', 'audit trail', 'activity logs', 'export ledger'],
+    answer:
+      '**Finance Export & Audit Trail ({{club_name}}):**\n• In **Finance Ledger**, Treasurers and Owners can export financial summaries/records to Excel/CSV or import bulk entries.\n• Every approval, edit, role update, and soft-delete is recorded in **Activity Logs** inside the top-left Hamburger Drawer.',
+    audience: 'admin',
+    action_tab: 'ledger',
+    is_quick_chip: false,
+    is_active: true,
+  },
+  {
+    question: 'Theme & Public Page Studio',
+    keywords: ['theme studio', 'public page studio', 'public landing editor', 'customize background'],
+    answer:
+      '**Studio Customization Tools ({{club_name}}):**\n• Click the top-right **Palette** icon (**Theme Studio**) to switch Light/Dark presets, layer Colorful Mesh + Animated Effects, and tune Liquid Glass intensity.\n• Open the top-left **Hamburger Menu → Public Page Editor** to edit public sections, Open Public Events, Highlights, FAQs, and public page theming with Undo/Redo.',
+    audience: 'admin',
+    action_tab: 'profile',
+    is_quick_chip: false,
+    is_active: true,
+  },
 ];
 
 const LOCAL_RULES_KEY = 'clubsync_chatbot_rules_v1';
@@ -745,12 +785,133 @@ const SYNONYM_MAP: Record<string, string> = {
   saya: 'my',
   aku: 'my',
   mine: 'my',
+  // Greetings & Help
+  hi: 'greeting',
+  hello: 'greeting',
+  hey: 'greeting',
+  salam: 'greeting',
+  selamat: 'greeting',
+  help: 'help',
+  bantuan: 'help',
+  // QR & Attendance
+  qr: 'qr',
+  scan: 'qr',
+  imbas: 'qr',
+  checkin: 'qr',
+  attendance: 'qr',
+  scanner: 'qr',
+  // Profile, Bank & Security
+  profile: 'profile',
+  profil: 'profile',
+  bank: 'bank',
+  duitnow: 'bank',
+  maybank: 'bank',
+  cimb: 'bank',
+  password: 'password',
+  pwd: 'password',
+  email: 'profile',
+  ic: 'profile',
+  matric: 'profile',
+  matrik: 'profile',
+  dorm: 'profile',
+  college: 'profile',
+  kolej: 'profile',
+  security: 'password',
+  // Guest & Public Landing
+  guest: 'guest',
+  tetamu: 'guest',
+  nonmember: 'guest',
+  outsider: 'guest',
+  landing: 'landing',
+  website: 'landing',
+  poster: 'landing',
+  highlight: 'landing',
+  highlights: 'landing',
+  faq: 'landing',
+  slug: 'landing',
+  publish: 'landing',
+  editor: 'landing',
+  // Theme & Appearance
+  theme: 'theme',
+  tema: 'theme',
+  dark: 'theme',
+  light: 'theme',
+  gelap: 'theme',
+  cerah: 'theme',
+  background: 'theme',
+  wallpaper: 'theme',
+  mesh: 'theme',
+  glass: 'theme',
+  studio: 'theme',
+  // Admin / Owner Ops & Logs
+  admin: 'role',
+  owner: 'role',
+  president: 'role',
+  treasurer: 'role',
+  bendahari: 'role',
+  pin: 'role',
+  unlock: 'role',
+  role: 'role',
+  permission: 'role',
+  permissions: 'role',
+  member: 'members',
+  members: 'members',
+  ahli: 'members',
+  roster: 'members',
+  promote: 'members',
+  log: 'logs',
+  logs: 'logs',
+  audit: 'logs',
+  history: 'logs',
+  restore: 'logs',
+  deleted: 'logs',
+  threshold: 'threshold',
+  stage: 'threshold',
+  twostage: 'threshold',
+  // Excel, OCR & Duplicates
+  excel: 'excel',
+  xlsx: 'excel',
+  csv: 'excel',
+  export: 'excel',
+  import: 'excel',
+  spreadsheet: 'excel',
+  ocr: 'ocr',
+  duplicate: 'ocr',
+  pendua: 'ocr',
+  // App Install, Notifications, Chat, Batch & Navigation
+  install: 'pwa',
+  pwa: 'pwa',
+  app: 'pwa',
+  homescreen: 'pwa',
+  notification: 'notification',
+  notifications: 'notification',
+  notifikasi: 'notification',
+  bell: 'notification',
+  reminder: 'notification',
+  reminders: 'notification',
+  dm: 'chat',
+  chat: 'chat',
+  lounge: 'chat',
+  message: 'chat',
+  messages: 'chat',
+  batch: 'batch',
+  session: 'batch',
+  semester: 'batch',
+  hamburger: 'navigation',
+  drawer: 'navigation',
+  sidebar: 'navigation',
+  navigate: 'navigation',
+  menu: 'navigation',
+  menus: 'navigation',
 };
 
 function normalizeRawText(text: string): string {
   return text
     .toLowerCase()
     .replace(/pre[-\s]?claim/g, 'preclaim')
+    .replace(/\bnon[-\s]?member\b/g, 'nonmember')
+    .replace(/\b(?:2|two)[-\s]?stage\b/g, 'twostage')
+    .replace(/\bcheck[-\s]?in\b/g, 'checkin')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -1166,7 +1327,7 @@ export function matchChatbotQuery(
     };
   }
 
-  // 2D. Portal How-To Guides (All Users)
+  // 2D. Portal How-To Guides (All Users & Admin/Owner Operations)
   if (has('split')) {
     return {
       matched: true,
@@ -1179,7 +1340,7 @@ export function matchChatbotQuery(
         `2. In **Step 2 (Details)**, use **+ Add Receipt / Item Line** to itemize each shop or split portion (e.g., Drinks RM 15.00 + Prizes RM 45.00).`,
         `3. ClubSync automatically sums all line items into your total RM claim amount.`,
       ].join('\n'),
-      followUpChips: ['How to submit a claim', 'How to request a pre-claim', 'My claims & loans'],
+      followUpChips: ['How to submit a claim', 'How to request a pre-claim', 'Receipt OCR & duplicates'],
     };
   }
 
@@ -1200,6 +1361,45 @@ export function matchChatbotQuery(
     };
   }
 
+  if (has('threshold')) {
+    const canSeeExactThreshold = permissions.canViewFinance || permissions.isAdmin;
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: '2-Stage Claim Approval Threshold',
+      actionTab: 'claims',
+      reply: [
+        `**Claim Approval & 2-Stage Threshold (${snapshot.clubName}):**`,
+        `• Standard claims are verified and approved directly by an authorized Treasurer/Admin in **Claims**.`,
+        canSeeExactThreshold
+          ? `• High-value claims above **${formatRM(snapshot.approvalThreshold)}** require **2-Stage Approval** (1. Treasurer verification → 2. President/Owner sign-off).`
+          : `• High-value claims exceeding the club's configured **2-Stage Approval Threshold** require both Treasurer verification and President/Owner sign-off.`,
+        canSeeExactThreshold
+          ? `• Admins and Owners can adjust this RM threshold directly at the top of the **Claims** workspace.`
+          : `• Check your claim progress anytime under **Claims** or by asking **"My claims & loans"**.`,
+      ].join('\n'),
+      followUpChips: permissions.canViewFinance
+        ? ['Pending claims to review', 'How to submit a claim', 'Monthly finance summary']
+        : ['My claims & loans', 'How to submit a claim', 'Receipt OCR & duplicates'],
+    };
+  }
+
+  if (has('ocr')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Receipt OCR & Duplicate Detection',
+      actionTab: 'new_claim',
+      reply: [
+        `**Smart Receipt OCR, Stitching & Duplicate Check:**`,
+        `1. Upload or snap 1 or multiple receipt photos in **Submit Claim** — **ReceiptDropzone** automatically stitches multi-photo receipts into a single clear JPG.`,
+        `2. Local OCR scans the receipt right on your device to pre-fill merchant/title, expense date, and total RM amount (double-check numbers before submitting!).`,
+        `3. ClubSync checks for matching amounts, dates, or file hashes to flag potential **duplicate receipts** before payout.`,
+      ].join('\n'),
+      followUpChips: ['How to submit a claim', 'How to split costs', 'My claims & loans'],
+    };
+  }
+
   if (has('claim') && (rawNorm.includes('how') || rawNorm.includes('submit') || rawNorm.includes('step') || has('receipt'))) {
     return {
       matched: true,
@@ -1213,7 +1413,23 @@ export function matchChatbotQuery(
         `3. **Step 2 (Details):** Pick the related Event/Activity, confirm title & line items.`,
         `4. **Step 3 (Bank / QR):** Verify your bank account or DuitNow QR so the Treasurer can reimburse you fast.`,
       ].join('\n'),
-      followUpChips: ['How to request a pre-claim', 'How to split costs', 'My claims & loans'],
+      followUpChips: ['How to request a pre-claim', 'How to split costs', '2-Stage approval threshold'],
+    };
+  }
+
+  if (has('guest')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Guest & Non-Member Event Registration',
+      actionTab: 'activities',
+      reply: [
+        `**How Guests & Non-Members Register (${snapshot.clubName}):**`,
+        `1. External participants can register on the public landing page (**Open Public Events**) or via an event's direct \`/e/<event-slug>\` share link — no member account needed.`,
+        `2. They fill in name, contact details, and upload their DuitNow/bank transfer proof if the event charges a registration fee.`,
+        `3. Upon submission, guests receive a digital **Entry Pass QR** that Admins scan at the venue check-in.`,
+      ].join('\n'),
+      followUpChips: ['QR pass & attendance', 'How to pay event fees', 'Public Page Editor'],
     };
   }
 
@@ -1230,6 +1446,21 @@ export function matchChatbotQuery(
         `3. Upload your payment receipt / transfer slip and submit — your status will update once verified!`,
       ].join('\n'),
       followUpChips: ['Upcoming events', 'My claims & loans', 'How to join carpool'],
+    };
+  }
+
+  if (has('qr')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'QR Pass & Attendance Check-In',
+      actionTab: 'activities',
+      reply: [
+        `**Event Entry QR Pass & Attendance Scanning:**`,
+        `• **Members:** RSVP **Attending** on an event in **Home & Activities** and open its **QR Pass** tab to show your personal check-in QR at the venue.`,
+        `• **Admins & Exco:** Open **Scan QR** from the top-left **Hamburger Drawer** (or tap the center **QR button** on the Mobile bottom bar) to check in members and registered guests in real time.`,
+      ].join('\n'),
+      followUpChips: ['My RSVPs', 'Upcoming events', 'Guest registration guide'],
     };
   }
 
@@ -1261,6 +1492,213 @@ export function matchChatbotQuery(
         `3. Return items on time — admins approve items marked *Requires Approval*.`,
       ].join('\n'),
       followUpChips: ['Available equipment', 'My claims & loans', 'Upcoming events'],
+    };
+  }
+
+  if (has('profile') || has('bank') || has('password')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Profile, Bank QR & Account Security',
+      actionTab: 'profile',
+      reply: [
+        `**Managing Your Profile, Payout Bank & Security:**`,
+        `• **Personal & Academic:** Update your Full Name, Matric No, Phone/WhatsApp, Department, and Residential College (auto-fills event carpool pickup!). IC/Passport stays masked by default for privacy.`,
+        `• **Payout & Bank QR:** Save your Bank Name, Account Number, and upload your **DuitNow QR** so claim reimbursements auto-fill cleanly.`,
+        `• **Account & Security:** Use **Change Email** or **Reset Password** right under the Security tab in **Profile**.`,
+      ].join('\n'),
+      followUpChips: ['How to submit a claim', 'My claims & loans', 'Theme & Dark Mode'],
+    };
+  }
+
+  if (has('landing')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Public Landing Page Studio',
+      actionTab: 'activities',
+      reply: [
+        `**Public Landing Page Studio (${snapshot.clubName}):**`,
+        permissions.isAdmin || permissions.isOwner
+          ? `• Open the top-left **Hamburger Drawer → Public Page Editor** to customize the public website.`
+          : `• **Owners & authorized Admins** can edit the public landing page from **Hamburger Drawer → Public Page Editor**.`,
+        `• Configure Hero & Navbar, Announcement Bar, Impact Metrics, Pillars, **Open Public Events** (\`/e/<slug>\`), **Club Highlights** posters, FAQs, Footer socials, and **Design & Theme**.`,
+        `• Includes **Undo/Redo**, **Templates**, and live Desktop / Tablet / Mobile preview before hitting **Save & Publish**.`,
+      ].join('\n'),
+      followUpChips: ['Theme & Dark Mode', 'Guest registration guide', 'Admin role & PIN unlock'],
+    };
+  }
+
+  if (has('theme')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Theme Studio, Dark Mode & Liquid Glass',
+      actionTab: 'profile',
+      reply: [
+        `**Theme Studio & Appearance (${snapshot.clubName}):**`,
+        `• **Light / Dark Mode:** Any signed-in user can toggle Light or Dark mode anytime using the **Sun / Moon** button at the top right.`,
+        permissions.isAdmin || permissions.isOwner
+          ? `• **Theme Studio:** Click the top-right **Palette** icon to choose curated Presets, layer **Colorful Mesh** backgrounds with **Animated Effects**, pick accent colors, and tune Liquid Glass intensity.`
+          : `• **Theme Studio:** Owners and Admins can customize club-wide animated backgrounds, mesh colors, and glass styling via the top-right **Palette** button.`,
+      ].join('\n'),
+      followUpChips: ['Public Page Editor', 'Navigation guide', 'How to install app'],
+    };
+  }
+
+  if (has('excel')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Excel / CSV Import & Export',
+      actionTab: permissions.canViewFinance || permissions.isAdmin ? 'ledger' : 'claims',
+      reply:
+        permissions.canViewFinance || permissions.isAdmin
+          ? [
+              `**Finance Ledger Excel & CSV Tools (${snapshot.clubName}):**`,
+              `• Open **Finance Ledger** from the top-left **Hamburger Drawer**.`,
+              `• Use **Export Excel / CSV** to download clean financial records for university audit or committee handovers.`,
+              `• Use **Import Excel / CSV** to bring in historical transactions or batch bank entries cleanly.`,
+            ].join('\n')
+          : [
+              `**Finance Ledger Import & Export:**`,
+              `• Excel/CSV ledger import and full financial report export inside **Finance Ledger** are restricted to Treasurers and Club Owners.`,
+              `• Need an official statement or claim record? Message a Treasurer via the **Public** or **People** tab in Club Chat.`,
+            ].join('\n'),
+      followUpChips: permissions.canViewFinance
+        ? ['Monthly finance summary', 'Activity & audit logs', 'Pending claims to review']
+        : ['My claims & loans', 'Committee contact', 'How to submit a claim'],
+    };
+  }
+
+  if (has('role')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Role Switcher, Admin PIN & Permissions',
+      actionTab: 'profile',
+      reply: [
+        `**Workspace Roles & Admin PIN Unlock:**`,
+        `• **Current View:** You are currently signed in as **${snapshot.userRoleLabel}** (${snapshot.userName}).`,
+        `• **Switch Role / PIN Unlock:** Open the top-left **Hamburger Drawer** and check **Workspace & Admin Controls** to switch between **Member**, **Admin**, or **Owner** mode (or enter the Admin PIN when prompted).`,
+        `• **Permissions:** **Owners** control full finance, member promotions, Public Page Studio, and Theme Studio; **Treasurers/Admins** verify fees, review claims, and manage events/equipment; **Members** RSVP, borrow gear, and submit claims.`,
+      ].join('\n'),
+      followUpChips: ['Members & roster', 'Activity & audit logs', 'How to navigate portal'],
+    };
+  }
+
+  if (has('members')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Member Roster & Directory',
+      actionTab: 'profile',
+      reply: [
+        `**Member Directory & Contacts (${snapshot.clubName}):**`,
+        permissions.isAdmin || permissions.isOwner
+          ? `• Open the top-left **Hamburger Drawer → Members** to search members by department, matric no, or batch, update committee roles, and manage access.`
+          : `• To find and message fellow members, Exco, or Treasurers directly, switch to the **People** tab right inside this Club Chat window.`,
+        `• Your own department, matric number, and dorm pickup info can be updated anytime in **Profile**.`,
+      ].join('\n'),
+      followUpChips: ['Club Chat & DMs', 'Role & PIN unlock', 'Update bank & profile'],
+    };
+  }
+
+  if (has('logs')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Activity Logs & Soft-Delete Audit',
+      actionTab: permissions.isAdmin || permissions.isOwner ? 'ledger' : 'profile',
+      reply: [
+        `**Activity Logs & Soft-Delete Audit Trail:**`,
+        permissions.isAdmin || permissions.isOwner
+          ? `• Open the top-left **Hamburger Drawer → Activity Logs** to inspect an auditable trail of claim approvals, ledger entries, event edits, and soft-deleted records.`
+          : `• ClubSync keeps an automatic audit log of financial approvals, ledger updates, and soft-deletes (accessible to Admins and Club Owners).`,
+        `• Deleted items use **soft-delete** so club records remain traceable without accidental permanent data loss.`,
+      ].join('\n'),
+      followUpChips: permissions.canViewFinance
+        ? ['Excel import & export', 'Monthly finance summary', 'Role & PIN unlock']
+        : ['My claims & loans', 'Committee contact', 'How to navigate portal'],
+    };
+  }
+
+  if (has('chat')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Club Chat, Public Lounge & DMs',
+      actionTab: 'activities',
+      reply: [
+        `**Using Club Chat (${snapshot.clubName}):**`,
+        `• **Help Desk (This Tab):** Instant 24/7 answers using live portal data, FAQs, and club policies.`,
+        `• **Public Lounge:** Club-wide announcement & discussion room where members and Exco chat together.`,
+        `• **People (Direct Messages):** Start a private 1-on-1 DM with any member, Exco, or Treasurer, with live unread badges.`,
+      ].join('\n'),
+      followUpChips: ['Committee contact', 'Notifications & reminders', 'How to navigate portal'],
+    };
+  }
+
+  if (has('pwa')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Install ClubSync App (PWA)',
+      actionTab: 'activities',
+      reply: [
+        `**Install ${snapshot.clubName} as an App (PWA):**`,
+        `1. Open the top-left **Hamburger Drawer** and click **Install App** (shown when your browser supports one-tap install).`,
+        `2. On iPhone/Safari, tap **Share → Add to Home Screen**; on Android/Desktop Chrome, click **Install** in the address bar or menu.`,
+        `3. Once installed, you get full-screen launch and quick mobile dock navigation.`,
+      ].join('\n'),
+      followUpChips: ['How to navigate portal', 'Notifications & reminders', 'Theme & Dark Mode'],
+    };
+  }
+
+  if (has('notification')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Notifications & Reminders Bell',
+      actionTab: 'activities',
+      reply: [
+        `**Notifications & Club Reminders:**`,
+        `• Tap the **Bell icon** at the top-right navbar anytime to check alerts for pending claim updates, fee verifications, equipment due dates, and upcoming activities.`,
+        `• You can also check **Latest announcements** here in Help Desk or in the **Public** lounge.`,
+      ].join('\n'),
+      followUpChips: ['Latest announcements', 'My claims & loans', 'Upcoming events'],
+    };
+  }
+
+  if (has('batch')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Active Academic Batch',
+      actionTab: 'activities',
+      reply: [
+        `**Current Active Session / Batch:**`,
+        `• **Club:** ${snapshot.clubName}`,
+        `• **Active Batch:** **${snapshot.currentBatch}**`,
+        `• **Active Activities:** ${snapshot.publicVars.active_events_count} open/active event(s) in this session.`,
+      ].join('\n'),
+      followUpChips: ['Upcoming events', 'Latest announcements', 'How to navigate portal'],
+    };
+  }
+
+  if (has('navigation')) {
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Portal Navigation Guide',
+      actionTab: 'activities',
+      reply: [
+        `**Where Everything Lives in ${snapshot.clubName}:**`,
+        `• **Top-Left Hamburger Drawer (☰):** Activities, Equipment, Claims, Finance Ledger, Members, Activity Logs, Profile, **Scan QR**, **New Claim**, Role Mode Switcher, and **Public Page Editor** (permission-based).`,
+        `• **Top-Right Bar:** Quick **Submit Claim**, **Theme Studio** (Palette), **Light/Dark toggle**, **Notification Bell**, and **Account / Sign Out**.`,
+        `• **Mobile Bottom Liquid Glass Dock:** Quick jump between **Home**, **Gear**, **Scan QR**, **Claims**, and **Profile**.`,
+      ].join('\n'),
+      followUpChips: ['Upcoming events', 'How to submit a claim', 'Theme & Dark Mode'],
     };
   }
 
@@ -1301,7 +1739,7 @@ export function matchChatbotQuery(
       matchedLabel: 'Upcoming Club Events',
       actionTab: 'activities',
       reply: `**Active & Upcoming Activities (${snapshot.publicVars.active_events_count}):**\n${snapshot.publicVars.upcoming_events_list}\n\nClick any card in **Home & Activities** to RSVP, pay fees, or view your QR pass.`,
-      followUpChips: ['How to pay event fees', 'How to join carpool', 'Latest announcements'],
+      followUpChips: ['How to pay event fees', 'How to join carpool', 'QR pass & attendance'],
     };
   }
 
@@ -1323,6 +1761,39 @@ export function matchChatbotQuery(
     };
   }
 
+  // 2F. Greetings & General Help Guide (Checked after specific intents so "hi, club balance?" still answers balance)
+  if (
+    has('greeting') ||
+    has('help') ||
+    rawNorm === 'tolong' ||
+    rawNorm === 'tolong saya' ||
+    rawNorm === 'what can you do'
+  ) {
+    const roleTips =
+      permissions.canViewFinance || permissions.isAdmin
+        ? [
+            `• **Treasury & Audit:** Live club balance, bank/cash split, pending claims queue, overspent event budgets, monthly finance summary, 2-stage threshold, Excel import/export, and Activity Logs.`,
+            `• **Events & Operations:** Upcoming events, QR attendance scanner, carpool coordination, equipment stock/loans, and Member Roster.`,
+            `• **Studios & Controls:** Public Page Editor, Theme Studio (mesh + effects + glass), Light/Dark mode, and Admin PIN / Role switcher.`,
+          ]
+        : [
+            `• **Claims & Money Back:** How to submit claims, OCR receipt stitching, splitting itemized costs, pre-claims/cash advances, and checking your pending claim status.`,
+            `• **Events & Passes:** Upcoming activities, RSVPs, Entry QR Pass, paying fees, carpool transport, and sharing \`/e/<slug>\` guest links.`,
+            `• **Equipment & Account:** Borrowing club gear, checking your active loans, updating DuitNow/bank details, password/email security, and app navigation.`,
+          ];
+    return {
+      matched: true,
+      source: 'builtin',
+      matchedLabel: 'Club Help Desk Guide',
+      actionTab: 'none',
+      reply: [
+        `Hi **${snapshot.userName}**! I'm the **${snapshot.clubName} Help Desk** (${snapshot.userRoleLabel} • Batch ${snapshot.currentBatch}). Ask me anything about:`,
+        ...roleTips,
+      ].join('\n'),
+      followUpChips: starterFollowUps,
+    };
+  }
+
   // 3. No Clean Match — Suggest top 3 closest topics and mark unmatched for inbox logging
   const candidateTopics = permissions.canViewFinance
     ? [
@@ -1334,6 +1805,10 @@ export function matchChatbotQuery(
         'Available equipment',
         'How to submit a claim',
         'My claims & loans',
+        'QR pass & attendance',
+        'Update bank & profile',
+        'Public Page Editor',
+        'Theme & Dark Mode',
       ]
     : [
         'Upcoming events',
@@ -1343,6 +1818,9 @@ export function matchChatbotQuery(
         'How to request a pre-claim',
         'How to pay event fees',
         'How to join carpool',
+        'QR pass & attendance',
+        'Update bank & profile',
+        'Theme & Dark Mode',
       ];
 
   const rankedSuggestions = candidateTopics
