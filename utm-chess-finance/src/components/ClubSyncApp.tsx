@@ -4185,12 +4185,15 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
           faqItems={publicLandingConfig?.faq_items}
           openTrainerSignal={chatbotTrainerSignal}
           onNavigateAction={(action) => {
+            let navigated = false;
             if (action === 'new_claim') {
               setClaimModalInitMode('receipt');
               setClaimModalPreClaimId(null);
               setIsClaimModalOpen(true);
+              navigated = true;
             } else if (action === 'qr_scanner') {
               setIsQrScannerOpen(true);
+              navigated = true;
             } else if (
               action === 'theme_studio' &&
               isAdminOrOwner &&
@@ -4198,12 +4201,14 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
             ) {
               setSavedThemeSnapshot(themeConfig);
               setShowThemeStudio(true);
+              navigated = true;
             } else if (
               action === 'public_page_editor' &&
               isAdminOrOwner &&
               effectivePermissions.can_manage_public_page
             ) {
               setShowPublicPageEditor(true);
+              navigated = true;
             } else if (
               action === 'activities' ||
               action === 'equipment' ||
@@ -4214,6 +4219,10 @@ export default function ClubSyncApp({ initialPublicSnapshot = null }: ClubSyncAp
               (action === 'logs' && isAdminOrOwner)
             ) {
               setActiveTab(action);
+              navigated = true;
+            }
+            if (navigated && typeof window !== 'undefined' && window.innerWidth < 768) {
+              setIsChatOpen(false);
             }
           }}
         />

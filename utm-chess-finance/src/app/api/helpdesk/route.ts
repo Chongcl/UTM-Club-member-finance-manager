@@ -199,7 +199,7 @@ function parseGeminiJsonPayload(rawText: string): {
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
-    return NextResponse.json({ ok: false, error: 'missing_api_key' }, { status: 503 });
+    return NextResponse.json({ fallback: true }, { status: 200 });
   }
 
   let body: HelpdeskRequestBody;
@@ -327,5 +327,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: false, error: 'ai_unavailable' }, { status: 502 });
+  return NextResponse.json({ fallback: true }, { status: 200 });
 }
