@@ -22,7 +22,7 @@ const DotGrid = dynamic(() => import('./backgrounds/DotGrid'), { ssr: false });
 export interface ThemeBackgroundLayerProps {
   config: Pick<
     ClubThemeConfig,
-    'backgroundId' | 'bgColors' | 'bgSpeed' | 'bgOpacity' | 'bgScrim'
+    'backgroundId' | 'bgMesh' | 'bgColors' | 'bgSpeed' | 'bgOpacity' | 'bgScrim'
   >;
   darkMode: boolean;
   /** Render absolute inside preview frames instead of fixed full-screen viewport */
@@ -45,7 +45,7 @@ export default function ThemeBackgroundLayer({
     return () => mq.removeEventListener('change', sync);
   }, []);
 
-  if (!isDynamicBgId(config.backgroundId)) {
+  if (!isDynamicBgId(config.backgroundId) && !config.bgMesh) {
     return null;
   }
 
@@ -54,7 +54,10 @@ export default function ThemeBackgroundLayer({
   const opacity = Math.max(0.15, Math.min(1, config.bgOpacity ?? 0.75));
   const scrim = Math.max(0, Math.min(0.65, config.bgScrim ?? 0.15));
 
-  const bgOpt = DYNAMIC_BG_OPTIONS.find((o) => o.id === config.backgroundId);
+  const isPureMeshBg = config.backgroundId.startsWith('mesh-');
+  const activeMeshId = isPureMeshBg ? config.backgroundId : config.bgMesh || '';
+
+  const bgOpt = DYNAMIC_BG_OPTIONS.find((o) => o.id === (activeMeshId || config.backgroundId));
   const usesDarkDefaults =
     bgOpt &&
     config.bgColors?.primary?.toLowerCase() === bgOpt.defaultColors.primary.toLowerCase() &&
@@ -73,7 +76,6 @@ export default function ThemeBackgroundLayer({
 
   const { primary, secondary, accent } = resolvedColors;
 
-  const isMeshBg = config.backgroundId.startsWith('mesh-');
   const meshBaseColors: Record<string, string> = {
     'mesh-sunrise': '#FFFBF7',
     'mesh-botanical': '#F6FCF9',
@@ -85,7 +87,7 @@ export default function ThemeBackgroundLayer({
     ? 'pointer-events-none absolute inset-0 -z-10 overflow-hidden'
     : 'pointer-events-none fixed inset-0 -z-10 overflow-hidden';
 
-  const renderMeshLayer = () => {
+  const renderMeshLayer = (meshId: string) => {
     const a1 = darkMode ? 0.24 * opacity : 0.48 * opacity;
     const a2 = darkMode ? 0.2 * opacity : 0.42 * opacity;
     const a3 = darkMode ? 0.18 * opacity : 0.4 * opacity;
@@ -96,14 +98,14 @@ export default function ThemeBackgroundLayer({
       `radial-gradient(70% 55% at 52% 94%, ${hexToRgba(accent, a3)} 0%, transparent 68%)`,
     ];
 
-    const hasDots = config.backgroundId === 'mesh-botanical';
-    const hasGrid = config.backgroundId === 'mesh-ocean-glass';
+    const hasDots = meshId === 'mesh-botanical';
+    const hasGrid = meshId === 'mesh-ocean-glass';
 
     return (
       <div
         className="absolute inset-0"
         style={{
-          backgroundColor: darkMode ? '#070910' : meshBaseColors[config.backgroundId] || '#F8FAFC',
+          backgroundColor: darkMode ? '#070910' : meshBaseColors[meshId] || '#F8FAFC',
           backgroundImage: layers.join(', '),
         }}
       >
@@ -142,7 +144,7 @@ export default function ThemeBackgroundLayer({
       case 'mesh-botanical':
       case 'mesh-lavender':
       case 'mesh-ocean-glass':
-        return renderMeshLayer();
+        return null;
       case 'rb-aurora':
         return (
           <Aurora
@@ -256,7 +258,8 @@ export default function ThemeBackgroundLayer({
       className={`${positionClass} ${darkMode ? 'bg-[#070910]' : 'bg-[#F8FAFC]'}`}
       aria-hidden="true"
     >
-      {!darkMode && !isMeshBg && (
+      {activeMeshId && renderMeshLayer(activeMeshId)}
+      {!activeMeshId && !darkMode && (
         <div
           className="absolute inset-0"
           style={{
@@ -264,7 +267,9 @@ export default function ThemeBackgroundLayer({
           }}
         />
       )}
-      <div className="absolute inset-0">{renderEffect()}</div>
+      {!isPureMeshBg && isDynamicBgId(config.backgroundId) && (
+        <div className="absolute inset-0">{renderEffect()}</div>
+      )}
       {scrim > 0 && (
         <div
           className="absolute inset-0 transition-opacity duration-300"

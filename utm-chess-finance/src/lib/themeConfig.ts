@@ -1,3 +1,17 @@
+export type MeshBackdropId =
+  | ''
+  | 'mesh-sunrise'
+  | 'mesh-botanical'
+  | 'mesh-lavender'
+  | 'mesh-ocean-glass';
+
+export const MESH_BACKDROP_IDS = [
+  'mesh-sunrise',
+  'mesh-botanical',
+  'mesh-lavender',
+  'mesh-ocean-glass',
+] as const;
+
 export type DynamicBgId =
   | 'mesh-sunrise'
   | 'mesh-botanical'
@@ -27,6 +41,7 @@ export type SurfaceMode = 'liquid-glass' | 'classic';
 
 export interface ClubThemeConfig {
   backgroundId: string;
+  bgMesh?: MeshBackdropId;
   bgColors: {
     primary: string;
     secondary: string;
@@ -70,6 +85,7 @@ export function isDynamicBgId(id?: string | null): id is DynamicBgId {
 
 export const DEFAULT_THEME_CONFIG: ClubThemeConfig = {
   backgroundId: 'emerald-aurora',
+  bgMesh: '',
   bgColors: {
     primary: '#10b981',
     secondary: '#0ea5e9',
@@ -516,11 +532,18 @@ export function decodeThemeConfig(raw?: string | null): ClubThemeConfig {
           ? parsed.colorPalette
           : 'default';
 
+      const validMeshIds = new Set<string>(MESH_BACKDROP_IDS);
+      const bgMesh: MeshBackdropId =
+        typeof parsed.bgMesh === 'string' && validMeshIds.has(parsed.bgMesh.trim())
+          ? (parsed.bgMesh.trim() as MeshBackdropId)
+          : '';
+
       return {
         backgroundId:
           typeof parsed.backgroundId === 'string' && parsed.backgroundId.trim()
             ? parsed.backgroundId.trim()
             : DEFAULT_THEME_CONFIG.backgroundId,
+        bgMesh,
         bgColors: {
           primary: safeHex(parsed.bgColors?.primary, DEFAULT_THEME_CONFIG.bgColors.primary),
           secondary: safeHex(parsed.bgColors?.secondary, DEFAULT_THEME_CONFIG.bgColors.secondary),
@@ -555,6 +578,7 @@ export function decodeThemeConfig(raw?: string | null): ClubThemeConfig {
 export function encodeThemeConfig(cfg: ClubThemeConfig): string {
   const hasCustomizations =
     isDynamicBgId(cfg.backgroundId) ||
+    Boolean(cfg.bgMesh) ||
     cfg.colorPalette !== 'default' ||
     cfg.surfaceMode !== DEFAULT_THEME_CONFIG.surfaceMode ||
     cfg.glassBlur !== DEFAULT_THEME_CONFIG.glassBlur ||

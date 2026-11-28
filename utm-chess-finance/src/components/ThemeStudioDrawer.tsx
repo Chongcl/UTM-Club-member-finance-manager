@@ -23,6 +23,7 @@ import {
   COLOR_PALETTE_OPTIONS,
   DEFAULT_THEME_CONFIG,
   DYNAMIC_BG_OPTIONS,
+  MeshBackdropId,
   STARTER_THEME_PRESETS,
   getColorsForMode,
   isDynamicBgId,
@@ -132,9 +133,16 @@ export default function ThemeStudioDrawer({
   const reactBitsOptions = DYNAMIC_BG_OPTIONS.filter((o) => o.source === 'react-bits');
   const magicUiOptions = DYNAMIC_BG_OPTIONS.filter((o) => o.source === 'magic-ui');
 
+  const activeMeshId: MeshBackdropId = themeConfig.backgroundId.startsWith('mesh-')
+    ? (themeConfig.backgroundId as MeshBackdropId)
+    : themeConfig.bgMesh || '';
+  const hasAnimatedEffect =
+    isDynamicBgId(themeConfig.backgroundId) && !themeConfig.backgroundId.startsWith('mesh-');
+
   const handleSelectModeToggle = (nextDark: boolean) => {
     onSetDarkMode(nextDark);
-    const activeOpt = DYNAMIC_BG_OPTIONS.find((o) => o.id === themeConfig.backgroundId);
+    const colorSourceId = activeMeshId || themeConfig.backgroundId;
+    const activeOpt = DYNAMIC_BG_OPTIONS.find((o) => o.id === colorSourceId);
     if (activeOpt) {
       setThemeConfig((prev) => ({
         ...prev,
@@ -143,22 +151,78 @@ export default function ThemeStudioDrawer({
     }
   };
 
+  const handleSelectMesh = (meshId: MeshBackdropId) => {
+    if (!meshId) {
+      if (themeConfig.backgroundId.startsWith('mesh-')) {
+        setBgStyle('emerald-aurora');
+        setThemeConfig((prev) => ({
+          ...prev,
+          backgroundId: 'emerald-aurora',
+          bgMesh: '',
+          bgColors: { ...DEFAULT_THEME_CONFIG.bgColors },
+        }));
+      } else {
+        const effectOpt = DYNAMIC_BG_OPTIONS.find((o) => o.id === themeConfig.backgroundId);
+        setThemeConfig((prev) => ({
+          ...prev,
+          bgMesh: '',
+          bgColors: effectOpt ? getColorsForMode(effectOpt, isDarkCanvas) : prev.bgColors,
+        }));
+      }
+      return;
+    }
+
+    const opt = DYNAMIC_BG_OPTIONS.find((o) => o.id === meshId);
+    if (!opt) return;
+    const matchedColors = getColorsForMode(opt, isDarkCanvas);
+
+    if (hasAnimatedEffect) {
+      setThemeConfig((prev) => ({
+        ...prev,
+        bgMesh: meshId,
+        bgColors: matchedColors,
+        bgScrim: isDarkCanvas ? prev.bgScrim : Math.min(prev.bgScrim, 0.14),
+      }));
+    } else {
+      setBgStyle(meshId);
+      setThemeConfig((prev) => ({
+        ...prev,
+        backgroundId: meshId,
+        bgMesh: meshId,
+        bgColors: matchedColors,
+        bgScrim: isDarkCanvas ? prev.bgScrim : Math.min(prev.bgScrim, 0.14),
+      }));
+    }
+  };
+
   const handleSelectDynamicBg = (optId: string) => {
     const opt = DYNAMIC_BG_OPTIONS.find((o) => o.id === optId);
     if (!opt) return;
     setBgStyle(opt.id);
-    setThemeConfig((prev) => ({
-      ...prev,
-      backgroundId: opt.id,
-      bgColors: getColorsForMode(opt, isDarkCanvas),
-      bgScrim: isDarkCanvas ? prev.bgScrim : Math.min(prev.bgScrim, 0.14),
-    }));
+    setThemeConfig((prev) => {
+      const preservedMesh: MeshBackdropId = prev.backgroundId.startsWith('mesh-')
+        ? (prev.backgroundId as MeshBackdropId)
+        : prev.bgMesh || '';
+      const meshOpt = preservedMesh
+        ? DYNAMIC_BG_OPTIONS.find((o) => o.id === preservedMesh)
+        : undefined;
+      return {
+        ...prev,
+        backgroundId: opt.id,
+        bgMesh: preservedMesh,
+        bgColors: preservedMesh
+          ? prev.bgColors || (meshOpt ? getColorsForMode(meshOpt, isDarkCanvas) : getColorsForMode(opt, isDarkCanvas))
+          : getColorsForMode(opt, isDarkCanvas),
+        bgScrim: isDarkCanvas ? prev.bgScrim : Math.min(prev.bgScrim, 0.14),
+      };
+    });
   };
 
   const handleResetToDefault = () => {
     const nextCfg: ClubThemeConfig = {
       ...DEFAULT_THEME_CONFIG,
       backgroundId: isDarkCanvas ? 'emerald-aurora' : 'mesh-sunrise',
+      bgMesh: '',
       bgColors: isDarkCanvas
         ? { ...DEFAULT_THEME_CONFIG.bgColors }
         : { primary: '#fdba74', secondary: '#f9a8d4', accent: '#7dd3fc' },
@@ -370,6 +434,7 @@ export default function ThemeStudioDrawer({
                           onClick={() => {
                             const nextCfg: ClubThemeConfig = {
                               ...themeConfig,
+                              bgMesh: '',
                               ...starter.patch,
                             };
                             setThemeConfig(nextCfg);
@@ -415,24 +480,39 @@ export default function ThemeStudioDrawer({
           {/* ===================== TAB 2: BACKGROUND ===================== */}
           {activeTab === 'background' && (
             <div className="space-y-5">
-              {/* Group 1: Colorful Mesh (Recommended for Light Mode) */}
+              {/* Group 1: Colorful Mesh (Pairs with any animated effect below) */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-extrabold uppercase tracking-wider text-[11px]">
-                    Colorful Mesh
-                  </h3>
-                  <span className={`text-[10px] font-semibold ${mutedText}`}>
-                    Recommended for Light Mode
-                  </span>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-extrabold uppercase tracking-wider text-[11px]">
+                      Colorful Mesh
+                    </h3>
+                    <p className={`text-[10px] ${mutedText}`}>
+                      Pairs with any animated effect below
+                    </p>
+                  </div>
+                  {activeMeshId ? (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectMesh('')}
+                      className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer shrink-0"
+                    >
+                      Clear Mesh
+                    </button>
+                  ) : (
+                    <span className={`text-[10px] font-semibold ${mutedText}`}>
+                      Recommended for Light Mode
+                    </span>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {meshOptions.map((opt) => {
-                    const active = themeConfig.backgroundId === opt.id;
+                    const active = activeMeshId === opt.id;
                     return (
                       <button
                         key={opt.id}
                         type="button"
-                        onClick={() => handleSelectDynamicBg(opt.id)}
+                        onClick={() => handleSelectMesh(opt.id as MeshBackdropId)}
                         className={`p-2 rounded-2xl border text-left transition cursor-pointer space-y-1.5 ${
                           active
                             ? 'border-emerald-500 ring-2 ring-emerald-500/25 bg-emerald-500/10'
@@ -458,9 +538,27 @@ export default function ThemeStudioDrawer({
 
               {/* Group 2: Animated Effects (React Bits) */}
               <div className="space-y-2">
-                <h3 className="font-extrabold uppercase tracking-wider text-[11px]">
-                  Animated Effects (React Bits)
-                </h3>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-extrabold uppercase tracking-wider text-[11px]">
+                    Animated Effects (React Bits)
+                  </h3>
+                  {hasAnimatedEffect && activeMeshId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBgStyle(activeMeshId);
+                        setThemeConfig((prev) => ({
+                          ...prev,
+                          backgroundId: activeMeshId,
+                          bgMesh: activeMeshId,
+                        }));
+                      }}
+                      className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer shrink-0"
+                    >
+                      Effect Off
+                    </button>
+                  )}
+                </div>
                 <div className="space-y-1.5">
                   {reactBitsOptions.map((opt) => {
                     const active = themeConfig.backgroundId === opt.id;
@@ -550,7 +648,7 @@ export default function ThemeStudioDrawer({
                         type="button"
                         onClick={() => {
                           setBgStyle(preset.id);
-                          setThemeConfig((prev) => ({ ...prev, backgroundId: preset.id }));
+                          setThemeConfig((prev) => ({ ...prev, backgroundId: preset.id, bgMesh: '' }));
                         }}
                         className={`w-full flex items-center justify-between gap-2.5 p-2 rounded-2xl border text-left transition cursor-pointer ${
                           active
@@ -602,7 +700,7 @@ export default function ThemeStudioDrawer({
               )}
 
               {/* Collapsed Fine-Tune Background Accordion */}
-              {isDynamicBgId(themeConfig.backgroundId) && (
+              {(isDynamicBgId(themeConfig.backgroundId) || Boolean(activeMeshId)) && (
                 <div className={`rounded-2xl border overflow-hidden ${cardBg}`}>
                   <button
                     type="button"
