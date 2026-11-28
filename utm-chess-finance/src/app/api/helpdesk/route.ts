@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { ChatbotActionTab, ChatbotPermissions, HelpdeskRoleMode } from '@/lib/chatbotEngine';
 
-const DEFAULT_MODEL_CHAIN = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite'];
+// Fastest model first: measured ~2.5s (flash-lite) vs ~8s (3.6-flash) and frequent 503s on 3.8-flash.
+const DEFAULT_MODEL_CHAIN = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash'];
+const PER_MODEL_TIMEOUT_MS = 12000;
+const TOTAL_BUDGET_MS = 22000;
 
 const BASE_ALLOWED_ACTIONS: ChatbotActionTab[] = [
   'none',
@@ -248,8 +251,13 @@ export async function POST(req: NextRequest) {
 
   const systemInstructionText = buildSystemInstruction(role, finalAllowedActions, safeContext);
 
+  const startedAt = Date.now();
   for (const model of modelChain) {
+    if (req.signal?.aborted) break;
+    if (Date.now() - startedAt > TOTAL_BUDGET_MS) break;
     try {
+      const signals: AbortSignal[] = [AbortSignal.timeout(PER_MODEL_TIMEOUT_MS)];
+      if (req.signal) signals.push(req.signal);
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
         {
@@ -266,8 +274,11 @@ export async function POST(req: NextRequest) {
             generationConfig: {
               responseMimeType: 'application/json',
               temperature: 0.3,
+              maxOutputTokens: 900,
+              ...(model.includes('lite') ? {} : { thinkingConfig: { thinkingLevel: 'low' } }),
             },
           }),
+          signal: AbortSignal.any(signals),
         }
       );
 

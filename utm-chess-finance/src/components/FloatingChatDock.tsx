@@ -34,6 +34,7 @@ import {
   Check,
   ArrowRight,
   Lock,
+  Square,
 } from 'lucide-react';
 import type { PublicFaqItem } from '@/lib/publicLanding';
 import ChatbotTrainerModal from './ChatbotTrainerModal';
@@ -183,6 +184,19 @@ export default function FloatingChatDock({
   const [botMessages, setBotMessages] = useState<BotChatMessage[]>([]);
   const [botDraft, setBotDraft] = useState('');
   const [botLoading, setBotLoading] = useState(false);
+  const botAbortRef = useRef<AbortController | null>(null);
+  const botStoppedRef = useRef(false);
+
+  const handleStopBot = () => {
+    botStoppedRef.current = true;
+    botAbortRef.current?.abort();
+  };
+
+  useEffect(() => {
+    return () => {
+      botAbortRef.current?.abort();
+    };
+  }, []);
   const [trainerOpen, setTrainerOpen] = useState(false);
   const [copiedBotId, setCopiedBotId] = useState<string | null>(null);
   const botScrollRef = useRef<HTMLDivElement | null>(null);
@@ -325,10 +339,16 @@ export default function FloatingChatDock({
     const allowedActions = getAllowedHelpdeskActions(chatbotPermissions);
     const allowedSet = new Set<ChatbotActionTab>(allowedActions);
 
+    const controller = new AbortController();
+    botAbortRef.current = controller;
+    botStoppedRef.current = false;
+    const timeoutId = setTimeout(() => controller.abort(), 28000);
+
     try {
       const response = await fetch('/api/helpdesk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           message: clean,
           history: historySnapshot,
@@ -372,9 +392,27 @@ export default function FloatingChatDock({
         }
       }
     } catch {
-      /* automatic offline fallback below */
+      /* automatic offline fallback below (unless user pressed Stop) */
     } finally {
+      clearTimeout(timeoutId);
+      if (botAbortRef.current === controller) botAbortRef.current = null;
       setBotLoading(false);
+    }
+
+    if (botStoppedRef.current) {
+      botStoppedRef.current = false;
+      setBotMessages((prev) => [
+        ...prev,
+        {
+          id: `b_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          role: 'bot',
+          content: 'Generation stopped. Ask again or pick a quick topic anytime.',
+          source: 'fallback',
+          matchedLabel: 'Stopped',
+          followUpChips: [],
+        },
+      ]);
+      return;
     }
 
     const fallbackResult = matchChatbotQuery(clean, {
@@ -1688,6 +1726,13 @@ export default function FloatingChatDock({
                         <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-sm px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 shadow-2xs text-xs">
                           <Loader2 className="w-3.5 h-3.5 text-emerald-600 animate-spin shrink-0" />
                           <span>Thinking…</span>
+                          <button
+                            type="button"
+                            onClick={handleStopBot}
+                            className="ml-1 px-1.5 py-0.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold cursor-pointer"
+                          >
+                            Stop
+                          </button>
                         </div>
                       </div>
                     )}
@@ -1710,14 +1755,27 @@ export default function FloatingChatDock({
                   placeholder="Ask about events, claims, stock, or budget..."
                   className="flex-1 min-w-0 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:bg-white disabled:opacity-60"
                 />
-                <button
-                  type="submit"
-                  disabled={!botDraft.trim() || botLoading}
-                  className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white cursor-pointer shrink-0"
-                  aria-label="Send question to Help Desk"
-                >
-                  {botLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </button>
+                {botLoading ? (
+                  <button
+                    type="button"
+                    onClick={handleStopBot}
+                    className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold cursor-pointer shrink-0"
+                    aria-label="Stop generating answer"
+                    title="Stop generating"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                    <span>Stop</span>
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!botDraft.trim()}
+                    className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white cursor-pointer shrink-0"
+                    aria-label="Send question to Help Desk"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                )}
               </form>
             </div>
           ) : (
