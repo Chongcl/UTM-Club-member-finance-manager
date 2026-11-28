@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { LiquidGlass } from '@creativoma/liquid-glass';
+import GlassSurface from './ui/GlassSurface';
 import { Home, Package, QrCode, Receipt, UserCheck } from 'lucide-react';
 import type { NavTab } from './Navbar';
 
@@ -154,26 +154,27 @@ export default function MobileBottomNav({
   }
 
   return (
-    <LiquidGlass
-      as="nav"
+    <nav
       aria-label="Mobile navigation"
-      backdropBlur={16}
-      tintColor={darkMode ? 'rgba(9, 13, 24, 0.56)' : 'rgba(255, 255, 255, 0.72)'}
-      displacementScale={60}
-      turbulenceBaseFrequency="0.008 0.008"
-      className={`md:hidden fixed bottom-0 inset-x-0 z-30 border-t pb-[env(safe-area-inset-bottom)] transition-colors ${
-        darkMode ? 'border-white/20 text-white' : 'border-slate-900/10 text-slate-900'
-      }`}
-      style={{
-        position: 'fixed',
-        overflow: 'visible',
-        boxShadow: darkMode
-          ? 'inset 0 1px 0 rgba(255,255,255,0.34), 0 -10px 30px -10px rgba(0,0,0,0.65)'
-          : 'inset 0 1px 0 rgba(255,255,255,0.95), 0 -8px 26px -10px rgba(15,23,42,0.12)',
-      }}
-      contentClassName="max-w-lg mx-auto px-2 h-16 grid grid-cols-5 items-center"
+      className="md:hidden fixed bottom-0 inset-x-0 z-30 px-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pointer-events-none"
     >
-      {renderDockItems()}
-    </LiquidGlass>
+      <GlassSurface
+        width="100%"
+        height={64}
+        borderRadius={28}
+        distortionScale={-160}
+        displace={0.5}
+        backgroundOpacity={darkMode ? 0.28 : 0.22}
+        saturation={1.4}
+        className={`max-w-lg mx-auto pointer-events-auto [&_.glass-surface__content]:!py-1 [&_.glass-surface__content]:!px-1.5 ${
+          darkMode ? 'text-white' : 'text-slate-900'
+        }`}
+        style={{ overflow: 'visible' }}
+      >
+        <div className="w-full h-full grid grid-cols-5 items-center">
+          {renderDockItems()}
+        </div>
+      </GlassSurface>
+    </nav>
   );
 }
